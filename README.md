@@ -63,9 +63,11 @@ cp .env.example .env
 
 | Variable                       | Description                                                                        | Default                                                      |
 | ------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `WHATSAPP_HOST`                | WhatsApp Web API URL                                                               | `http://localhost:3000`                                      |
-| `WHATSAPP_BASIC_AUTH_USER`     | WhatsApp API user                                                                  | `admin`                                                      |
-| `WHATSAPP_BASIC_AUTH_PASSWORD` | WhatsApp API password                                                              | `admin`                                                      |
+| `WHATSAPP_HOST`                | OpenWA base URL (no `/api` suffix)                                                 | `http://localhost:2785`                                      |
+| `OPENWA_API_KEY`               | OpenWA API key (also passed to the OpenWA container as `API_MASTER_KEY`)           | –                                                            |
+| `OPENWA_SESSION_ID`            | `id` of the OpenWA session the bot uses                                            | –                                                            |
+| `OPENWA_WEBHOOK_SECRET`        | HMAC secret for webhook signatures (>= 16 chars)                                   | –                                                            |
+| `OPENWA_WEBHOOK_URL`           | URL OpenWA should post to; registered automatically at startup if set              | –                                                            |
 | `VOYAGE_API_KEY`               | Voyage AI key                                                                      | –                                                            |
 | `DB_URI`                       | PostgreSQL URI                                                                     | `postgresql+asyncpg://user:password@localhost:5432/postgres` |
 | `LOG_LEVEL`                    | Log level (`DEBUG`, `INFO`, `ERROR`)                                               | `INFO`                                                       |
@@ -92,10 +94,18 @@ docker compose -f docker-compose.prod.yml up -d
 
 ### 4. Connect your device
 
-1. Open http://localhost:3000
-2. Scan the QR code with your WhatsApp mobile app.
+1. Start the stack, then create and start a session (use your `OPENWA_API_KEY`):
+
+   ```bash
+   curl -s -X POST http://localhost:2785/api/sessions \
+     -H "X-API-Key: $OPENWA_API_KEY" -H "Content-Type: application/json" \
+     -d '{"name":"wa-llm"}'            # copy the returned "id" into OPENWA_SESSION_ID
+   curl -s -X POST http://localhost:2785/api/sessions/<id>/start -H "X-API-Key: $OPENWA_API_KEY"
+   ```
+
+2. Get the QR code (`GET /api/sessions/<id>/qr` returns a PNG data URL) or use the dashboard at http://localhost:2785, and scan it with your WhatsApp mobile app. Wait until the session status is `ready`.
 3. Invite the bot device to any target groups you want to summarize.
-4. Restart service: `docker compose restart wa_llm-web-server`
+4. Restart the web server so it picks up the session id: `docker compose restart web-server`
 
 ### 5. Activating the Bot for a Group
 
