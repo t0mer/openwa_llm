@@ -18,6 +18,7 @@ SECRET = "s" * 16
 @pytest.fixture
 def ctx(monkeypatch: pytest.MonkeyPatch):
     webhook_api._seen_keys.clear()
+    webhook_api._in_flight.clear()
     handler = AsyncMock()
     gather = AsyncMock()
     monkeypatch.setattr(webhook_api, "gather_groups", gather)
@@ -157,3 +158,33 @@ def test_body_at_limit_is_not_rejected_for_size(ctx):
     client, *_ = ctx
     resp = client.post("/webhook", content=b"x" * webhook_api.MAX_BODY_BYTES)
     assert resp.status_code == 401  # size ok; fails signature as expected
+
+
+async def test_concurrent_duplicate_delivery_is_processed_once(ctx):
+    import asyncio
+
+    import httpx
+
+    client, handler, *_ = ctx
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def slow(_event):
+        started.set()
+        await release.wait()
+
+    handler.side_effect = slow
+    body = json.dumps(MESSAGE).encode()
+    headers = {
+        "X-OpenWA-Signature": "sha256="
+        + hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest(),
+        "X-OpenWA-Idempotency-Key": "kc",
+    }
+    transport = httpx.ASGITransport(app=client.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+        first = asyncio.create_task(c.post("/webhook", content=body, headers=headers))
+        await started.wait()
+        second = await c.post("/webhook", content=body, headers=headers)
+        release.set()
+        first_resp = await first
+    assert second.status_code == 200 and first_resp.status_code == 200
+    assert handler.await_count == 1

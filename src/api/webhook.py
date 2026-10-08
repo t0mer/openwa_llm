@@ -24,6 +24,8 @@ router = APIRouter(tags=["webhook"])
 
 # Delivery is at-least-once: remember idempotency keys of deliveries we finished.
 _seen_keys: TTLCache = TTLCache(maxsize=2000, ttl=10 * 60)
+# Keys currently being processed, so concurrent duplicates are not run twice.
+_in_flight: set[str] = set()
 
 # Upper bound for an (unauthenticated, pre-signature) request body.
 MAX_BODY_BYTES = 2 * 1024 * 1024
@@ -69,18 +71,22 @@ async def webhook(
         raise HTTPException(status_code=400, detail="expected a JSON object")
 
     key = request.headers.get("X-OpenWA-Idempotency-Key")
-    if key and key in _seen_keys:
+    if key and (key in _seen_keys or key in _in_flight):
         logger.info("Skipping duplicate delivery %s", key)
         return "ok"
-
-    event = parse_event(envelope)
-    if isinstance(event, (InboundMessage, InboundReaction)):
-        await handler(event)
-    elif isinstance(event, GroupEvent):
-        # Keep GROUPS table in sync when group-related events happen
-        await gather_groups(session, whatsapp)
-
-    # Mark seen only after success, so a failed delivery is retried by OpenWA.
     if key:
-        _seen_keys[key] = True
+        _in_flight.add(key)
+    try:
+        event = parse_event(envelope)
+        if isinstance(event, (InboundMessage, InboundReaction)):
+            await handler(event)
+        elif isinstance(event, GroupEvent):
+            # Keep GROUPS table in sync when group-related events happen
+            await gather_groups(session, whatsapp)
+        # Mark seen only after success, so a failed delivery is retried by OpenWA.
+        if key:
+            _seen_keys[key] = True
+    finally:
+        if key:
+            _in_flight.discard(key)
     return "ok"
