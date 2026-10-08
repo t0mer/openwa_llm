@@ -13,7 +13,17 @@ import models  # noqa
 from config import get_settings
 from whatsapp import OpenWAGateway
 from whatsapp.init_groups import gather_groups
+from whatsapp.webhook_registration import register_webhook_with_retry
 from voyageai.client_async import AsyncClient
+
+WEBHOOK_EVENTS = [
+    "message.received",
+    "message.reaction",
+    "group.join",
+    "group.leave",
+    "group.update",
+    "group.join_request",
+]
 
 
 @asynccontextmanager
@@ -59,29 +69,18 @@ async def lifespan(app: FastAPI):
                 await session.rollback()
                 raise
 
-    asyncio.create_task(sync_groups_on_startup())
-
-    async def register_webhook_on_startup() -> None:
-        if not settings.openwa_webhook_url:
-            return
-        try:
-            created = await app.state.whatsapp.ensure_webhook(
+    # Keep references so startup tasks are not garbage-collected mid-flight.
+    app.state.bg_tasks = [
+        asyncio.create_task(sync_groups_on_startup()),
+        asyncio.create_task(
+            register_webhook_with_retry(
+                app.state.whatsapp,
                 settings.openwa_webhook_url,
                 settings.openwa_webhook_secret,
-                [
-                    "message.received",
-                    "message.reaction",
-                    "group.join",
-                    "group.leave",
-                    "group.update",
-                    "group.join_request",
-                ],
+                WEBHOOK_EVENTS,
             )
-            logging.info("OpenWA webhook %s", "registered" if created else "present")
-        except Exception as e:  # best effort: never block startup
-            logging.warning("Could not register OpenWA webhook: %s", e)
-
-    asyncio.create_task(register_webhook_on_startup())
+        ),
+    ]
 
     app.state.db_engine = engine
     app.state.async_session = async_session
@@ -91,6 +90,9 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        for task in app.state.bg_tasks:
+            task.cancel()
+        await asyncio.gather(*app.state.bg_tasks, return_exceptions=True)
         await app.state.whatsapp.aclose()
         await engine.dispose()
 
