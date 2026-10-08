@@ -1,3 +1,122 @@
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { api } from "../api";
+import type { Group, MessageItem } from "../types";
+
+interface Filters {
+  q: string;
+  group_jid: string;
+  sender_jid: string;
+  from: string;
+  to: string;
+}
+
+const EMPTY: Filters = { q: "", group_jid: "", sender_jid: "", from: "", to: "" };
+const PAGE = 50;
+
+function toIso(date: string, endOfDay: boolean): string | undefined {
+  if (!date) return undefined;
+  return new Date(`${date}T${endOfDay ? "23:59:59.999" : "00:00:00"}`).toISOString();
+}
+
 export default function Messages() {
-  return <h1>Messages</h1>;
+  const [draft, setDraft] = useState<Filters>(EMPTY);
+  const [filters, setFilters] = useState<Filters>(EMPTY);
+  const [items, setItems] = useState<MessageItem[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+
+  useEffect(() => {
+    api.listGroups({ limit: 200, sort: "name" }).then((p) => setGroups(p.items)).catch(() => setGroups([]));
+  }, []);
+
+  const seq = useRef(0);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
+  const fetchPage = useCallback(async (f: Filters, before?: string) => {
+    const id = ++seq.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const page = await api.listMessages({
+        q: f.q.trim() || undefined,
+        group_jid: f.group_jid || undefined,
+        sender_jid: f.sender_jid.trim() || undefined,
+        from: toIso(f.from, false),
+        to: toIso(f.to, true),
+        limit: PAGE,
+        before,
+      });
+      if (id !== seq.current) return;
+      setItems((prev) => (before ? [...prev, ...page.items] : page.items));
+      setCursor(page.next_cursor);
+      setLoading(false);
+    } catch (e) {
+      if (id !== seq.current) return;
+      setError(e instanceof Error ? e.message : String(e));
+      // A failed first page keeps the current rows but drops the cursor (it
+      // belonged to the previous filters); a failed "Load older" keeps both.
+      if (!before) setCursor(null);
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchPage(filters);
+  }, [filters, fetchPage]);
+
+  function apply(e: FormEvent) {
+    e.preventDefault();
+    if (draft.from && draft.to && draft.to < draft.from) {
+      setRangeError("To date must not be before From date.");
+      return;
+    }
+    setRangeError(null);
+    setFilters({ ...draft });
+  }
+
+  return (
+    <section>
+      <h1>Messages</h1>
+      <p className="muted">Read-only view, newest first.</p>
+      <form className="toolbar" onSubmit={apply}>
+        <input aria-label="Search text" placeholder="Search text" value={draft.q} onChange={(e) => setDraft({ ...draft, q: e.target.value })} />
+        <select aria-label="Group" value={draft.group_jid} onChange={(e) => setDraft({ ...draft, group_jid: e.target.value })}>
+          <option value="">All groups</option>
+          {groups.map((g) => (
+            <option key={g.group_jid} value={g.group_jid}>{g.display_name || g.group_name || g.group_jid}</option>
+          ))}
+        </select>
+        <input aria-label="Sender JID" placeholder="Sender JID" value={draft.sender_jid} onChange={(e) => setDraft({ ...draft, sender_jid: e.target.value })} />
+        <input aria-label="From date" type="date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} />
+        <input aria-label="To date" type="date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} />
+        <button type="submit" className="primary">Apply</button>
+      </form>
+      {rangeError && <p role="alert" className="error">{rangeError}</p>}
+      {error && <p role="alert" className="error">{error}</p>}
+      <table>
+        <thead><tr><th>Time</th><th>Sender</th><th>Message</th><th>Reactions</th></tr></thead>
+        <tbody>
+          {items.map((m) => (
+            <tr key={m.message_id}>
+              <td className="muted">{new Date(m.timestamp).toLocaleString()}</td>
+              <td>{m.sender_name ?? m.sender_jid}<div className="muted">{m.sender_jid}</div></td>
+              <td className="msg-text">
+                {m.reply_to_id && <span className="badge">reply</span>} {m.has_media && <span className="badge">media</span>} {m.text}
+              </td>
+              <td>{m.reaction_count || ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!loading && items.length === 0 && !error && <p className="notice">No messages match.</p>}
+      {loading && <p className="notice">Loading…</p>}
+      {cursor && (
+        <div className="toolbar">
+          <button type="button" disabled={loading} onClick={() => void fetchPage(filters, cursor)}>Load older</button>
+        </div>
+      )}
+    </section>
+  );
 }
