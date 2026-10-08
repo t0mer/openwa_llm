@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Generic, TypeVar
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+T = TypeVar("T")
+
+MAX_KEYS = 50
+MAX_KEY_LEN = 100
+
+
+class Page(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+
+
+def clean_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def clean_keys(value: list[str] | None) -> list[str] | None:
+    """Trim, drop empties, de-duplicate (keep order). Empty result -> None."""
+    if not value:
+        return None
+    seen: dict[str, None] = {}
+    for key in value:
+        key = key.strip()
+        if key and key not in seen:
+            seen[key] = None
+    keys = list(seen)
+    return keys or None
+
+
+class GroupOut(BaseModel):
+    group_jid: str
+    group_name: str | None
+    display_name: str | None
+    group_topic: str | None
+    owner_jid: str | None
+    managed: bool
+    notify_on_spam: bool
+    community_keys: list[str]
+    last_summary_sync: datetime
+    last_ingest: datetime
+    message_count: int
+
+    @classmethod
+    def from_group(cls, group, message_count: int) -> "GroupOut":
+        return cls(
+            group_jid=group.group_jid,
+            group_name=group.group_name,
+            display_name=group.display_name,
+            group_topic=group.group_topic,
+            owner_jid=group.owner_jid,
+            managed=group.managed,
+            notify_on_spam=group.notify_on_spam,
+            community_keys=list(group.community_keys or []),
+            last_summary_sync=group.last_summary_sync,
+            last_ingest=group.last_ingest,
+            message_count=int(message_count or 0),
+        )
+
+
+class GroupPatch(BaseModel):
+    managed: bool | None = None
+    notify_on_spam: bool | None = None
+    community_keys: list[str] | None = None
+    display_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("community_keys", mode="before")
+    @classmethod
+    def _keys(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError("community_keys must be a list")
+        for key in value:
+            if not isinstance(key, str) or len(key.strip()) > MAX_KEY_LEN:
+                raise ValueError(f"each key must be a string of <= {MAX_KEY_LEN} chars")
+        return clean_keys(value) or []
+
+    @field_validator("community_keys")
+    @classmethod
+    def _key_count(cls, value):
+        if value is not None and len(value) > MAX_KEYS:
+            raise ValueError(f"at most {MAX_KEYS} community keys")
+        return value
+
+    @model_validator(mode="after")
+    def _no_null_flags(self):
+        for name in ("managed", "notify_on_spam"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
