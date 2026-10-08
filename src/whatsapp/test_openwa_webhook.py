@@ -392,3 +392,22 @@ def test_parse_message_group_detection_via_chat_id():
     assert isinstance(ev, InboundMessage)
     # Should use author (not from) because chatId is a group
     assert ev.sender_jid == "972501234567@s.whatsapp.net"
+
+
+def test_from_me_message_without_chat_id_uses_to_as_chat():
+    ev = parse_event(
+        _envelope(
+            "message.received",
+            {
+                "id": "m1",
+                "from": "972509999999@c.us",
+                "to": "972501234567@c.us",
+                "fromMe": True,
+                "body": "x",
+                "type": "chat",
+                "timestamp": 1790000000,
+            },
+        )
+    )
+    assert isinstance(ev, InboundMessage)
+    assert ev.chat_jid == "972501234567@s.whatsapp.net"

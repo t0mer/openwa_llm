@@ -108,7 +108,9 @@ def _parse_message(
     data: dict[str, Any], envelope_ts: datetime
 ) -> InboundMessage | None:
     sender = _sender(data)
-    chat = _str(data.get("chatId")) or _str(data.get("from"))
+    # For our own outgoing messages `from` is the bot itself; the chat is `to`.
+    fallback_chat = data.get("to") if data.get("fromMe") else data.get("from")
+    chat = _str(data.get("chatId")) or _str(fallback_chat)
     if not sender or not chat:
         logger.warning("Ignoring message without sender/chat: %s", data.get("id"))
         return None
