@@ -11,6 +11,7 @@ from whatsapp.jid import (
     DefaultUserServer,
     LegacyUserServer,
     GroupServer,
+    to_canonical_jid,
 )
 
 
@@ -73,7 +74,7 @@ class Settings(BaseSettings):
                 )
             if not jid.user:
                 raise ValueError(f"Invalid user JID '{jid_str}'. Missing user part.")
-        return v
+        return [to_canonical_jid(jid_str) for jid_str in v]
 
     @field_validator("qa_test_groups")
     @classmethod
