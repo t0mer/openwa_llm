@@ -130,3 +130,27 @@ async def test_list_groups_stops_when_server_ignores_offset(gateway, httpx_mock)
     httpx_mock.add_response(url=f"{SESSION}/groups?limit=2&offset=0", json=page)
     httpx_mock.add_response(url=f"{SESSION}/groups?limit=2&offset=2", json=page)
     assert [g.jid for g in await gateway.list_groups()] == ["1@g.us", "2@g.us"]
+
+
+EVENTS = ["message.received", "message.reaction"]
+
+
+async def test_ensure_webhook_creates_when_missing(gateway, httpx_mock):
+    httpx_mock.add_response(method="GET", url=f"{SESSION}/webhooks", json=[])
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{SESSION}/webhooks",
+        match_json={"url": "http://web/webhook", "events": EVENTS, "secret": "x" * 16},
+        json={"id": "w1"},
+        status_code=201,
+    )
+    assert await gateway.ensure_webhook("http://web/webhook", "x" * 16, EVENTS) is True
+
+
+async def test_ensure_webhook_noop_when_url_already_registered(gateway, httpx_mock):
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{SESSION}/webhooks",
+        json={"data": [{"id": "w1", "url": "http://web/webhook"}]},
+    )
+    assert await gateway.ensure_webhook("http://web/webhook", "x" * 16, EVENTS) is False

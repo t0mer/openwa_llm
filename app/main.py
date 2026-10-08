@@ -61,6 +61,28 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(sync_groups_on_startup())
 
+    async def register_webhook_on_startup() -> None:
+        if not settings.openwa_webhook_url:
+            return
+        try:
+            created = await app.state.whatsapp.ensure_webhook(
+                settings.openwa_webhook_url,
+                settings.openwa_webhook_secret,
+                [
+                    "message.received",
+                    "message.reaction",
+                    "group.join",
+                    "group.leave",
+                    "group.update",
+                    "group.join_request",
+                ],
+            )
+            logging.info("OpenWA webhook %s", "registered" if created else "present")
+        except Exception as e:  # best effort: never block startup
+            logging.warning("Could not register OpenWA webhook: %s", e)
+
+    asyncio.create_task(register_webhook_on_startup())
+
     app.state.db_engine = engine
     app.state.async_session = async_session
     app.state.embedding_client = AsyncClient(

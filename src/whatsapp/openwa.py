@@ -151,3 +151,17 @@ class OpenWAGateway:
                 break
             offset += len(items)
         return groups
+
+    async def ensure_webhook(self, url: str, secret: str, events: list[str]) -> bool:
+        """Register a webhook for `url` unless one exists. True if created."""
+        existing = _extract_list(
+            await self._request("GET", f"{self._session_path}/webhooks")
+        )
+        if any(isinstance(w, dict) and w.get("url") == url for w in existing):
+            return False
+        await self._request(
+            "POST",
+            f"{self._session_path}/webhooks",
+            json={"url": url, "events": events, "secret": secret},
+        )
+        return True
