@@ -2,7 +2,6 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
-import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 
