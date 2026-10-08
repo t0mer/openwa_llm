@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     logfire_token: str
 
+    # Admin UI (disabled unless both password and session secret are set)
+    admin_password: str | None = None
+    admin_session_secret: str | None = None  # >= 32 chars
+    admin_cookie_secure: bool = False
+
     @field_validator("qa_testers")
     @classmethod
     def validate_qa_testers(cls, v: list[str]) -> list[str]:
@@ -103,6 +108,18 @@ class Settings(BaseSettings):
         if len(v) < 16:
             raise ValueError("openwa_webhook_secret must be at least 16 characters")
         return v
+
+    @field_validator("admin_session_secret")
+    @classmethod
+    def validate_admin_session_secret(cls, v: str | None) -> str | None:
+        if v and len(v) < 32:
+            raise ValueError("admin_session_secret must be at least 32 characters")
+        return v or None
+
+    @field_validator("admin_password")
+    @classmethod
+    def blank_admin_password_is_unset(cls, v: str | None) -> str | None:
+        return v or None
 
     model_config = SettingsConfigDict(
         env_file=".env",
