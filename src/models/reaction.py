@@ -5,6 +5,7 @@ from pydantic import field_validator
 from sqlmodel import Field, Relationship, SQLModel, Column, DateTime
 
 from whatsapp.jid import normalize_jid
+from whatsapp.types import InboundReaction
 from gowa_sdk.webhooks import WebhookEnvelope, WebhookMessagePayload
 
 if TYPE_CHECKING:
@@ -72,6 +73,16 @@ class Reaction(BaseReaction, table=True):
             sender_jid=normalize_jid(data.from_),
             emoji=data.reaction,
             timestamp=data.timestamp or payload.timestamp or datetime.now(timezone.utc),
+        )
+
+    @classmethod
+    def from_inbound(cls, r: InboundReaction) -> "Reaction":
+        """Create a Reaction from a gateway-neutral inbound reaction."""
+        return cls(
+            message_id=r.message_id,
+            sender_jid=normalize_jid(r.sender_jid),
+            emoji=r.emoji,
+            timestamp=r.timestamp,
         )
 
     @classmethod

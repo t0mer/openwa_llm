@@ -6,6 +6,7 @@ from sqlmodel import Field, Relationship, SQLModel, Column, DateTime
 
 
 from whatsapp.jid import normalize_jid, parse_jid, JID
+from whatsapp.types import InboundMessage
 from gowa_sdk.webhooks import WebhookEnvelope, WebhookMessagePayload
 from .kb_topic_message import KBTopicMessage
 
@@ -118,6 +119,21 @@ class Message(BaseMessage, table=True):
                 or datetime.now(timezone.utc),
                 reply_to_id=data.replied_to_id,
                 media_url=cls._extract_media_url(data),
+            ).model_dump()
+        )
+
+    @classmethod
+    def from_inbound(cls, m: InboundMessage) -> "Message":
+        """Create a Message from a gateway-neutral inbound message."""
+        return cls(
+            **BaseMessage(
+                message_id=m.id,
+                text=m.text,
+                chat_jid=m.chat_jid,
+                sender_jid=normalize_jid(m.sender_jid),
+                timestamp=m.timestamp,
+                reply_to_id=m.reply_to_id,
+                media_url=m.media_url,
             ).model_dump()
         )
 

@@ -4,6 +4,7 @@ import pytest
 
 from gowa_sdk.webhooks import WebhookEnvelope
 from models import Message
+from whatsapp.types import InboundMessage
 
 
 @pytest.mark.asyncio
@@ -70,3 +71,35 @@ async def test_message_with_image(mock_session):
 
     message = Message.from_webhook(payload)
     assert message.text == "[[Attached Image]] This is an image"
+
+
+def test_from_inbound_group_message():
+    m = Message.from_inbound(
+        InboundMessage(
+            id="m1",
+            chat_jid="123456789-123456@g.us",
+            sender_jid="1234567890@s.whatsapp.net",
+            timestamp=datetime(2026, 10, 8, tzinfo=timezone.utc),
+            text="hi",
+            reply_to_id="m0",
+        )
+    )
+    assert m.message_id == "m1"
+    assert m.group_jid == "123456789-123456@g.us"
+    assert m.sender_jid == "1234567890@s.whatsapp.net"
+    assert m.reply_to_id == "m0"
+    assert m.text == "hi"
+
+
+def test_from_inbound_normalizes_device_suffix_in_sender():
+    m = Message.from_inbound(
+        InboundMessage(
+            id="m1",
+            chat_jid="1234567890@s.whatsapp.net",
+            sender_jid="1234567890:33@s.whatsapp.net",
+            timestamp=datetime(2026, 10, 8, tzinfo=timezone.utc),
+            text="hi",
+        )
+    )
+    assert m.sender_jid == "1234567890@s.whatsapp.net"
+    assert m.group_jid is None
