@@ -94,3 +94,10 @@ def test_delete_opt_out_rejects_garbage(ctx, bad):
     client, session = ctx
     assert client.delete(f"/opt-outs/{bad}").status_code == 422
     session.delete.assert_not_called()
+
+
+def test_delete_opt_out_url_encoded_at(ctx):
+    client, session = ctx
+    session.get.return_value = None
+    assert client.delete("/opt-outs/972501234567%40c.us").status_code == 204
+    assert session.get.await_args.args[1] == "972501234567@s.whatsapp.net"

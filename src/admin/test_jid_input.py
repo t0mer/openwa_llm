@@ -34,6 +34,18 @@ def test_valid_inputs(raw, expected):
         "+",
         "x" * 300,
         "972501234567@broadcast",
+        "٣٤٥",
+        "٣٤٥@c.us",
+        "abc@c.us",
+        "97 2@c.us",
+        "1:2:3@c.us",
+        "0@c.us",
+        "972\x00@c.us",
+        "9" * 21,
+        "9" * 255,
+        "1234",
+        "٣٤٥٣٤٥٣٤٥",
+        "９７２５０１２３４５６７",
     ],
 )
 def test_invalid_inputs(raw):
