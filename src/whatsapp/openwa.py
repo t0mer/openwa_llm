@@ -91,7 +91,15 @@ class OpenWAGateway:
             raise GatewayError(
                 f"OpenWA {method} {path} -> {resp.status_code}: {resp.text[:200]}"
             )
-        return resp.json() if resp.content else None
+        if not resp.content:
+            return None
+        try:
+            return resp.json()
+        except ValueError as e:
+            raise GatewayError(
+                f"OpenWA {method} {path} returned a non-JSON response: "
+                f"{resp.text[:200]!r}"
+            ) from e
 
     async def send_text(self, jid: str, text: str, reply_to: str | None = None) -> str:
         body: dict[str, Any] = {"chatId": to_openwa_chat_id(jid), "text": text}

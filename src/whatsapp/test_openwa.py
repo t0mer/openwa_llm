@@ -154,3 +154,15 @@ async def test_ensure_webhook_noop_when_url_already_registered(gateway, httpx_mo
         json={"data": [{"id": "w1", "url": "http://web/webhook"}]},
     )
     assert await gateway.ensure_webhook("http://web/webhook", "x" * 16, EVENTS) is False
+
+
+async def test_non_json_success_response_is_gateway_error(gateway, httpx_mock):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{SESSION}/messages/send-text",
+        content=b"<html>" + b"x" * 5000 + b"</html>",
+        status_code=200,
+    )
+    with pytest.raises(GatewayError, match="non-JSON") as exc:
+        await gateway.send_text("120363@g.us", "yo")
+    assert len(str(exc.value)) < 500
