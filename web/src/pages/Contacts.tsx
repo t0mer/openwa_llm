@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { useLoad } from "../useLoad";
 
@@ -24,6 +24,18 @@ export default function Contacts() {
       }),
     [query, filter, offset],
   );
+
+  useEffect(() => {
+    setEditJid(null);
+    setActionError(null);
+  }, [query, filter, offset]);
+
+  const total = data?.total ?? 0;
+  useEffect(() => {
+    if (data && offset > 0 && offset >= total) {
+      setOffset(total > 0 ? Math.floor((total - 1) / PAGE) * PAGE : 0);
+    }
+  }, [data, offset, total]);
 
   function onSearch(e: FormEvent) {
     e.preventDefault();
@@ -55,8 +67,6 @@ export default function Contacts() {
     }
     await reload();
   }
-
-  const total = data?.total ?? 0;
 
   return (
     <section>
@@ -99,7 +109,7 @@ export default function Contacts() {
                       <button type="button" disabled={saving} onClick={cancelEdit}>Cancel</button>
                     </>
                   ) : (
-                    <button type="button" aria-label={`Edit ${c.jid}`} onClick={() => startEdit(c.jid, c.push_name)}>Edit</button>
+                    <button type="button" aria-label={`Edit ${c.jid}`} disabled={saving} onClick={() => startEdit(c.jid, c.push_name)}>Edit</button>
                   )}
                 </td>
               </tr>

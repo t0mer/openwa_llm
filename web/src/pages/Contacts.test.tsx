@@ -102,4 +102,47 @@ describe("Contacts page", () => {
     await userEvent.selectOptions(screen.getByLabelText("Filter"), "not");
     await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ opted_out: false, offset: 0 })));
   });
+
+  it("disables other rows' Edit buttons while a save is in flight", async () => {
+    let resolve!: (v: never) => void;
+    vi.mocked(api.patchContact).mockReturnValueOnce(new Promise((r) => { resolve = r as never; }));
+    render(<Contacts />);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit 2@s.whatsapp.net" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("button", { name: "Edit 1@s.whatsapp.net" })).toBeDisabled();
+    resolve(undefined as never);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit 1@s.whatsapp.net" })).toBeEnabled());
+  });
+
+  it("closes the editor when the filter changes", async () => {
+    render(<Contacts />);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit 2@s.whatsapp.net" }));
+    expect(screen.getByLabelText("Name for 2@s.whatsapp.net")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Filter"), "opted");
+    await waitFor(() => expect(screen.queryByLabelText("Name for 2@s.whatsapp.net")).not.toBeInTheDocument());
+  });
+
+  it("moves to the last valid page when a refresh shrinks the total", async () => {
+    const item = { jid: "1@s.whatsapp.net", push_name: "Dana", opted_out: false };
+    vi.mocked(api.listContacts).mockImplementation(async (p) => ({ items: [item], total: (p.offset ?? 0) >= 100 ? 60 : 120 }));
+    render(<Contacts />);
+    await screen.findByText("Dana");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(api.listContacts).toHaveBeenCalledWith(expect.objectContaining({ offset: 100 })));
+    await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 })));
+  });
+
+  it("resets the offset to 0 when a search is submitted from a later page", async () => {
+    vi.mocked(api.listContacts).mockResolvedValue({
+      items: [{ jid: "1@s.whatsapp.net", push_name: "Dana", opted_out: false }],
+      total: 120,
+    });
+    render(<Contacts />);
+    await screen.findByText("Dana");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 })));
+    await userEvent.type(screen.getByLabelText("Search contacts"), "dan{Enter}");
+    await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ search: "dan", offset: 0 })));
+  });
 });
