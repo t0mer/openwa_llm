@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -45,18 +47,17 @@ async def add_opt_out(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
 ) -> OptOutOut:
     jid = _normalize_or_422(body.jid)
-    existing = await session.get(OptOut, jid)
-    if existing is not None:
+    inserted = await session.execute(
+        pg_insert(OptOut)
+        .values(jid=jid, created_at=datetime.now(timezone.utc))
+        .on_conflict_do_nothing(index_elements=["jid"])
+        .returning(col(OptOut.jid))
+    )
+    if inserted.first() is None:  # row already existed (possibly a concurrent add)
         response.status_code = 200
-        sender = await session.get(Sender, jid)
-        return OptOutOut(
-            jid=existing.jid,
-            push_name=sender.push_name if sender else None,
-            created_at=existing.created_at,
-        )
-    entry = OptOut(jid=jid)
-    session.add(entry)
-    await session.flush()
+    entry = await session.get(OptOut, jid, populate_existing=True)
+    if entry is None:  # pragma: no cover - deleted between insert and select
+        raise HTTPException(status_code=409, detail="opt-out changed, retry")
     sender = await session.get(Sender, jid)
     return OptOutOut(
         jid=entry.jid,
@@ -70,6 +71,12 @@ async def remove_opt_out(
     jid: str,
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
 ) -> None:
+    if "\x00" not in jid:
+        # Rows written by the bot may not match our stricter parsing: try exact first.
+        exact = await session.get(OptOut, jid)
+        if exact is not None:
+            await session.delete(exact)
+            return
     normalized = _normalize_or_422(jid)
     existing = await session.get(OptOut, normalized)
     if existing is not None:

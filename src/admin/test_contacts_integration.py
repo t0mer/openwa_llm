@@ -1,3 +1,5 @@
+import asyncio
+
 from models import OptOut, Sender
 
 
@@ -58,3 +60,33 @@ async def test_huge_offset_is_422_not_500(admin_client):
     for path in ("groups", "contacts"):
         resp = await admin_client.get(f"/api/v1/admin/{path}?offset={huge}")
         assert resp.status_code == 422
+
+
+async def test_opt_out_delete_removes_bot_written_jids(admin_client, db_sessionmaker):
+    stored = ["123456789012345:7@lid", "1234@s.whatsapp.net"]
+    async with db_sessionmaker() as session:
+        for jid in stored:
+            session.add(OptOut(jid=jid))
+        await session.commit()
+    for jid in stored:
+        resp = await admin_client.delete(f"/api/v1/admin/opt-outs/{jid}")
+        assert resp.status_code == 204
+    assert (await admin_client.get("/api/v1/admin/opt-outs")).json() == []
+    # garbage is still rejected, an unknown normalizable JID is idempotent
+    assert (
+        await admin_client.delete("/api/v1/admin/opt-outs/garbage")
+    ).status_code == 422
+    assert (
+        await admin_client.delete("/api/v1/admin/opt-outs/972509999999@s.whatsapp.net")
+    ).status_code == 204
+
+
+async def test_concurrent_opt_out_adds_create_exactly_one_row(admin_client):
+    body = {"jid": "+972 50-123-4567"}
+    responses = await asyncio.gather(
+        *(admin_client.post("/api/v1/admin/opt-outs", json=body) for _ in range(2))
+    )
+    codes = sorted(r.status_code for r in responses)
+    assert codes == [200, 201]
+    listed = (await admin_client.get("/api/v1/admin/opt-outs")).json()
+    assert [o["jid"] for o in listed] == ["972501234567@s.whatsapp.net"]

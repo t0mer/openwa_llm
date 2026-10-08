@@ -22,28 +22,40 @@ def ctx():
     return TestClient(app), session
 
 
+def _inserted(first):
+    res = MagicMock()
+    res.first.return_value = first
+    return res
+
+
+def _inserted_jid(session):
+    (stmt,), _ = session.execute.call_args
+    return stmt.compile().params["jid"]
+
+
 def test_add_opt_out_normalizes_and_is_idempotent(ctx):
     client, session = ctx
-    session.get.return_value = None
+    row = OptOut(jid="972501234567@s.whatsapp.net")
+    session.execute.return_value = _inserted(("972501234567@s.whatsapp.net",))
+    session.get.side_effect = lambda model, _key, **kw: row if model is OptOut else None
     resp = client.post("/opt-outs", json={"jid": "+972 50-123-4567"})
     assert resp.status_code == 201
     assert resp.json()["jid"] == "972501234567@s.whatsapp.net"
-    (added,), _ = session.add.call_args
-    assert isinstance(added, OptOut) and added.jid == "972501234567@s.whatsapp.net"
+    assert _inserted_jid(session) == "972501234567@s.whatsapp.net"
 
-    session.add.reset_mock()
-    existing = OptOut(jid="972501234567@s.whatsapp.net")
-    session.get.side_effect = lambda model, _key: existing if model is OptOut else None
+    session.execute.reset_mock()
+    session.execute.return_value = _inserted(None)  # conflict: already present
     again = client.post("/opt-outs", json={"jid": "972501234567@c.us"})
     assert again.status_code == 200
-    session.add.assert_not_called()
+    assert again.json()["jid"] == "972501234567@s.whatsapp.net"
+    assert _inserted_jid(session) == "972501234567@s.whatsapp.net"
 
 
 @pytest.mark.parametrize("bad", ["", "abc", "1203@g.us", "@c.us"])
 def test_add_opt_out_rejects_bad_input(ctx, bad):
     client, session = ctx
     assert client.post("/opt-outs", json={"jid": bad}).status_code == 422
-    session.add.assert_not_called()
+    session.execute.assert_not_called()
 
 
 def test_delete_opt_out_is_idempotent(ctx):
@@ -62,7 +74,17 @@ def test_delete_opt_out_normalizes_c_us(ctx):
     client, session = ctx
     session.get.return_value = None
     client.delete("/opt-outs/972501234567@c.us")
+    assert session.get.await_args_list[0].args[1] == "972501234567@c.us"
     assert session.get.await_args.args[1] == "972501234567@s.whatsapp.net"
+
+
+@pytest.mark.parametrize("stored", ["123456789012345:7@lid", "1234@s.whatsapp.net"])
+def test_delete_opt_out_exact_match_of_bot_written_jid(ctx, stored):
+    client, session = ctx
+    existing = OptOut(jid=stored)
+    session.get.side_effect = lambda _m, key: existing if key == stored else None
+    assert client.delete(f"/opt-outs/{stored}").status_code == 204
+    session.delete.assert_awaited_once_with(existing)
 
 
 def test_list_opt_outs(ctx):
@@ -86,12 +108,13 @@ def test_list_opt_outs(ctx):
 def test_add_opt_out_rejects_nul_and_non_ascii_digits(ctx, bad):
     client, session = ctx
     assert client.post("/opt-outs", json={"jid": bad}).status_code == 422
-    session.add.assert_not_called()
+    session.execute.assert_not_called()
 
 
 @pytest.mark.parametrize("bad", ["972%00@c.us", "garbage", "%D9%A3%D9%A4%D9%A5"])
 def test_delete_opt_out_rejects_garbage(ctx, bad):
     client, session = ctx
+    session.get.return_value = None
     assert client.delete(f"/opt-outs/{bad}").status_code == 422
     session.delete.assert_not_called()
 
