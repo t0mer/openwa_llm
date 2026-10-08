@@ -31,14 +31,24 @@ def verify_signature(secret: str, body: bytes, header: str | None) -> bool:
     if not secret or not header or not header.startswith("sha256="):
         return False
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, header[len("sha256=") :])
+    try:
+        sig_bytes = header[len("sha256=") :].encode("ascii")
+        expected_bytes = expected.encode("ascii")
+        return hmac.compare_digest(expected_bytes, sig_bytes)
+    except (UnicodeEncodeError, TypeError):
+        return False
 
 
 def _parse_ts(value: Any, fallback: datetime) -> datetime:
     if isinstance(value, bool):
         return fallback
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=timezone.utc)
+        # Handle millisecond epochs (> 1e11)
+        ts = value / 1000 if value > 1e11 else value
+        try:
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return fallback
     if isinstance(value, str) and value:
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -65,6 +75,11 @@ def _message_text(data: dict[str, Any]) -> str | None:
 
 def _sender(data: dict[str, Any]) -> str | None:
     is_group = bool(data.get("isGroup"))
+    # If isGroup is not set, check if chatId ends with @g.us
+    if not is_group:
+        chat_id = _str(data.get("chatId"))
+        if chat_id and chat_id.endswith("@g.us"):
+            is_group = True
     raw = _str(data.get("author")) if is_group else None
     raw = raw or _str(data.get("from"))
     if raw and raw.endswith(f"@{HiddenUserServer}"):
@@ -88,7 +103,9 @@ def _parse_message(
     quoted = (
         data.get("quotedMessage") if isinstance(data.get("quotedMessage"), dict) else {}
     )
-    mentions = data.get("mentionedIds")
+    mentions = (
+        data.get("mentionedIds") if isinstance(data.get("mentionedIds"), list) else None
+    )
     return InboundMessage(
         id=_str(data.get("id")) or f"na-{timestamp.timestamp()}",
         chat_jid=to_canonical_jid(chat),

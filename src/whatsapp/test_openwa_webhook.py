@@ -240,3 +240,114 @@ def test_parse_other_events_and_garbage_return_none():
     assert parse_event(_envelope("session.status", {})) is None
     assert parse_event({"event": 5}) is None
     assert parse_event({"event": "message.received", "data": "nope"}) is None
+
+
+def test_verify_signature_non_ascii_header_fails_safely():
+    """Non-ASCII header must not raise, must return False."""
+    body = b'{"a":1}'
+    # Header with non-ASCII character
+    assert verify_signature(SECRET, body, "sha256=é") is False
+
+
+def test_parse_message_millisecond_epoch():
+    """Millisecond epoch (> 1e11) should be divided by 1000 and parsed correctly."""
+    ms_epoch = 1790000000000  # milliseconds
+    sec_epoch = 1790000000  # seconds
+    expected_dt = datetime.fromtimestamp(sec_epoch, tz=timezone.utc)
+
+    msg_ms = parse_event(
+        _envelope(
+            "message.received",
+            {
+                "id": "m1",
+                "from": "9725@c.us",
+                "chatId": "9725@c.us",
+                "body": "x",
+                "type": "chat",
+                "timestamp": ms_epoch,
+            },
+        )
+    )
+    msg_sec = parse_event(
+        _envelope(
+            "message.received",
+            {
+                "id": "m1",
+                "from": "9725@c.us",
+                "chatId": "9725@c.us",
+                "body": "x",
+                "type": "chat",
+                "timestamp": sec_epoch,
+            },
+        )
+    )
+    assert isinstance(msg_ms, InboundMessage)
+    assert isinstance(msg_sec, InboundMessage)
+    assert msg_ms.timestamp == expected_dt
+    assert msg_sec.timestamp == expected_dt
+
+
+def test_parse_message_out_of_range_timestamp_falls_back():
+    """Out-of-range numeric timestamp (inf, nan, huge) should fall back to envelope timestamp."""
+    envelope_ts = datetime(2026, 10, 8, 10, 0, tzinfo=timezone.utc)
+
+    for bad_ts in [float("inf"), float("nan"), 9e20, -9e20]:
+        msg = parse_event(
+            {
+                "event": "message.received",
+                "timestamp": "2026-10-08T10:00:00.000Z",
+                "sessionId": "s1",
+                "data": {
+                    "id": "m1",
+                    "from": "9725@c.us",
+                    "chatId": "9725@c.us",
+                    "body": "x",
+                    "type": "chat",
+                    "timestamp": bad_ts,
+                },
+            }
+        )
+        assert isinstance(msg, InboundMessage)
+        assert msg.timestamp == envelope_ts
+
+
+def test_parse_message_mentioned_ids_not_a_list():
+    """mentionedIds that is not a list should be safely ignored."""
+    ev = parse_event(
+        _envelope(
+            "message.received",
+            {
+                "id": "m1",
+                "from": "9725@c.us",
+                "chatId": "9725@c.us",
+                "body": "hello",
+                "type": "chat",
+                "timestamp": 1790000000,
+                "mentionedIds": "not_a_list",
+            },
+        )
+    )
+    assert isinstance(ev, InboundMessage)
+    assert ev.mentioned_jids == ()
+
+
+def test_parse_message_group_detection_via_chat_id():
+    """If isGroup is absent but chatId ends with @g.us, still treat as group (use author)."""
+    ev = parse_event(
+        _envelope(
+            "message.received",
+            {
+                "id": "m1",
+                "from": "1203@g.us",
+                "chatId": "1203@g.us",
+                "author": "972501234567@c.us",
+                "body": "hello",
+                "type": "chat",
+                "timestamp": 1790000000,
+                # Note: isGroup is absent, but chatId ends with @g.us
+            },
+        )
+    )
+    assert isinstance(ev, InboundMessage)
+    # Should use author (not from) because chatId is a group
+    assert ev.sender_jid == "972501234567@s.whatsapp.net"
