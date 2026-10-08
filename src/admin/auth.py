@@ -25,6 +25,19 @@ def admin_enabled(settings: Settings) -> bool:
     return bool(settings.admin_password and settings.admin_session_secret)
 
 
+def admin_config_warning(settings: Settings) -> str | None:
+    """Warning text when only one of the two admin settings is set, else None."""
+    has_password = bool(settings.admin_password)
+    has_secret = bool(settings.admin_session_secret)
+    if has_password == has_secret:
+        return None
+    missing = "ADMIN_SESSION_SECRET" if has_password else "ADMIN_PASSWORD"
+    return (
+        f"Admin UI is disabled: {missing} is not set. "
+        "Set both ADMIN_PASSWORD and ADMIN_SESSION_SECRET to enable it."
+    )
+
+
 def _sign(secret: str, payload: str) -> str:
     return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
 

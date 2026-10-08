@@ -230,3 +230,19 @@ def test_protected_routes_need_valid_session_then_csrf(make_client):
 def test_protected_routes_404_when_disabled(make_client):
     client = make_client(make_settings(admin_password=None))
     assert client.get("/api/v1/admin/_probe").status_code == 404
+
+
+def _cfg(password, secret):
+    return SimpleNamespace(admin_password=password, admin_session_secret=secret)
+
+
+def test_admin_config_warning():
+    from admin.auth import admin_config_warning
+
+    assert admin_config_warning(_cfg("pw", "s" * 32)) is None
+    assert admin_config_warning(_cfg(None, None)) is None
+    only_pw = admin_config_warning(_cfg("hunter2-pw", None))
+    assert only_pw and "ADMIN_SESSION_SECRET" in only_pw and "hunter2-pw" not in only_pw
+    only_secret = admin_config_warning(_cfg(None, "x" * 32))
+    assert only_secret and "ADMIN_PASSWORD" in only_secret
+    assert "x" * 32 not in only_secret
