@@ -66,6 +66,12 @@ class GroupOut(BaseModel):
         )
 
 
+def _no_nul(value):
+    if isinstance(value, str) and "\x00" in value:
+        raise ValueError("NUL characters are not allowed")
+    return value
+
+
 class GroupPatch(BaseModel):
     managed: bool | None = None
     notify_on_spam: bool | None = None
@@ -80,9 +86,15 @@ class GroupPatch(BaseModel):
         if not isinstance(value, list):
             raise ValueError("community_keys must be a list")
         for key in value:
+            _no_nul(key)
             if not isinstance(key, str) or len(key.strip()) > MAX_KEY_LEN:
                 raise ValueError(f"each key must be a string of <= {MAX_KEY_LEN} chars")
         return clean_keys(value) or []
+
+    @field_validator("display_name")
+    @classmethod
+    def _display_name_no_nul(cls, value):
+        return _no_nul(value)
 
     @field_validator("community_keys")
     @classmethod
@@ -107,6 +119,11 @@ class ContactOut(BaseModel):
 
 class ContactPatch(BaseModel):
     push_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("push_name")
+    @classmethod
+    def _push_name_no_nul(cls, value):
+        return _no_nul(value)
 
 
 class OptOutOut(BaseModel):

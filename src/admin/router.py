@@ -2,11 +2,14 @@ from fastapi import APIRouter, Depends
 
 from . import auth_routes, contacts, groups, messages, optouts
 from .auth import require_admin
+from .guards import reject_nul_chars
 
 
 def build_admin_router() -> APIRouter:
     """Build the /api/v1/admin router. Later tasks add their routers where marked."""
-    protected = APIRouter(dependencies=[Depends(require_admin)])
+    protected = APIRouter(
+        dependencies=[Depends(require_admin), Depends(reject_nul_chars)]
+    )
     protected.include_router(groups.router, prefix="/groups")
     protected.include_router(contacts.router, prefix="/contacts")
     protected.include_router(optouts.router, prefix="/opt-outs")
