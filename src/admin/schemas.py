@@ -97,3 +97,23 @@ class GroupPatch(BaseModel):
             if name in self.model_fields_set and getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
         return self
+
+
+class ContactOut(BaseModel):
+    jid: str
+    push_name: str | None
+    opted_out: bool
+
+
+class ContactPatch(BaseModel):
+    push_name: str | None = Field(default=None, max_length=255)
+
+
+class OptOutOut(BaseModel):
+    jid: str
+    push_name: str | None
+    created_at: datetime
+
+
+class OptOutCreate(BaseModel):
+    jid: str = Field(max_length=300)
