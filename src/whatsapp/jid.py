@@ -122,3 +122,19 @@ BroadcastServerJID = new_jid("", BroadcastServer)
 StatusBroadcastJID = new_jid("status", BroadcastServer)
 PSAJID = new_jid("0", LegacyUserServer)
 OfficialBusinessJID = new_jid("16505361212", LegacyUserServer)
+
+
+def to_canonical_jid(jid: str) -> str:
+    """Map OpenWA's legacy `@c.us` user JIDs to the `@s.whatsapp.net` form the DB uses."""
+    user, sep, server = jid.partition("@")
+    if sep and server == LegacyUserServer:
+        return f"{user}@{DefaultUserServer}"
+    return jid
+
+
+def to_openwa_chat_id(jid: str) -> str:
+    """Map a DB user JID (`@s.whatsapp.net`) to OpenWA's `@c.us` chat id."""
+    user, sep, server = jid.partition("@")
+    if sep and server == DefaultUserServer:
+        return f"{user}@{LegacyUserServer}"
+    return jid
