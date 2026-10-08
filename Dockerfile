@@ -1,3 +1,11 @@
+FROM node:20-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+# vite.config.ts writes to ../src/admin/static/dist  ->  /src/admin/static/dist
+RUN npm run build
+
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
@@ -15,6 +23,7 @@ RUN --mount=type=secret,id=netrc,target=/root/.netrc,mode=0600 \
     uv sync --frozen --no-dev --no-install-project
 
 COPY . /app
+COPY --from=web /src/admin/static/dist /app/src/admin/static/dist
 
 FROM python:3.13-slim-bookworm
 

@@ -8,6 +8,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 import logging
 import logfire
 
+from admin import admin_router, spa_router
+from admin.auth import admin_config_warning
+from admin.actions import runner as admin_actions
 from api import load_new_kbtopics_api, status, summarize_and_send_to_group_api, webhook
 import models  # noqa
 from config import get_settings
@@ -37,6 +40,9 @@ async def lifespan(app: FastAPI):
     )
 
     app.state.settings = settings
+
+    if (admin_warning := admin_config_warning(settings)) is not None:
+        logging.getLogger(__name__).warning(admin_warning)
 
     app.state.whatsapp = OpenWAGateway(
         settings.whatsapp_host,
@@ -90,6 +96,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await admin_actions.shutdown()
         for task in app.state.bg_tasks:
             task.cancel()
         await asyncio.gather(*app.state.bg_tasks, return_exceptions=True)
@@ -111,6 +118,8 @@ app.include_router(webhook.router)
 app.include_router(status.router)
 app.include_router(summarize_and_send_to_group_api.router)
 app.include_router(load_new_kbtopics_api.router)
+app.include_router(admin_router)
+app.include_router(spa_router)
 
 if __name__ == "__main__":
     import uvicorn

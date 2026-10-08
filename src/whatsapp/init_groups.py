@@ -1,23 +1,22 @@
-from datetime import datetime
-
+from sqlalchemy import inspect
+from sqlalchemy.dialects.postgresql import insert
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from models import Group, BaseGroup, Sender, BaseSender, upsert
 from .gateway import WhatsAppGateway
+
+# Columns the WhatsApp gateway owns. Everything else on `group` (settings,
+# display_name, bot timestamps) belongs to the admin / bot and is never
+# overwritten by the sync.
+SYNC_OWNED_COLUMNS = ("group_name", "group_topic", "owner_jid")
 
 
 async def gather_groups(session: AsyncSession, client: WhatsAppGateway) -> None:
     for g in await client.list_groups():
         owner_usr = g.owner_jid or None
         if owner_usr and (await session.get(Sender, owner_usr)) is None:
-            owner = Sender(
-                **BaseSender(
-                    jid=owner_usr,
-                ).model_dump()
-            )
+            owner = Sender(**BaseSender(jid=owner_usr).model_dump())
             await upsert(session, owner)
-
-        existing_group = await session.get(Group, g.jid)
 
         group = Group(
             **BaseGroup(
@@ -25,22 +24,13 @@ async def gather_groups(session: AsyncSession, client: WhatsAppGateway) -> None:
                 group_name=g.name,
                 group_topic=g.topic,
                 owner_jid=owner_usr,
-                managed=existing_group.managed if existing_group else False,
-                community_keys=existing_group.community_keys
-                if existing_group
-                else None,
-                last_ingest=existing_group.last_ingest
-                if existing_group
-                else datetime.now(),
-                last_summary_sync=existing_group.last_summary_sync
-                if existing_group
-                else datetime.now(),
-                notify_on_spam=existing_group.notify_on_spam
-                if existing_group
-                else False,
-                created_at=existing_group.created_at
-                if existing_group
-                else datetime.now(),
             ).model_dump()
         )
-        await upsert(session, group)
+        stmt = insert(Group).values(
+            **{c.name: getattr(group, c.name) for c in inspect(Group).columns}
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["group_jid"],
+            set_={col: stmt.excluded[col] for col in SYNC_OWNED_COLUMNS},
+        )
+        await session.execute(stmt)
