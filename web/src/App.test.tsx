@@ -1,6 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { api } from "./api";
 import App from "./App";
 
 function stubSession(status: number, body: unknown = {}) {
@@ -29,5 +31,29 @@ describe("App auth routing", () => {
     stubSession(200, { authenticated: true });
     render(<MemoryRouter initialEntries={["/groups"]}><App /></MemoryRouter>);
     await waitFor(() => expect(screen.getByRole("link", { name: "Contacts" })).toBeInTheDocument());
+  });
+
+  it("logs in and lands on the groups page", async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/auth/login")
+        ? new Response(null, { status: 204 })
+        : new Response(JSON.stringify({ authenticated: false }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MemoryRouter initialEntries={["/login"]}><App /></MemoryRouter>);
+    await userEvent.type(await screen.findByLabelText(/password/i), "pw");
+    await userEvent.click(screen.getByRole("button", { name: /log in/i }));
+    expect(await screen.findByRole("heading", { name: "Groups" })).toBeInTheDocument();
+  });
+
+  it("returns to the login page when an API call gets a 401", async () => {
+    stubSession(200, { authenticated: true });
+    render(<MemoryRouter initialEntries={["/groups"]}><App /></MemoryRouter>);
+    await screen.findByRole("link", { name: "Contacts" });
+    stubSession(401, { detail: "not authenticated" });
+    await act(async () => {
+      await api.listOptOuts().catch(() => undefined);
+    });
+    expect(await screen.findByRole("heading", { name: /admin login/i })).toBeInTheDocument();
   });
 });

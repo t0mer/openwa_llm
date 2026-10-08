@@ -33,7 +33,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <span className="spacer" />
-        <button type="button" onClick={cycleTheme} aria-label="Toggle theme">
+        <button type="button" onClick={cycleTheme}>
           Theme: {theme}
         </button>
         <button type="button" onClick={() => void logout()}>

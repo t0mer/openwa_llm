@@ -36,7 +36,7 @@ export default function Login() {
       <h1>Admin login</h1>
       <label>
         Password
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus required />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus required autoComplete="current-password" />
       </label>
       <button type="submit" disabled={busy}>Log in</button>
       {error && <p role="alert" className="error">{error}</p>}

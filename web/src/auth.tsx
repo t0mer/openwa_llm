@@ -31,6 +31,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await api.logout();
+    } catch {
+      /* session is dropped locally regardless */
     } finally {
       setStatus("anonymous");
     }

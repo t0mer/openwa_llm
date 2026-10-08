@@ -58,4 +58,32 @@ describe("api client", () => {
     await api.runAction("load_kb");
     expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/admin/actions/load-kb");
   });
+
+  it("sends the CSRF header on GET, login and logout", async () => {
+    const f = mockFetch(200, { authenticated: true });
+    await api.session();
+    await api.login("pw");
+    await api.logout();
+    for (const [, init] of f.mock.calls) expect(init.headers["X-Requested-With"]).toBe("admin-ui");
+    expect(f.mock.calls).toHaveLength(3);
+  });
+
+  it("uses a string detail as the error message", async () => {
+    mockFetch(403, { detail: "forbidden thing" });
+    await expect(api.listOptOuts()).rejects.toThrow("forbidden thing");
+  });
+
+  it("stringifies array detail items without msg", async () => {
+    mockFetch(422, { detail: [{ loc: ["x"] }] });
+    await expect(api.addOptOut("x")).rejects.toThrow('{"loc":["x"]}');
+  });
+
+  it("falls back to statusText or HTTP status for non-JSON error bodies", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () =>
+      new Response("<html>", { status: 502, statusText: "Bad Gateway" })));
+    await expect(api.listOptOuts()).rejects.toThrow("Bad Gateway");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () =>
+      new Response("<html>", { status: 502 })));
+    await expect(api.listOptOuts()).rejects.toThrow("HTTP 502");
+  });
 });

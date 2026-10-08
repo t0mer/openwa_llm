@@ -32,7 +32,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     try {
       const data = await res.json();
       if (typeof data?.detail === "string") message = data.detail;
-      else if (Array.isArray(data?.detail)) message = data.detail.map((d: { msg: string }) => d.msg).join("; ");
+      else if (Array.isArray(data?.detail)) message = data.detail.map((d: { msg?: string }) => d?.msg ?? JSON.stringify(d)).join("; ");
     } catch {
       /* non-JSON error body */
     }

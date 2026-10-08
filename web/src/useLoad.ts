@@ -7,27 +7,33 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[], intervalMs =
   const [loading, setLoading] = useState(true);
   const loadRef = useRef(load);
   loadRef.current = load;
+  const seq = useRef(0);
 
   const reload = useCallback(async () => {
+    const id = ++seq.current;
     try {
-      setData(await loadRef.current());
+      const result = await loadRef.current();
+      if (id !== seq.current) return;
+      setData(result);
       setError(null);
     } catch (e) {
+      if (id !== seq.current) return;
       if (!(e instanceof ApiError && e.status === 401)) {
         setError(e instanceof Error ? e.message : String(e));
       }
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const depsKey = JSON.stringify(deps);
   useEffect(() => {
     setLoading(true);
     void reload();
     const id = setInterval(() => void reload(), intervalMs);
-    return () => clearInterval(id);
+    return () => {
+      seq.current++;
+      clearInterval(id);
+    };
   }, [reload, intervalMs, depsKey]);
 
   return { data, error, loading, reload };
