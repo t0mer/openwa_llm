@@ -4,7 +4,7 @@ from fastapi import Depends, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from handler import MessageHandler
-from whatsapp import WhatsAppClient
+from whatsapp import WhatsAppGateway
 from voyageai.client_async import AsyncClient
 from config import Settings, get_settings
 
@@ -20,7 +20,7 @@ async def get_db_async_session(request: Request) -> AsyncGenerator[AsyncSession,
             raise
 
 
-def get_whatsapp(request: Request) -> WhatsAppClient:
+def get_whatsapp(request: Request) -> WhatsAppGateway:
     assert request.app.state.whatsapp, "WhatsApp client not initialized"
     return request.app.state.whatsapp
 
@@ -32,7 +32,7 @@ def get_text_embebedding(request: Request) -> AsyncClient:
 
 async def get_handler(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
-    whatsapp: Annotated[WhatsAppClient, Depends(get_whatsapp)],
+    whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
     embedding_client: Annotated[AsyncClient, Depends(get_text_embebedding)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> MessageHandler:

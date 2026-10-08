@@ -2,31 +2,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from gowa_sdk.webhooks import WebhookEnvelope
 from models import Message
-
-
-@pytest.mark.asyncio
-async def test_webhook_to_message():
-    payload = WebhookEnvelope.model_validate(
-        {
-            "event": "message",
-            "payload": {
-                "id": "test_message_id",
-                "chat_id": "123456789-123456@g.us",
-                "from": "1234567890@s.whatsapp.net",
-                "from_name": "Test User",
-                "timestamp": datetime.now(timezone.utc),
-                "body": "Hello @bot how are you?",
-            },
-        }
-    )
-
-    message = Message.from_webhook(payload)
-    assert message.message_id == "test_message_id"
-    assert message.text == "Hello @bot how are you?"
-    assert message.sender_jid == "1234567890@s.whatsapp.net"
-    assert message.group_jid == "123456789-123456@g.us"
+from whatsapp.types import InboundMessage
 
 
 @pytest.mark.asyncio
@@ -43,30 +20,46 @@ async def test_message_mentions(mock_session):
     assert not message.has_mentioned("9876543210@s.whatsapp.net")
 
 
-async def test_message_with_image(mock_session):
-    # {'from': '972546660040:33@s.whatsapp.net in 972546660040@s.whatsapp.net',
-    #  'image': {'media_path': 'statics/media/1739707428-82e94149-f7bf-4300-9621-70af93bda5a4.jpeg',
-    #   'mime_type': 'image/jpeg',
-    #   'caption': 'https://github.com/mongodb-developer/GenAI-Showcase\n\nMongoDB\nמשחררים Repository די מרשים של דוגמאות של agents ו-RAG.\n\n10,000 נקודות למי שמנחש באיזה DB הם משתמשים.'},
-    #  'pushname': 'Ilan Benborhoum',
-    #  'timestamp': '2025-02-16T12:03:48Z'}
-    payload = WebhookEnvelope.model_validate(
-        {
-            "event": "message",
-            "payload": {
-                "id": "test_message_id",
-                "chat_id": "123456789-123456@g.us",
-                "from": "1234567890@s.whatsapp.net",
-                "from_name": "Test User",
-                "timestamp": datetime.now(timezone.utc),
-                "image": {
-                    "caption": "This is an image",
-                    "path": "https://example.com/image.jpg",
-                    "mimetype": "image/jpeg",
-                },
-            },
-        }
+def test_from_inbound_group_message():
+    m = Message.from_inbound(
+        InboundMessage(
+            id="m1",
+            chat_jid="123456789-123456@g.us",
+            sender_jid="1234567890@s.whatsapp.net",
+            timestamp=datetime(2026, 10, 8, tzinfo=timezone.utc),
+            text="hi",
+            reply_to_id="m0",
+        )
     )
+    assert m.message_id == "m1"
+    assert m.group_jid == "123456789-123456@g.us"
+    assert m.sender_jid == "1234567890@s.whatsapp.net"
+    assert m.reply_to_id == "m0"
+    assert m.text == "hi"
 
-    message = Message.from_webhook(payload)
-    assert message.text == "[[Attached Image]] This is an image"
+
+def test_from_inbound_normalizes_device_suffix_in_sender():
+    m = Message.from_inbound(
+        InboundMessage(
+            id="m1",
+            chat_jid="1234567890@s.whatsapp.net",
+            sender_jid="1234567890:33@s.whatsapp.net",
+            timestamp=datetime(2026, 10, 8, tzinfo=timezone.utc),
+            text="hi",
+        )
+    )
+    assert m.sender_jid == "1234567890@s.whatsapp.net"
+    assert m.group_jid is None
+
+
+def test_from_inbound_strips_device_suffix_from_dm_chat():
+    m = Message.from_inbound(
+        InboundMessage(
+            id="m1",
+            chat_jid="972501234567:7@s.whatsapp.net",
+            sender_jid="972501234567@s.whatsapp.net",
+            timestamp=datetime(2026, 10, 8, tzinfo=timezone.utc),
+            text="hi",
+        )
+    )
+    assert m.chat_jid == "972501234567@s.whatsapp.net"

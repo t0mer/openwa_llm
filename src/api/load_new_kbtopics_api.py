@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from load_new_kbtopics import topicsLoader
-from whatsapp import WhatsAppClient
+from whatsapp import WhatsAppGateway
 from voyageai.client_async import AsyncClient
 from .deps import get_db_async_session, get_whatsapp, get_text_embebedding
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 @router.post("/load_new_kbtopics")
 async def load_new_kbtopics_api(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
-    whatsapp: Annotated[WhatsAppClient, Depends(get_whatsapp)],
+    whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
     embedding_client: Annotated[AsyncClient, Depends(get_text_embebedding)],
 ) -> Dict[str, Any]:
     """

@@ -18,7 +18,7 @@ from models import Group, Message
 from services.prompt_manager import prompt_manager
 from utils.chat_text import chat2text
 from utils.opt_out import get_opt_out_map
-from whatsapp import WhatsAppClient, SendMessageRequest
+from whatsapp import WhatsAppGateway
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ async def summarize(
 
 
 async def summarize_and_send_to_group(
-    settings: Settings, session, whatsapp: WhatsAppClient, group: Group
+    settings: Settings, session, whatsapp: WhatsAppGateway, group: Group
 ):
     resp = await session.exec(
         select(Message)
@@ -71,16 +71,12 @@ async def summarize_and_send_to_group(
         return
 
     try:
-        await whatsapp.send_message(
-            SendMessageRequest(phone=group.group_jid, message=result.output)
-        )
+        await whatsapp.send_text(group.group_jid, result.output)
 
         # Send the summary to the community groups
         community_groups = await group.get_related_community_groups(session)
         for cg in community_groups:
-            await whatsapp.send_message(
-                SendMessageRequest(phone=cg.group_jid, message=result.output)
-            )
+            await whatsapp.send_text(cg.group_jid, result.output)
 
     except Exception as e:
         logging.error("Error sending message to group %s: %s", group.group_name, e)
@@ -93,7 +89,7 @@ async def summarize_and_send_to_group(
 
 
 async def summarize_and_send_to_groups(
-    settings: Settings, session: AsyncSession, whatsapp: WhatsAppClient
+    settings: Settings, session: AsyncSession, whatsapp: WhatsAppGateway
 ):
     groups = await session.exec(select(Group).where(Group.managed == True))  # noqa: E712 https://stackoverflow.com/a/18998106
     tasks = [

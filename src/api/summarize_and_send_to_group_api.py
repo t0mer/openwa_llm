@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from config import Settings
-from whatsapp import WhatsAppClient
+from whatsapp import WhatsAppGateway
 from summarize_and_send_to_groups import summarize_and_send_to_groups
 from .deps import get_db_async_session, get_whatsapp, get_settings
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @router.post("/summarize_and_send_to_groups")
 async def trigger_summarize_and_send_to_groups(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
-    whatsapp: Annotated[WhatsAppClient, Depends(get_whatsapp)],
+    whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Dict[str, Any]:
     """

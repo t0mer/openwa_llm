@@ -10,7 +10,7 @@ from voyageai.client_async import AsyncClient
 
 from config import Settings
 from models import Message
-from whatsapp import WhatsAppClient
+from whatsapp import WhatsAppGateway
 from whatsapp.jid import parse_jid
 from services.prompt_manager import prompt_manager
 
@@ -22,7 +22,7 @@ class WhatsappGroupLinkSpamHandler(BaseHandler):
     def __init__(
         self,
         session: AsyncSession,
-        whatsapp: WhatsAppClient,
+        whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
     ):

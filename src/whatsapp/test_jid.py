@@ -6,6 +6,8 @@ from whatsapp.jid import (
     new_ad_jid,
     normalize_jid,
     parse_jid,
+    to_canonical_jid,
+    to_openwa_chat_id,
 )
 
 
@@ -64,3 +66,26 @@ def test_invalid_jid():
 
     with pytest.raises(JIDParseError):
         parse_jid("1234567890.1:abc@s.whatsapp.net")
+
+
+def test_to_canonical_jid_maps_legacy_user_server():
+    assert to_canonical_jid("972501234567@c.us") == "972501234567@s.whatsapp.net"
+
+
+def test_to_canonical_jid_leaves_other_servers_alone():
+    assert to_canonical_jid("120363@g.us") == "120363@g.us"
+    assert to_canonical_jid("123@lid") == "123@lid"
+    assert to_canonical_jid("972501234567@s.whatsapp.net") == (
+        "972501234567@s.whatsapp.net"
+    )
+    assert to_canonical_jid("nonsense") == "nonsense"
+
+
+def test_to_openwa_chat_id_maps_default_user_server():
+    assert to_openwa_chat_id("972501234567@s.whatsapp.net") == "972501234567@c.us"
+
+
+def test_to_openwa_chat_id_leaves_other_servers_alone():
+    assert to_openwa_chat_id("120363@g.us") == "120363@g.us"
+    assert to_openwa_chat_id("123@lid") == "123@lid"
+    assert to_openwa_chat_id("972501234567@c.us") == "972501234567@c.us"

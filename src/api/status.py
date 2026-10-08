@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import text
 
-from whatsapp import WhatsAppClient
+from whatsapp import WhatsAppGateway
 
 from .deps import get_db_async_session, get_whatsapp
 
@@ -20,11 +20,11 @@ async def readiness() -> Dict[str, str]:
 @router.get("/status")
 async def status(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
-    whatsapp: Annotated[WhatsAppClient, Depends(get_whatsapp)],
+    whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
 ) -> Dict[str, Any]:
     """
     Comprehensive health check that verifies:
-    1. WhatsApp device connectivity (at least 1 device available)
+    1. WhatsApp session is ready (OpenWA)
     2. Database connection (simple query execution)
 
     Returns 200 if both checks pass, otherwise returns appropriate error status.
@@ -35,45 +35,40 @@ async def status(
     overall_healthy = True
     error_messages = []
 
-    # Check 1: WhatsApp device connectivity
-    devices_start_time = time.time()
+    # Check 1: WhatsApp session
+    whatsapp_start_time = time.time()
     try:
-        devices_response = await whatsapp.get_devices()
-        devices_duration = time.time() - devices_start_time
+        session_status = await whatsapp.get_status()
+        whatsapp_duration = time.time() - whatsapp_start_time
 
-        # Verify we have at least one device
-        if not devices_response.results or len(devices_response.results) == 0:
+        if session_status.status != "ready":
             overall_healthy = False
-            error_messages.append("No WhatsApp devices found")
+            error_messages.append(
+                f"WhatsApp session not ready (status={session_status.status})"
+            )
             health_data["checks"]["whatsapp"] = {
                 "status": "unhealthy",
-                "error": "No devices available",
-                "duration_seconds": devices_duration,
-                "device_count": 0,
+                "error": f"session status: {session_status.status}",
+                "duration_seconds": whatsapp_duration,
             }
         else:
-            # Ensure the primary device JID is actually parseable — webhook
-            # handling depends on it (see WhatsAppClient.get_my_jid).
+            # Ensure the bot JID is resolvable — webhook handling depends on it.
             my_jid = await whatsapp.get_my_jid()
             health_data["checks"]["whatsapp"] = {
                 "status": "healthy",
-                "duration_seconds": devices_duration,
-                "device_count": len(devices_response.results),
+                "duration_seconds": whatsapp_duration,
+                "session_status": session_status.status,
                 "bot_jid": str(my_jid),
-                "devices": [
-                    {"name": device.name, "device": device.device}
-                    for device in devices_response.results
-                ],
             }
 
     except Exception as e:
-        devices_duration = time.time() - devices_start_time
+        whatsapp_duration = time.time() - whatsapp_start_time
         overall_healthy = False
-        error_messages.append(f"WhatsApp device check failed: {str(e)}")
+        error_messages.append(f"WhatsApp session check failed: {str(e)}")
         health_data["checks"]["whatsapp"] = {
             "status": "unhealthy",
             "error": str(e),
-            "duration_seconds": devices_duration,
+            "duration_seconds": whatsapp_duration,
         }
 
     # Check 2: Database connectivity

@@ -22,7 +22,7 @@ from models.knowledge_base_topic import KBTopic
 from models.upsert import bulk_upsert
 from services.prompt_manager import prompt_manager
 from utils.voyage_embed_text import voyage_embed_text
-from whatsapp import WhatsAppClient
+from whatsapp import WhatsAppGateway
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +250,7 @@ class topicsLoader:
         db_session: AsyncSession,
         group: Group,
         embedding_client: AsyncClient,
-        whatsapp: WhatsAppClient,
+        whatsapp: WhatsAppGateway,
     ):
         my_jid = await whatsapp.get_my_jid()
         try:
@@ -312,7 +312,7 @@ class topicsLoader:
         self,
         session: AsyncSession,
         embedding_client: AsyncClient,
-        whatsapp: WhatsAppClient,
+        whatsapp: WhatsAppGateway,
     ):
         groups = await session.exec(select(Group).where(Group.managed == True))  # noqa: E712 https://stackoverflow.com/a/18998106
         for group in list(groups.all()):

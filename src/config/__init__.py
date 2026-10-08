@@ -1,5 +1,5 @@
 from os import environ
-from typing import Optional, Self
+from typing import Self
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +11,7 @@ from whatsapp.jid import (
     DefaultUserServer,
     LegacyUserServer,
     GroupServer,
+    to_canonical_jid,
 )
 
 
@@ -22,10 +23,12 @@ class Settings(BaseSettings):
     # Database settings
     db_uri: str
 
-    # WhatsApp settings
+    # WhatsApp (OpenWA) settings
     whatsapp_host: str
-    whatsapp_basic_auth_password: Optional[str] = None
-    whatsapp_basic_auth_user: Optional[str] = None
+    openwa_api_key: str
+    openwa_session_id: str
+    openwa_webhook_secret: str  # >= 16 chars (OpenWA requirement)
+    openwa_webhook_url: str = ""  # if set, registered with OpenWA at startup
 
     anthropic_api_key: str
 
@@ -71,7 +74,7 @@ class Settings(BaseSettings):
                 )
             if not jid.user:
                 raise ValueError(f"Invalid user JID '{jid_str}'. Missing user part.")
-        return v
+        return [to_canonical_jid(jid_str) for jid_str in v]
 
     @field_validator("qa_test_groups")
     @classmethod
@@ -92,6 +95,13 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"Invalid group JID '{jid_str}'. Missing group ID part."
                 )
+        return v
+
+    @field_validator("openwa_webhook_secret")
+    @classmethod
+    def validate_webhook_secret(cls, v: str) -> str:
+        if len(v) < 16:
+            raise ValueError("openwa_webhook_secret must be at least 16 characters")
         return v
 
     model_config = SettingsConfigDict(
