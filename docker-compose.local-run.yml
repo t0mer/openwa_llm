@@ -9,10 +9,10 @@ services:
       file: docker-compose.base.yml
       service: whatsapp
     environment:
-      - WHATSAPP_WEBHOOK=http://host.docker.internal:8000/webhook
+      - SSRF_ALLOWED_HOSTS=host.docker.internal
 
 volumes:
-  wa_llm_whatsapp:
-    name: wa_llm_whatsapp
+  wa_llm_openwa:
+    name: wa_llm_openwa
   wa_llm_postgres:
     name: wa_llm_postgres
