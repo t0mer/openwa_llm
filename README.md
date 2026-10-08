@@ -98,7 +98,7 @@ The web-server also reads `.env.prod`, so `OPENWA_API_KEY` must have the same va
 
 ### 4. Connect your device
 
-> Until `OPENWA_SESSION_ID` is set and the web server is restarted (step 4 below), the web server may log errors (webhook registration / status checks). This is expected on the first start.
+> Until `OPENWA_SESSION_ID` is set and the web server is restarted (the last step of this section), the web server may log errors (webhook registration / status checks). This is expected on the first start.
 
 1. Start the stack, then create and start a session (use your `OPENWA_API_KEY`):
 
@@ -112,6 +112,15 @@ The web-server also reads `.env.prod`, so `OPENWA_API_KEY` must have the same va
 2. Get the QR code (`GET /api/sessions/<id>/qr` returns a PNG data URL) or use the dashboard at http://localhost:2785, and scan it with your WhatsApp mobile app. Wait until the session status is `ready`.
 3. Invite the bot device to any target groups you want to summarize.
 4. Restart the web server so it picks up the session id: `docker compose restart web-server`
+
+#### Upgrading from the go-whatsapp-web-multidevice (gowa) setup
+
+Earlier versions used [go-whatsapp-web-multidevice](https://github.com/aldinokemal/go-whatsapp-web-multidevice) as the WhatsApp gateway. It has been replaced by OpenWA, so existing deployments need to:
+
+- **Re-pair the bot.** The OpenWA session is new; scan a fresh QR code as described above. Messages, senders, groups and opt-outs in PostgreSQL are unaffected.
+- **Update your env file.** Remove `WHATSAPP_BASIC_AUTH_USER` and `WHATSAPP_BASIC_AUTH_PASSWORD`; add `OPENWA_API_KEY`, `OPENWA_SESSION_ID` and `OPENWA_WEBHOOK_SECRET`; point `WHATSAPP_HOST` at OpenWA (port `2785`, not `3000`).
+- **Expect a new volume.** OpenWA stores its data in `wa_llm_openwa`. The old `wa_llm_whatsapp` volume is no longer used and can be removed once you no longer need it.
+- **Review `QA_TESTERS`.** Entries ending in `@c.us` are accepted and converted to `@s.whatsapp.net`, which is how users are stored in the database.
 
 ### 5. Activating the Bot for a Group
 
@@ -169,9 +178,9 @@ To deploy in a production environment using the optimized configuration:
    cp .env.example .env.prod
    ```
 
-2. **Start Services**:
+2. **Start Services** (`--env-file` lets compose read `OPENWA_API_KEY` from `.env.prod`, see [Starting the Services](#3-starting-the-services)):
    ```bash
-   docker compose -f docker-compose.prod.yml up -d
+   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
    ```
 
 This configuration includes:
@@ -213,7 +222,9 @@ The `check` command runs formatting first, then executes linting, type checking,
 ### Key Files
 
 - Main application: `app/main.py`
-- WhatsApp client: `src/whatsapp/client.py`
+- WhatsApp gateway interface and types: `src/whatsapp/gateway.py`, `src/whatsapp/types.py`
+- OpenWA client and webhook parser: `src/whatsapp/openwa.py`, `src/whatsapp/openwa_webhook.py`
+- Webhook endpoint: `src/api/webhook.py`
 - Message handler: `src/handler/__init__.py`
 - Database models: `src/models/`
 
@@ -224,9 +235,18 @@ The `check` command runs formatting first, then executes linting, type checking,
 The project consists of several key components:
 
 - FastAPI backend for webhook handling
-- WhatsApp Web API client for message interaction
+- [OpenWA](https://github.com/rmyndharis/OpenWA) (engine `whatsapp-web.js`) as the WhatsApp gateway, accessed through a gateway-neutral `WhatsAppGateway` interface
 - PostgreSQL database with vector storage for knowledge base
 - AI-powered message processing and response generation
+
+### Webhooks
+
+OpenWA delivers incoming messages, reactions and group events to `POST /webhook`:
+
+- **Signed requests.** Every request must carry `X-OpenWA-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body using `OPENWA_WEBHOOK_SECRET`. The signature is verified before the body is parsed; a missing or invalid signature (or an unset secret) returns `401`, malformed JSON returns `400`, and bodies larger than 2 MiB return `413`.
+- **Registration.** If `OPENWA_WEBHOOK_URL` is set, the web server registers (or updates) the webhook with OpenWA at startup for `message.received`, `message.reaction` and the `group.*` events, retrying for a few minutes while OpenWA starts. OpenWA's SSRF guard must allow that host; the compose files set `SSRF_ALLOWED_HOSTS` for you.
+- **Redelivery.** OpenWA delivers at least once. Deliveries are deduplicated on `X-OpenWA-Idempotency-Key`; a delivery whose processing failed is not marked as seen, so OpenWA's retry is processed again.
+- **Identities.** Users are stored as `<number>@s.whatsapp.net`; the adapter converts OpenWA's `@c.us` ids in both directions. Senders that OpenWA reports as `@lid` are mapped to their phone number when `RESOLVE_LID_TO_PHONE=true` (set in the compose files) provides `senderPhone`.
 
 ---
 
