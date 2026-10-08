@@ -75,6 +75,9 @@ cp .env.example .env
 | `LOGFIRE_TOKEN`                | Logfire monitoring key, You need to have a real logfire key here                   | –                                                            |
 | `DM_AUTOREPLY_ENABLED`         | Enable auto-reply for direct messages                                              | `False`                                                      |
 | `DM_AUTOREPLY_MESSAGE`         | Message to send as auto-reply                                                      | `Hello, I am not designed to answer to personal messages.`   |
+| `ADMIN_PASSWORD`               | Admin UI login password. The admin UI is disabled unless both this and `ADMIN_SESSION_SECRET` are set | –                                          |
+| `ADMIN_SESSION_SECRET`         | Secret (>= 32 random chars) that signs the admin session cookie; generate with `openssl rand -hex 32`. Changing it logs everyone out | – |
+| `ADMIN_COOKIE_SECURE`          | Mark the admin session cookie `Secure`; set to `true` when served over HTTPS       | `false`                                                      |
 
 </div>
 
@@ -143,6 +146,67 @@ Earlier versions used [go-whatsapp-web-multidevice](https://github.com/aldinokem
    ```
 
 4. Restart the service: `docker compose restart wa_llm-web-server`
+
+### Admin UI
+
+A web admin UI (served at `/admin`) lets you manage the bot without touching the database:
+
+- **Groups**: turn the bot on/off for a group ("managed"), toggle the spam notice, edit community keys and set a display name.
+- **Contacts**: view and edit sender names.
+- **Opt-outs**: view, add and remove opted-out contacts.
+- **Messages**: read-only message browser with search and filters.
+- **Bot actions**: run group summaries or load the knowledge base on demand.
+
+#### Enabling it
+
+The admin UI is **off by default**. Set both `ADMIN_PASSWORD` and `ADMIN_SESSION_SECRET` (they are intentionally not set in `.env.example`), restart the web server and open `http://localhost:8000/admin`:
+
+```bash
+ADMIN_PASSWORD=choose-a-strong-password
+ADMIN_SESSION_SECRET=$(openssl rand -hex 32)
+```
+
+- Sessions last 12 hours. Logging out only clears the browser cookie: sessions are stateless, so change `ADMIN_SESSION_SECRET` to revoke all of them.
+- Login attempts are rate-limited to 5 failures per minute per client IP. The limiter keys on the connecting address, so behind a reverse proxy configure the proxy / uvicorn forwarded-headers handling so clients are not all seen as one address.
+- HTTPS is strongly recommended: terminate TLS at a reverse proxy and set `ADMIN_COOKIE_SECURE=true`.
+- The admin API lives under `/api/v1/admin` (login-protected; see Swagger at `/docs`).
+
+#### Notes
+
+- **Group names:** the WhatsApp name, topic and owner are refreshed from WhatsApp and are read-only. The "display name" is your own alias and survives syncs.
+- **Enabling a long-disabled group:** the next summary covers everything since the group's last summary date (the UI warns before enabling).
+- **Bot actions** run the same jobs as the cron endpoints, in the background, one at a time per action. Their status is kept in memory and resets on restart.
+- **Cron endpoints are unchanged and unauthenticated.** `/summarize_and_send_to_groups` and `/load_new_kbtopics` are still open because the scheduled scripts use them. Running a job from the UI at the same time as the cron job can post a summary twice. Keep those endpoints off the public internet.
+
+#### Screenshots
+
+#### Login
+![Login](assets/screenshots/admin-login-light.png)
+![Login (dark)](assets/screenshots/admin-login-dark.png)
+
+#### Groups
+![Groups](assets/screenshots/admin-groups-light.png)
+![Groups (dark)](assets/screenshots/admin-groups-dark.png)
+
+Editing a group (display name and community keys):
+
+![Edit group](assets/screenshots/admin-groups-edit-light.png)
+
+#### Contacts
+![Contacts](assets/screenshots/admin-contacts-light.png)
+![Contacts (dark)](assets/screenshots/admin-contacts-dark.png)
+
+#### Opt-outs
+![Opt-outs](assets/screenshots/admin-opt-outs-light.png)
+![Opt-outs (dark)](assets/screenshots/admin-opt-outs-dark.png)
+
+#### Messages
+![Messages](assets/screenshots/admin-messages-light.png)
+![Messages (dark)](assets/screenshots/admin-messages-dark.png)
+
+#### Bot actions
+![Bot actions](assets/screenshots/admin-actions-light.png)
+![Bot actions (dark)](assets/screenshots/admin-actions-dark.png)
 
 ### 6. API usage
 
@@ -219,6 +283,29 @@ uv run poe
 
 The `check` command runs formatting first, then executes linting, type checking, and testing **in parallel** for faster execution.
 
+### Frontend (admin UI)
+
+The admin UI is a React + Vite SPA in `web/` (Node 20):
+
+```bash
+cd web
+npm ci
+npm run dev    # dev server; proxies /api to localhost:8000, open http://localhost:5173/admin/
+npm run lint   # type check
+npm test       # unit tests
+npm run build  # writes to src/admin/static/dist, served by the backend
+```
+
+The Docker build compiles the SPA in a Node stage, so no local build is needed for images.
+
+Admin integration tests need a Postgres database whose name contains `test`:
+
+```bash
+ADMIN_TEST_DB_URI=postgresql+asyncpg://user:password@localhost:5432/<db with "test" in its name> uv run pytest
+```
+
+> **Warning:** that database's tables are dropped and recreated.
+
 ### Key Files
 
 - Main application: `app/main.py`
@@ -227,6 +314,8 @@ The `check` command runs formatting first, then executes linting, type checking,
 - Webhook endpoint: `src/api/webhook.py`
 - Message handler: `src/handler/__init__.py`
 - Database models: `src/models/`
+- Admin backend (auth, API, SPA serving): `src/admin/`
+- Admin frontend (React SPA): `web/`
 
 ---
 
