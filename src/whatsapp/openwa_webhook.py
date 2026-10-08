@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from .jid import DefaultUserServer, HiddenUserServer, to_canonical_jid
+from .jid import DefaultUserServer, HiddenUserServer, normalize_jid, to_canonical_jid
 from .types import GroupEvent, InboundMessage, InboundReaction
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,9 @@ def _parse_message(
         media_url=None,
         from_me=bool(data.get("fromMe")),
         mentioned_jids=tuple(
-            to_canonical_jid(m) for m in (mentions or []) if isinstance(m, str)
+            normalize_jid(to_canonical_jid(m))
+            for m in (mentions or [])
+            if isinstance(m, str)
         ),
     )
 
@@ -142,14 +144,14 @@ def _parse_reaction(
     data: dict[str, Any], envelope_ts: datetime
 ) -> InboundReaction | None:
     message_id = _str(data.get("messageId"))
-    sender = _str(data.get("senderId"))
+    sender = _resolve_jid(_str(data.get("senderId")), data.get("senderPhone"))
     if not message_id or not sender:
         logger.warning("Ignoring reaction without messageId/senderId")
         return None
     emoji = data.get("reaction")
     return InboundReaction(
         message_id=message_id,
-        sender_jid=to_canonical_jid(sender),
+        sender_jid=sender,
         emoji=emoji if isinstance(emoji, str) else "",
         timestamp=envelope_ts,
     )

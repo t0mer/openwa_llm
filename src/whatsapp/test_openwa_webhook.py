@@ -411,3 +411,39 @@ def test_from_me_message_without_chat_id_uses_to_as_chat():
     )
     assert isinstance(ev, InboundMessage)
     assert ev.chat_jid == "972501234567@s.whatsapp.net"
+
+
+def test_mentions_strip_device_suffix():
+    ev = parse_event(
+        _envelope(
+            "message.received",
+            {
+                "id": "m1",
+                "from": "972501234567@c.us",
+                "chatId": "972501234567@c.us",
+                "body": "x",
+                "type": "chat",
+                "timestamp": 1790000000,
+                "mentionedIds": ["972509999999:3@c.us", "55@lid"],
+            },
+        )
+    )
+    assert isinstance(ev, InboundMessage)
+    assert ev.mentioned_jids == ("972509999999@s.whatsapp.net", "55@lid")
+
+
+def _reaction(**extra):
+    data = {"messageId": "m1", "reaction": "👍", **extra}
+    return parse_event(_envelope("message.reaction", data))
+
+
+def test_reaction_lid_sender_uses_sender_phone():
+    ev = _reaction(senderId="123@lid", senderPhone="+972 50-123 4567")
+    assert isinstance(ev, InboundReaction)
+    assert ev.sender_jid == "972501234567@s.whatsapp.net"
+
+
+def test_reaction_lid_sender_without_phone_stays_lid():
+    ev = _reaction(senderId="123@lid")
+    assert isinstance(ev, InboundReaction)
+    assert ev.sender_jid == "123@lid"
