@@ -147,13 +147,46 @@ async def test_ensure_webhook_creates_when_missing(gateway, httpx_mock):
     assert await gateway.ensure_webhook("http://web/webhook", "x" * 16, EVENTS) is True
 
 
-async def test_ensure_webhook_noop_when_url_already_registered(gateway, httpx_mock):
+async def test_ensure_webhook_updates_existing_with_current_secret_and_events(
+    gateway, httpx_mock
+):
     httpx_mock.add_response(
         method="GET",
         url=f"{SESSION}/webhooks",
         json={"data": [{"id": "w1", "url": "http://web/webhook"}]},
     )
+    httpx_mock.add_response(
+        method="PUT",
+        url=f"{SESSION}/webhooks/w1",
+        match_json={"url": "http://web/webhook", "events": EVENTS, "secret": "n" * 16},
+        json={"id": "w1"},
+    )
+    assert await gateway.ensure_webhook("http://web/webhook", "n" * 16, EVENTS) is False
+
+
+async def test_ensure_webhook_matches_url_ignoring_trailing_slash(gateway, httpx_mock):
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{SESSION}/webhooks",
+        json=[{"id": "w1", "url": "http://web/webhook/"}],
+    )
+    httpx_mock.add_response(method="PUT", url=f"{SESSION}/webhooks/w1", json={})
     assert await gateway.ensure_webhook("http://web/webhook", "x" * 16, EVENTS) is False
+
+
+async def test_ensure_webhook_existing_without_id_is_left_alone(
+    gateway, httpx_mock, caplog
+):
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{SESSION}/webhooks",
+        json=[{"url": "http://web/webhook"}],
+    )
+    assert (
+        await gateway.ensure_webhook("http://web/webhook", "s3cr3t" * 3, EVENTS)
+        is False
+    )
+    assert "s3cr3t" not in caplog.text
 
 
 async def test_non_json_success_response_is_gateway_error(gateway, httpx_mock):

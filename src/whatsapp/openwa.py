@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 from urllib.parse import quote
@@ -15,6 +16,8 @@ from .jid import (
     to_openwa_chat_id,
 )
 from .types import GroupInfo, SessionStatus
+
+logger = logging.getLogger(__name__)
 
 
 def _unwrap(data: Any) -> Any:
@@ -161,15 +164,30 @@ class OpenWAGateway:
         return groups
 
     async def ensure_webhook(self, url: str, secret: str, events: list[str]) -> bool:
-        """Register a webhook for `url` unless one exists. True if created."""
+        """Register a webhook for `url`; refresh secret/events if it exists.
+
+        Returns True only when a new webhook was created.
+        """
         existing = _extract_list(
             await self._request("GET", f"{self._session_path}/webhooks")
         )
-        if any(isinstance(w, dict) and w.get("url") == url for w in existing):
+        wanted = url.rstrip("/")
+        body = {"url": url, "events": events, "secret": secret}
+        for w in existing:
+            if not isinstance(w, dict):
+                continue
+            registered = w.get("url")
+            if not isinstance(registered, str) or registered.rstrip("/") != wanted:
+                continue
+            webhook_id = w.get("id")
+            if webhook_id is None or webhook_id == "":
+                logger.warning("OpenWA webhook for %s has no id; cannot update", url)
+                return False
+            await self._request(
+                "PUT",
+                f"{self._session_path}/webhooks/{quote(str(webhook_id), safe='')}",
+                json=body,
+            )
             return False
-        await self._request(
-            "POST",
-            f"{self._session_path}/webhooks",
-            json={"url": url, "events": events, "secret": secret},
-        )
+        await self._request("POST", f"{self._session_path}/webhooks", json=body)
         return True
