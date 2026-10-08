@@ -50,3 +50,16 @@ def test_from_inbound_normalizes_device_suffix_in_sender():
     )
     assert m.sender_jid == "1234567890@s.whatsapp.net"
     assert m.group_jid is None
+
+
+def test_from_inbound_strips_device_suffix_from_dm_chat():
+    m = Message.from_inbound(
+        InboundMessage(
+            id="m1",
+            chat_jid="972501234567:7@s.whatsapp.net",
+            sender_jid="972501234567@s.whatsapp.net",
+            timestamp=datetime(2026, 10, 8, tzinfo=timezone.utc),
+            text="hi",
+        )
+    )
+    assert m.chat_jid == "972501234567@s.whatsapp.net"
