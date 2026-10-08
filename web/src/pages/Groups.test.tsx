@@ -39,7 +39,9 @@ describe("Groups page", () => {
     setup([base]);
     await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
     expect(window.confirm).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(window.confirm).mock.calls[0][0]).toContain("2026");
+    const msg = vi.mocked(window.confirm).mock.calls[0][0];
+    expect(msg).toContain("WA name");
+    expect(msg).toContain(new Date(base.last_summary_sync).toLocaleString());
     await waitFor(() => expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { managed: true }));
   });
 
@@ -48,6 +50,7 @@ describe("Groups page", () => {
     setup([base]);
     await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
     expect(api.patchGroup).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox", { name: /respond.*1@g\.us/i })).not.toBeChecked();
   });
 
   it("disabling managed and toggling the spam notice do not ask for confirmation", async () => {
@@ -77,5 +80,71 @@ describe("Groups page", () => {
     await userEvent.click(await screen.findByRole("checkbox", { name: /spam.*1@g\.us/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("boom");
     expect(screen.getByRole("checkbox", { name: /spam.*1@g\.us/i })).not.toBeChecked();
+  });
+
+  it("failed list save shows the alert, reloads, and reflects server state", async () => {
+    setup([base]);
+    vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("nope"));
+    const box = await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i });
+    const before = vi.mocked(api.listGroups).mock.calls.length;
+    await userEvent.click(box);
+    expect(await screen.findByRole("alert")).toHaveTextContent("nope");
+    await waitFor(() => expect(vi.mocked(api.listGroups).mock.calls.length).toBeGreaterThan(before));
+    expect(screen.getByRole("checkbox", { name: /respond.*1@g\.us/i })).not.toBeChecked();
+  });
+
+  it("keeps the dialog open with edits and an inner alert on failure, closes on retry success", async () => {
+    setup([base]);
+    vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("422 bad"));
+    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Display name"), "Friends");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("422 bad");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Display name")).toHaveValue("Friends");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(api.patchGroup).toHaveBeenCalledTimes(2);
+  });
+
+  it("commits a pending tag on Save without Enter", async () => {
+    setup([base]);
+    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Community keys"), "pending");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { community_keys: ["pending"] }));
+  });
+
+  it("shows the owner read-only in the dialog", async () => {
+    setup([base]);
+    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    expect(within(screen.getByRole("dialog")).getByText(/9725@s\.whatsapp\.net/)).toBeInTheDocument();
+  });
+
+  it("paginates with Next/Previous and resets the offset when sort changes", async () => {
+    const many = Array.from({ length: 50 }, (_, i) => ({ ...base, group_jid: `${i}@g.us` }));
+    vi.mocked(api.listGroups).mockResolvedValue({ items: many, total: 120 });
+    render(<Groups />);
+    const prev = await screen.findByRole("button", { name: "Previous" });
+    const next = screen.getByRole("button", { name: "Next" });
+    expect(prev).toBeDisabled();
+    await userEvent.click(next);
+    await waitFor(() => expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 })));
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 100 })));
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() => expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 })));
+    await userEvent.selectOptions(screen.getByLabelText("Sort"), "-message_count");
+    await waitFor(() =>
+      expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0, sort: "-message_count" })),
+    );
+  });
+
+  it("shows an empty state", async () => {
+    setup([]);
+    expect(await screen.findByText("No groups match.")).toBeInTheDocument();
   });
 });

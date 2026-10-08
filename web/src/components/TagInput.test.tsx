@@ -48,4 +48,21 @@ describe("TagInput", () => {
     await userEvent.tab();
     expect(spy).toHaveBeenLastCalledWith(["pending"]);
   });
+
+  it("splits pasted comma-separated text into trimmed, de-duplicated tags", async () => {
+    const spy = vi.fn();
+    render(<Harness initial={["x"]} spy={spy} />);
+    await userEvent.click(screen.getByLabelText("Keys"));
+    await userEvent.paste("a, b ,,x, a");
+    expect(spy).toHaveBeenLastCalledWith(["x", "a", "b"]);
+    expect(screen.getByLabelText("Keys")).toHaveValue("");
+  });
+
+  it("does not add anything when a pasted list only has duplicates", async () => {
+    const spy = vi.fn();
+    render(<Harness initial={["a"]} spy={spy} />);
+    await userEvent.click(screen.getByLabelText("Keys"));
+    await userEvent.paste("a,a");
+    expect(spy).not.toHaveBeenCalled();
+  });
 });

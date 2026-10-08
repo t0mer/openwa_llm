@@ -18,6 +18,7 @@ export default function Groups() {
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<Group | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [savingJid, setSavingJid] = useState<string | null>(null);
 
   const { data, error, loading, reload } = useLoad(
     () =>
@@ -31,14 +32,19 @@ export default function Groups() {
     [query, managed, sort, offset],
   );
 
-  async function save(group: Group, patch: GroupPatch) {
+  async function save(group: Group, patch: GroupPatch): Promise<boolean> {
     setActionError(null);
+    setSavingJid(group.group_jid);
     try {
       await api.patchGroup(group.group_jid, patch);
       await reload();
+      return true;
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
       await reload();
+      return false;
+    } finally {
+      setSavingJid(null);
     }
   }
 
@@ -73,7 +79,7 @@ export default function Groups() {
           <option value="managed">Bot enabled</option>
           <option value="unmanaged">Bot disabled</option>
         </select>
-        <select value={sort} onChange={(e) => setSort(e.target.value as GroupSort)} aria-label="Sort">
+        <select value={sort} onChange={(e) => { setOffset(0); setSort(e.target.value as GroupSort); }} aria-label="Sort">
           <option value="name">Name</option>
           <option value="-message_count">Most messages</option>
           <option value="-last_summary_sync">Last summary (newest)</option>
@@ -82,7 +88,8 @@ export default function Groups() {
         </select>
         <span className="muted">{total} groups</span>
       </form>
-      {(error || actionError) && <p role="alert" className="error">{actionError ?? error}</p>}
+      {error && <p role="alert" className="error">{error}</p>}
+      {actionError && !editing && <p role="alert" className="error">{actionError}</p>}
       {loading && !data ? (
         <p className="notice">Loading…</p>
       ) : (
@@ -101,10 +108,10 @@ export default function Groups() {
                   {g.group_topic && <div className="muted">{g.group_topic}</div>}
                 </td>
                 <td>
-                  <input type="checkbox" checked={g.managed} onChange={() => toggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} />
+                  <input type="checkbox" checked={g.managed} onChange={() => toggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
                 </td>
                 <td>
-                  <input type="checkbox" checked={g.notify_on_spam} onChange={() => void save(g, { notify_on_spam: !g.notify_on_spam })} aria-label={`Spam notice in ${g.group_jid}`} />
+                  <input type="checkbox" checked={g.notify_on_spam} onChange={() => void save(g, { notify_on_spam: !g.notify_on_spam })} aria-label={`Spam notice in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
                 </td>
                 <td>{g.community_keys.length ? g.community_keys.join(", ") : <span className="muted">—</span>}</td>
                 <td>{g.message_count}</td>
@@ -112,6 +119,9 @@ export default function Groups() {
                 <td><button type="button" onClick={() => setEditing(g)} aria-label={`Edit ${g.group_jid}`}>Edit</button></td>
               </tr>
             ))}
+            {data && data.items.length === 0 && (
+              <tr><td colSpan={7} className="muted">No groups match.</td></tr>
+            )}
           </tbody>
         </table>
       )}
@@ -122,10 +132,11 @@ export default function Groups() {
       {editing && (
         <EditGroup
           group={editing}
-          onCancel={() => setEditing(null)}
+          error={actionError}
+          saving={savingJid === editing.group_jid}
+          onCancel={() => { setActionError(null); setEditing(null); }}
           onSave={async (patch) => {
-            await save(editing, patch);
-            setEditing(null);
+            if (await save(editing, patch)) setEditing(null);
           }}
         />
       )}
@@ -133,7 +144,7 @@ export default function Groups() {
   );
 }
 
-function EditGroup({ group, onCancel, onSave }: { group: Group; onCancel: () => void; onSave: (patch: GroupPatch) => Promise<void> }) {
+function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; error: string | null; saving: boolean; onCancel: () => void; onSave: (patch: GroupPatch) => Promise<void> }) {
   const [displayName, setDisplayName] = useState(group.display_name ?? "");
   const [keys, setKeys] = useState<string[]>(group.community_keys);
 
@@ -151,17 +162,20 @@ function EditGroup({ group, onCancel, onSave }: { group: Group; onCancel: () => 
       <form className="modal" role="dialog" aria-label="Edit group" onSubmit={submit}>
         <h2>{group.group_name || group.group_jid}</h2>
         <p className="muted">WhatsApp name, topic and owner come from WhatsApp and cannot be edited here.</p>
+        {group.group_topic && <p className="muted">Topic: {group.group_topic}</p>}
+        <p className="muted">Owner: {group.owner_jid ?? "unknown"}</p>
         <label>
           Display name
           <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={255} />
         </label>
         <div>
-          <span id="keys-label">Community keys</span>
+          <strong>Community keys</strong>
           <p className="muted">Groups that share a key also receive each other&apos;s summaries and knowledge.</p>
           <TagInput value={keys} onChange={setKeys} label="Community keys" />
         </div>
+        {error && <p role="alert" className="error">{error}</p>}
         <div className="toolbar">
-          <button type="submit" className="primary">Save</button>
+          <button type="submit" className="primary" disabled={saving}>Save</button>
           <button type="button" onClick={onCancel}>Cancel</button>
         </div>
       </form>

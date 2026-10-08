@@ -10,13 +10,27 @@ export default function TagInput({ value, onChange, label = "Tags" }: Props) {
   const [text, setText] = useState("");
   const id = useId();
 
-  function commit(raw: string) {
-    const tag = raw.trim();
+  function commitAll(parts: string[]) {
     setText("");
-    if (tag && !value.includes(tag)) onChange([...value, tag]);
+    const next = [...value];
+    for (const part of parts) {
+      const tag = part.trim();
+      if (tag && !next.includes(tag)) next.push(tag);
+    }
+    if (next.length !== value.length) onChange(next);
+  }
+
+  function commit(raw: string) {
+    commitAll([raw]);
+  }
+
+  function onText(raw: string) {
+    if (raw.includes(",")) commitAll(raw.split(","));
+    else setText(raw);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       commit(text);
@@ -39,7 +53,7 @@ export default function TagInput({ value, onChange, label = "Tags" }: Props) {
         id={id}
         aria-label={label}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => onText(e.target.value)}
         onKeyDown={onKeyDown}
         onBlur={() => text.trim() && commit(text)}
       />
