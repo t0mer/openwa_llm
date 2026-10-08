@@ -88,11 +88,17 @@ docker compose up -d
 
 **Option B: Production (Use pre-built images)**
 
+`OPENWA_API_KEY` must be available to compose interpolation (it is passed to the OpenWA container as `API_MASTER_KEY`). Compose reads `.env` for this, not the `env_file:` entries, so if your keys live only in `.env.prod`, pass it explicitly:
+
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 ```
 
+The web-server also reads `.env.prod`, so `OPENWA_API_KEY` must have the same value there.
+
 ### 4. Connect your device
+
+> Until `OPENWA_SESSION_ID` is set and the web server is restarted (step 4 below), the web server may log errors (webhook registration / status checks). This is expected on the first start.
 
 1. Start the stack, then create and start a session (use your `OPENWA_API_KEY`):
 
