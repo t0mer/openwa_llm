@@ -10,6 +10,7 @@ export default function OptOuts() {
 
   async function add(e: FormEvent) {
     e.preventDefault();
+    if (!jid.trim()) return;
     setActionError(null);
     setBusy("add");
     try {
@@ -42,7 +43,7 @@ export default function OptOuts() {
       <h1>Opt-outs</h1>
       <p className="muted">Opted-out contacts are shown by name instead of being @-mentioned in summaries and answers.</p>
       <form className="toolbar" onSubmit={add}>
-        <input placeholder="+972 50 123 4567 or 972501234567@s.whatsapp.net" value={jid} onChange={(e) => setJid(e.target.value)} aria-label="Phone number or JID" required />
+        <input placeholder="+972 50 123 4567 or 972501234567@s.whatsapp.net" value={jid} onChange={(e) => setJid(e.target.value)} aria-label="Phone number or JID" required disabled={busy !== null} />
         <button type="submit" className="primary" disabled={busy !== null}>Add</button>
       </form>
       {error && <p role="alert" className="error">{error}</p>}

@@ -102,4 +102,39 @@ describe("OptOuts page", () => {
     render(<OptOuts />);
     expect(await screen.findByText("Nobody has opted out.")).toBeInTheDocument();
   });
+
+  it("sends no request for a whitespace-only submit", async () => {
+    render(<OptOuts />);
+    await userEvent.type(await screen.findByLabelText("Phone number or JID"), "   ");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(api.addOptOut).not.toHaveBeenCalled();
+  });
+
+  it("disables the input while an add is in flight", async () => {
+    let resolve!: (v: never) => void;
+    vi.mocked(api.addOptOut).mockReturnValueOnce(new Promise((r) => { resolve = r as never; }));
+    render(<OptOuts />);
+    const input = await screen.findByLabelText("Phone number or JID");
+    await userEvent.type(input, "123");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(input).toBeDisabled();
+    resolve(undefined as never);
+    await waitFor(() => expect(input).toBeEnabled());
+  });
+
+  it("disables Remove buttons while a remove is in flight", async () => {
+    let resolve!: (v: never) => void;
+    vi.mocked(api.removeOptOut).mockReturnValueOnce(new Promise((r) => { resolve = r as never; }));
+    render(<OptOuts />);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" }));
+    expect(screen.getByRole("button", { name: "Remove 1@s.whatsapp.net" })).toBeDisabled();
+    resolve(undefined as never);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove 1@s.whatsapp.net" })).toBeEnabled());
+  });
+
+  it("names the JID in the confirmation message", async () => {
+    render(<OptOuts />);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" }));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("1@s.whatsapp.net"));
+  });
 });
