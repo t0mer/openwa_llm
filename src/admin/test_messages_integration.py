@@ -168,3 +168,25 @@ async def test_to_filter_reversed_range_naive_from_and_symbol_only_q(
     for term in ("the", "!!!", "&|!"):
         r = await admin_client.get(BASE, params={"q": term})
         assert r.status_code == 200 and r.json()["items"] == []
+
+
+async def test_sender_filter_accepts_typed_phone_numbers(db_sessionmaker, admin_client):
+    jid = "972501234567@s.whatsapp.net"
+    async with db_sessionmaker() as session:
+        session.add(Sender(jid=jid, push_name="Dana"))
+        await session.flush()
+        session.add(
+            Message(
+                message_id="p1",
+                chat_jid=jid,
+                sender_jid=jid,
+                text="hello",
+                timestamp=SAME,
+            )
+        )
+        await session.commit()
+    for typed in ("+972 50 123 4567", "972501234567@c.us", jid):
+        body = (await admin_client.get(BASE, params={"sender_jid": typed})).json()
+        assert [m["message_id"] for m in body["items"]] == ["p1"], typed
+    resp = await admin_client.get(BASE, params={"sender_jid": "not a jid"})
+    assert resp.status_code == 200 and resp.json()["items"] == []

@@ -14,6 +14,7 @@ from api.deps import get_db_async_session
 from models import Message, Reaction
 from whatsapp.jid import normalize_jid
 
+from .jid_input import parse_user_jid
 from .schemas import MessageOut, MessagePage
 
 router = APIRouter(tags=["admin-messages"])
@@ -34,6 +35,13 @@ def _in_range(value: datetime) -> bool:
 def _check_bound(value: datetime | None, name: str) -> None:
     if value is not None and not _in_range(value):
         raise HTTPException(status_code=422, detail=f"{name} is out of range")
+
+
+def _sender_filter(raw: str) -> str:
+    try:
+        return parse_user_jid(raw)
+    except ValueError:
+        return normalize_jid(raw)
 
 
 def encode_cursor(timestamp: datetime, message_id: str) -> str:
@@ -73,7 +81,7 @@ async def list_messages(
     if group_jid:
         stmt = stmt.where(Message.group_jid == normalize_jid(group_jid))
     if sender_jid:
-        stmt = stmt.where(Message.sender_jid == normalize_jid(sender_jid))
+        stmt = stmt.where(Message.sender_jid == _sender_filter(sender_jid))
     if from_ is not None:
         stmt = stmt.where(col(Message.timestamp) >= from_)
     if to is not None:
