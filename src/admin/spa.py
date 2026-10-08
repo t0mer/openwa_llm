@@ -15,6 +15,21 @@ router = APIRouter(include_in_schema=False)
 STATIC_DIR = Path(__file__).parent / "static" / "dist"
 
 
+SECURITY_HEADERS = {
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+def _asset(path: Path) -> FileResponse:
+    return FileResponse(path, headers=SECURITY_HEADERS)
+
+
+def _index(path: Path) -> FileResponse:
+    return FileResponse(path, headers={**SECURITY_HEADERS, "Cache-Control": "no-cache"})
+
+
 def _file_or_index(path: str) -> FileResponse:
     root = STATIC_DIR.resolve()
     index = root / "index.html"
@@ -24,12 +39,12 @@ def _file_or_index(path: str) -> FileResponse:
         try:
             candidate = (root / path).resolve()
             if candidate.is_relative_to(root) and candidate.is_file():
-                return FileResponse(candidate)
+                return _asset(candidate)
         except (ValueError, OSError):  # e.g. NUL bytes, over-long names
             raise HTTPException(status_code=404, detail="Not Found") from None
         if "." in Path(path).name:  # looks like a file request: no SPA fallback
             raise HTTPException(status_code=404, detail="Not Found")
-    return FileResponse(index)
+    return _index(index)
 
 
 @router.get("/admin")

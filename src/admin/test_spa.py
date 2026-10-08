@@ -122,3 +122,34 @@ def test_404_when_admin_disabled_or_not_built(dist, monkeypatch, tmp_path):
     empty.mkdir()
     monkeypatch.setattr(spa, "STATIC_DIR", empty)
     assert make_client().get("/admin").status_code == 404
+
+
+SECURITY = {
+    "x-frame-options": "DENY",
+    "content-security-policy": "frame-ancestors 'none'",
+    "x-content-type-options": "nosniff",
+}
+
+
+def test_index_and_fallback_are_no_cache(dist):
+    client = make_client()
+    for path in ("/admin", "/admin/groups/deep"):
+        assert client.get(path).headers["cache-control"] == "no-cache"
+
+
+def test_assets_are_not_no_cache(dist):
+    resp = make_client().get("/admin/assets/app.js")
+    assert "no-cache" not in resp.headers.get("cache-control", "")
+
+
+def test_all_spa_responses_carry_security_headers(dist):
+    client = make_client()
+    for path in ("/admin", "/admin/groups", "/admin/assets/app.js"):
+        resp = client.get(path)
+        for name, value in SECURITY.items():
+            assert resp.headers[name] == value, (path, name)
+
+
+def test_404s_do_not_get_spa_headers(dist):
+    resp = make_client().get("/admin/assets/missing.js")
+    assert resp.status_code == 404 and "cache-control" not in resp.headers
