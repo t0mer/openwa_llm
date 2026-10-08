@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,6 +19,23 @@ from .schemas import MessageOut, MessagePage
 router = APIRouter(tags=["admin-messages"])
 
 
+MIN_TS = datetime(1970, 1, 1, tzinfo=timezone.utc)
+MAX_TS = datetime(2100, 1, 1, tzinfo=timezone.utc)
+
+
+def _in_range(value: datetime) -> bool:
+    aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    try:
+        return MIN_TS <= aware.astimezone(timezone.utc) <= MAX_TS
+    except OverflowError:
+        return False
+
+
+def _check_bound(value: datetime | None, name: str) -> None:
+    if value is not None and not _in_range(value):
+        raise HTTPException(status_code=422, detail=f"{name} is out of range")
+
+
 def encode_cursor(timestamp: datetime, message_id: str) -> str:
     raw = json.dumps([timestamp.isoformat(), message_id]).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii")
@@ -31,7 +48,10 @@ def decode_cursor(cursor: str) -> tuple[datetime, str]:
         )
         if not isinstance(ts_text, str) or not isinstance(message_id, str):
             raise ValueError
-        return datetime.fromisoformat(ts_text), message_id
+        timestamp = datetime.fromisoformat(ts_text)
+        if "\x00" in message_id or not _in_range(timestamp):
+            raise ValueError
+        return timestamp, message_id
     except (ValueError, TypeError, UnicodeError) as e:
         raise ValueError("invalid cursor") from e
 
@@ -47,6 +67,8 @@ async def list_messages(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     before: Annotated[str | None, Query(max_length=600)] = None,
 ) -> MessagePage:
+    _check_bound(from_, "from")
+    _check_bound(to, "to")
     stmt = select(Message)
     if group_jid:
         stmt = stmt.where(Message.group_jid == normalize_jid(group_jid))

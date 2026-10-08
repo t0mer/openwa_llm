@@ -99,3 +99,72 @@ async def test_filters_search_and_reaction_counts(admin_client, db_sessionmaker)
         and first["sender_name"] == "Ann"
         and first["has_media"] is False
     )
+
+
+async def test_nul_and_hostile_input_is_422_not_500(admin_client, db_sessionmaker):
+    import base64
+    import json
+
+    await seed(db_sessionmaker)
+    for params in (
+        {"q": "a\u0000b"},
+        {"group_jid": "1\u0000@g.us"},
+        {"sender_jid": "a\u0000@s.whatsapp.net"},
+        {"from": "0001-01-01T00:00:00+05:00"},
+        {"to": "9999-12-31T23:59:59-12:00"},
+    ):
+        assert (await admin_client.get(BASE, params=params)).status_code == 422, params
+    for ts, mid in (
+        ("0001-01-01T00:00:00+05:00", "m1"),
+        ("9999-12-31T23:59:59.999999-12:00", "m1"),
+        ("2026-01-01T00:00:00+00:00", "a\u0000b"),
+    ):
+        cur = base64.urlsafe_b64encode(json.dumps([ts, mid]).encode()).decode()
+        assert (await admin_client.get(BASE, params={"before": cur})).status_code == 422
+
+
+async def test_nul_in_other_admin_routes_is_422(admin_client, db_sessionmaker):
+    await seed(db_sessionmaker)
+    base = "/api/v1/admin"
+    assert (
+        await admin_client.get(f"{base}/groups", params={"search": "a\u0000"})
+    ).status_code == 422
+    assert (
+        await admin_client.get(f"{base}/contacts", params={"search": "a\u0000"})
+    ).status_code == 422
+    r = await admin_client.patch(
+        f"{base}/groups/1@g.us", json={"display_name": "a\u0000b"}
+    )
+    assert r.status_code == 422
+    r = await admin_client.patch(
+        f"{base}/groups/1@g.us", json={"community_keys": ["x\u0000"]}
+    )
+    assert r.status_code == 422
+    r = await admin_client.patch(
+        f"{base}/contacts/a@s.whatsapp.net", json={"push_name": "a\u0000b"}
+    )
+    assert r.status_code == 422
+
+
+async def test_to_filter_reversed_range_naive_from_and_symbol_only_q(
+    admin_client, db_sessionmaker
+):
+    await seed(db_sessionmaker)
+    to = (await admin_client.get(BASE, params={"to": "2026-03-01T23:59:59Z"})).json()
+    assert {m["message_id"] for m in to["items"]} == {
+        "m0",
+        "m1",
+        "m2",
+        "m3",
+        "m4",
+        "other",
+    }
+    rev = await admin_client.get(
+        BASE, params={"from": "2026-03-05T00:00:00Z", "to": "2026-03-01T00:00:00Z"}
+    )
+    assert rev.status_code == 200 and rev.json()["items"] == []
+    naive = await admin_client.get(BASE, params={"from": "2026-03-02T00:00:00"})
+    assert naive.status_code == 200
+    for term in ("the", "!!!", "&|!"):
+        r = await admin_client.get(BASE, params={"q": term})
+        assert r.status_code == 200 and r.json()["items"] == []

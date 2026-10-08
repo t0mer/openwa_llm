@@ -99,3 +99,25 @@ def test_validation(ctx):
     assert client.get("/messages?before=garbage").status_code == 422
     assert client.get("/messages?from=not-a-date").status_code == 422
     assert client.get("/messages?q=" + "x" * 201).status_code == 422
+
+
+def test_decode_cursor_rejects_extreme_timestamps_and_nul_id():
+    import base64
+    import json
+
+    def raw(ts, mid):
+        return base64.urlsafe_b64encode(json.dumps([ts, mid]).encode()).decode()
+
+    for bad in (
+        raw("0001-01-01T00:00:00+05:00", "m1"),
+        raw("9999-12-31T23:59:59.999999-12:00", "m1"),
+        raw("2026-01-01T00:00:00+00:00", "a\u0000b"),
+    ):
+        with pytest.raises(ValueError):
+            messages_module.decode_cursor(bad)
+
+
+def test_out_of_range_from_and_to_are_422(ctx):
+    client, _ = ctx
+    assert client.get("/messages?from=0001-01-01T00:00:00%2B05:00").status_code == 422
+    assert client.get("/messages?to=9999-12-31T23:59:59-12:00").status_code == 422
