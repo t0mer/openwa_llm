@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 class BaseGroup(SQLModel):
     group_jid: str = Field(primary_key=True, max_length=255)
     group_name: Optional[str] = Field(default=None, max_length=255)
+    display_name: Optional[str] = Field(default=None, max_length=255)
     group_topic: Optional[str] = Field(default=None)
     owner_jid: Optional[str] = Field(
         max_length=255, foreign_key="sender.jid", nullable=True, default=None
