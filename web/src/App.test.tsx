@@ -8,7 +8,11 @@ import App from "./App";
 function stubSession(status: number, body: unknown = {}) {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status })),
+    vi.fn(async (url: string) =>
+      String(url).includes("/groups")
+        ? new Response(JSON.stringify(status === 200 ? { items: [], total: 0 } : body), { status })
+        : new Response(JSON.stringify(body), { status }),
+    ),
   );
 }
 
@@ -37,7 +41,9 @@ describe("App auth routing", () => {
     const fetchMock = vi.fn(async (url: string) =>
       url.endsWith("/auth/login")
         ? new Response(null, { status: 204 })
-        : new Response(JSON.stringify({ authenticated: false }), { status: 200 }),
+        : String(url).includes("/groups")
+          ? new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 })
+          : new Response(JSON.stringify({ authenticated: false }), { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={["/login"]}><App /></MemoryRouter>);
