@@ -25,6 +25,24 @@ router = APIRouter(tags=["webhook"])
 # Delivery is at-least-once: remember idempotency keys of deliveries we finished.
 _seen_keys: TTLCache = TTLCache(maxsize=2000, ttl=10 * 60)
 
+# Upper bound for an (unauthenticated, pre-signature) request body.
+MAX_BODY_BYTES = 2 * 1024 * 1024
+
+
+async def _read_body_limited(request: Request) -> bytes:
+    """Read the body, raising 413 if it exceeds MAX_BODY_BYTES."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="payload too large")
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="payload too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
 
 @router.post("/webhook")
 async def webhook(
@@ -35,7 +53,7 @@ async def webhook(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> str:
     """OpenWA webhook endpoint. Returns "ok" to acknowledge receipt."""
-    body = await request.body()
+    body = await _read_body_limited(request)
     if not verify_signature(
         settings.openwa_webhook_secret,
         body,

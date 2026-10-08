@@ -131,3 +131,29 @@ def test_failed_delivery_is_not_marked_seen_so_retry_reprocesses(ctx):
     assert _post(client, MESSAGE, key="k2").status_code == 500
     assert _post(client, MESSAGE, key="k2").status_code == 200
     assert handler.await_count == 2
+
+
+def test_oversized_content_length_is_413_and_not_processed(ctx):
+    client, handler, *_ = ctx
+    big = b"x" * (webhook_api.MAX_BODY_BYTES + 1)
+    resp = client.post("/webhook", content=big)
+    assert resp.status_code == 413
+    handler.assert_not_awaited()
+
+
+async def test_oversized_body_with_lying_content_length_is_413(ctx):
+    import httpx
+
+    client, handler, *_ = ctx
+    big = b"x" * (webhook_api.MAX_BODY_BYTES + 1)
+    transport = httpx.ASGITransport(app=client.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+        resp = await c.post("/webhook", content=big, headers={"content-length": "10"})
+    assert resp.status_code == 413
+    handler.assert_not_awaited()
+
+
+def test_body_at_limit_is_not_rejected_for_size(ctx):
+    client, *_ = ctx
+    resp = client.post("/webhook", content=b"x" * webhook_api.MAX_BODY_BYTES)
+    assert resp.status_code == 401  # size ok; fails signature as expected
