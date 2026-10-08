@@ -51,3 +51,10 @@ async def test_opt_out_roundtrip(admin_client, db_sessionmaker):
     assert (
         await admin_client.post("/api/v1/admin/opt-outs", json={"jid": "1203@g.us"})
     ).status_code == 422
+
+
+async def test_huge_offset_is_422_not_500(admin_client):
+    huge = "99999999999999999999999"
+    for path in ("groups", "contacts"):
+        resp = await admin_client.get(f"/api/v1/admin/{path}?offset={huge}")
+        assert resp.status_code == 422

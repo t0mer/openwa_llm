@@ -72,3 +72,10 @@ def test_patch_contact_404_and_normalizes_jid(ctx):
     session.get.reset_mock()
     client.patch("/contacts/9725:3@s.whatsapp.net", json={"push_name": "x"})
     assert session.get.await_args.args[1] == "9725@s.whatsapp.net"
+
+
+def test_list_contacts_offset_upper_bound(ctx):
+    client, session = ctx
+    assert client.get("/contacts?offset=1000001").status_code == 422
+    session.execute.side_effect = [_result(rows=[]), _result(scalar=0)]
+    assert client.get("/contacts?offset=1000000").status_code == 200

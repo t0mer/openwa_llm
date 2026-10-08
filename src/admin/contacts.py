@@ -12,7 +12,7 @@ from models import OptOut, Sender
 from whatsapp.jid import normalize_jid
 
 from .groups import _escape_like
-from .schemas import ContactOut, ContactPatch, Page, clean_text
+from .schemas import MAX_OFFSET, ContactOut, ContactPatch, Page, clean_text
 
 router = APIRouter(tags=["admin-contacts"])
 
@@ -41,7 +41,7 @@ async def list_contacts(
     search: Annotated[str | None, Query(max_length=100)] = None,
     opted_out: bool | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=MAX_OFFSET)] = 0,
 ) -> Page[ContactOut]:
     flag = col(OptOut.jid).is_not(None)
     rows_stmt = (

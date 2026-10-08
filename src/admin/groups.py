@@ -11,7 +11,7 @@ from api.deps import get_db_async_session
 from models import Group, Message
 from whatsapp.jid import normalize_jid
 
-from .schemas import GroupOut, GroupPatch, Page, clean_keys, clean_text
+from .schemas import MAX_OFFSET, GroupOut, GroupPatch, Page, clean_keys, clean_text
 
 router = APIRouter(tags=["admin-groups"])
 
@@ -78,7 +78,7 @@ async def list_groups(
     managed: bool | None = None,
     sort: SortKey = "name",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=MAX_OFFSET)] = 0,
 ) -> Page[GroupOut]:
     counts = (
         select(col(Message.group_jid).label("group_jid"), func.count().label("n"))

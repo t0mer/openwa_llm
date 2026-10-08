@@ -184,3 +184,10 @@ def test_patch_unknown_group_404_and_ignores_unknown_fields(ctx):
     )
     assert resp.status_code == 200
     assert session.get.return_value.group_name == "WA name"
+
+
+def test_list_groups_offset_upper_bound(ctx):
+    client, session = ctx
+    assert client.get("/groups?offset=1000001").status_code == 422
+    session.execute.side_effect = [_result(rows=[]), _result(scalar=0)]
+    assert client.get("/groups?offset=1000000").status_code == 200

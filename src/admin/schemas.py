@@ -9,6 +9,7 @@ T = TypeVar("T")
 
 MAX_KEYS = 50
 MAX_KEY_LEN = 100
+MAX_OFFSET = 1_000_000
 
 
 class Page(BaseModel, Generic[T]):
