@@ -1,44 +1,68 @@
+import json
+import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from cachetools import TTLCache
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.deps import get_db_async_session, get_handler, get_whatsapp
+from config import Settings, get_settings
 from handler import MessageHandler
-from gowa_sdk.webhooks import WebhookEnvelope
-from whatsapp import WhatsAppClient
+from whatsapp import (
+    GroupEvent,
+    InboundMessage,
+    InboundReaction,
+    WhatsAppGateway,
+)
 from whatsapp.init_groups import gather_groups
+from whatsapp.openwa_webhook import parse_event, verify_signature
 
-# Create router for webhook endpoints
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["webhook"])
 
-MESSAGE_EVENTS = {"message", "message.reaction"}
-
-
-def is_group_sync_event(event: str) -> bool:
-    return event.lower().startswith("group.")
+# Delivery is at-least-once: remember idempotency keys of deliveries we finished.
+_seen_keys: TTLCache = TTLCache(maxsize=2000, ttl=10 * 60)
 
 
 @router.post("/webhook")
 async def webhook(
-    payload: WebhookEnvelope,
+    request: Request,
     handler: Annotated[MessageHandler, Depends(get_handler)],
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
-    whatsapp: Annotated[WhatsAppClient, Depends(get_whatsapp)],
+    whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> str:
-    """
-    WhatsApp webhook endpoint for receiving incoming messages.
-    Returns:
-        Simple "ok" response to acknowledge receipt
-    """
-    event = payload.event.lower()
+    """OpenWA webhook endpoint. Returns "ok" to acknowledge receipt."""
+    body = await request.body()
+    if not verify_signature(
+        settings.openwa_webhook_secret,
+        body,
+        request.headers.get("X-OpenWA-Signature"),
+    ):
+        raise HTTPException(status_code=401, detail="invalid signature")
 
-    # Process message and reaction events through the message handler
-    if event in MESSAGE_EVENTS:
-        await handler(payload)
+    try:
+        envelope = json.loads(body)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid JSON")
+    if not isinstance(envelope, dict):
+        raise HTTPException(status_code=400, detail="expected a JSON object")
 
-    # Keep GROUPS table in sync when group-related events happen
-    if is_group_sync_event(event):
+    key = request.headers.get("X-OpenWA-Idempotency-Key")
+    if key and key in _seen_keys:
+        logger.info("Skipping duplicate delivery %s", key)
+        return "ok"
+
+    event = parse_event(envelope)
+    if isinstance(event, (InboundMessage, InboundReaction)):
+        await handler(event)
+    elif isinstance(event, GroupEvent):
+        # Keep GROUPS table in sync when group-related events happen
         await gather_groups(session, whatsapp)
 
+    # Mark seen only after success, so a failed delivery is retried by OpenWA.
+    if key:
+        _seen_keys[key] = True
     return "ok"

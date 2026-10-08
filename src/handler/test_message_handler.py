@@ -4,18 +4,29 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from handler import MessageHandler
-from gowa_sdk.webhooks import WebhookEnvelope
-from models import Message
+from models import Group, Message
 from test_utils.mock_session import AsyncSessionMock
-from whatsapp import SendMessageRequest
+from whatsapp import InboundMessage
 from whatsapp.jid import JID
 from config import Settings
+
+
+def inbound(text, *, chat="user@s.whatsapp.net", sender="user@s.whatsapp.net", **kw):
+    return InboundMessage(
+        id=kw.pop("id", "m1"),
+        chat_jid=chat,
+        sender_jid=sender,
+        timestamp=datetime.now(timezone.utc),
+        text=text,
+        sender_name="User",
+        **kw,
+    )
 
 
 @pytest.fixture
 def mock_whatsapp():
     client = AsyncMock()
-    client.send_message = AsyncMock()
+    client.send_text = AsyncMock(return_value="response_id")
     client.get_my_jid = AsyncMock(return_value=JID(user="bot", server="s.whatsapp.net"))
     return client
 
@@ -61,24 +72,7 @@ async def test_message_handler_dm_opt_out(
     handler.store_message = AsyncMock(return_value=test_message)
 
     # Create a dummy payload
-    payload = WebhookEnvelope.model_validate(
-        {
-            "event": "message",
-            "payload": {
-                "id": "msg_opt_out",
-                "chat_id": "user@s.whatsapp.net",
-                "from": "user@s.whatsapp.net",
-                "from_name": "User",
-                "timestamp": datetime.now(timezone.utc),
-                "body": "opt-out",
-            },
-        }
-    )
-
-    # Fix mock response for send_message
-    mock_response = AsyncMock()
-    mock_response.results.message_id = "response_id"
-    mock_whatsapp.send_message.return_value = mock_response
+    payload = inbound("opt-out")
 
     await handler(payload)
 
@@ -86,12 +80,10 @@ async def test_message_handler_dm_opt_out(
     mock_session.execute.assert_called()
 
     # Verify confirmation message
-    mock_whatsapp.send_message.assert_called_with(
-        SendMessageRequest(
-            phone="user@s.whatsapp.net",
-            message="You have been opted out. You will no longer be tagged in summaries and answers.",
-            reply_message_id=None,
-        )
+    mock_whatsapp.send_text.assert_called_with(
+        "user@s.whatsapp.net",
+        "You have been opted out. You will no longer be tagged in summaries and answers.",
+        None,
     )
 
 
@@ -115,29 +107,13 @@ async def test_message_handler_dm_opt_in(
     )
     handler.store_message = AsyncMock(return_value=test_message)
 
-    payload = WebhookEnvelope.model_validate(
-        {
-            "event": "message",
-            "payload": {
-                "id": "msg_opt_in",
-                "chat_id": "user@s.whatsapp.net",
-                "from": "user@s.whatsapp.net",
-                "from_name": "User",
-                "timestamp": datetime.now(timezone.utc),
-                "body": "opt-in",
-            },
-        }
-    )
+    payload = inbound("opt-in")
 
     # Mock existing opt-out record
     from models import OptOut
 
     opt_out = OptOut(jid="user@s.whatsapp.net")
     mock_session._storage[("OptOut", "user@s.whatsapp.net")] = opt_out
-
-    mock_response = AsyncMock()
-    mock_response.results.message_id = "response_id"
-    mock_whatsapp.send_message.return_value = mock_response
 
     await handler(payload)
 
@@ -146,12 +122,10 @@ async def test_message_handler_dm_opt_in(
     mock_session.commit.assert_called()
 
     # Verify confirmation message
-    mock_whatsapp.send_message.assert_called_with(
-        SendMessageRequest(
-            phone="user@s.whatsapp.net",
-            message="You have been opted in. You will now be tagged in summaries and answers.",
-            reply_message_id=None,
-        )
+    mock_whatsapp.send_text.assert_called_with(
+        "user@s.whatsapp.net",
+        "You have been opted in. You will now be tagged in summaries and answers.",
+        None,
     )
 
 
@@ -175,34 +149,106 @@ async def test_message_handler_dm_status(
     )
     handler.store_message = AsyncMock(return_value=test_message)
 
-    payload = WebhookEnvelope.model_validate(
-        {
-            "event": "message",
-            "payload": {
-                "id": "msg_status",
-                "chat_id": "user@s.whatsapp.net",
-                "from": "user@s.whatsapp.net",
-                "from_name": "User",
-                "timestamp": datetime.now(timezone.utc),
-                "body": "status",
-            },
-        }
-    )
+    payload = inbound("status")
 
     # Mock get to return None (opted in)
     mock_session.get.return_value = None
 
-    mock_response = AsyncMock()
-    mock_response.results.message_id = "response_id"
-    mock_whatsapp.send_message.return_value = mock_response
-
     await handler(payload)
 
     # Verify status message
-    mock_whatsapp.send_message.assert_called_with(
-        SendMessageRequest(
-            phone="user@s.whatsapp.net",
-            message="You are currently opted in.",
-            reply_message_id=None,
+    mock_whatsapp.send_text.assert_called_with(
+        "user@s.whatsapp.net",
+        "You are currently opted in.",
+        None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_message_handler_ignores_own_messages(
+    mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+):
+    handler = MessageHandler(
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+    )
+    handler.store_message = AsyncMock(
+        return_value=Message(
+            message_id="1",
+            chat_jid="user@s.whatsapp.net",
+            sender_jid="user@s.whatsapp.net",
+            text="opt-out",
+            timestamp=datetime.now(timezone.utc),
         )
     )
+    await handler(inbound("opt-out", from_me=True))
+    mock_whatsapp.send_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_message_handler_routes_mention_from_mentioned_jids(
+    mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+):
+    handler = MessageHandler(
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+    )
+    handler.router = AsyncMock()
+    msg = Message(
+        message_id="g1",
+        chat_jid="1203@g.us",
+        sender_jid="user@s.whatsapp.net",
+        text="what is the plan?",  # no literal @bot in the text
+        timestamp=datetime.now(timezone.utc),
+    )
+    msg.group = Group(group_jid="1203@g.us", managed=True)
+    handler.store_message = AsyncMock(return_value=msg)
+    await handler(
+        inbound(
+            "what is the plan?",
+            chat="1203@g.us",
+            id="g1",
+            mentioned_jids=("bot@s.whatsapp.net",),
+        )
+    )
+    handler.router.assert_awaited_once_with(msg)
+
+
+@pytest.mark.asyncio
+async def test_message_handler_stores_reaction_event(
+    mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+):
+    from whatsapp import InboundReaction
+
+    handler = MessageHandler(
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+    )
+    handler.store_reaction = AsyncMock()
+    handler.store_message = AsyncMock()
+    reaction = InboundReaction(
+        message_id="m1",
+        sender_jid="user@s.whatsapp.net",
+        emoji="👍",
+        timestamp=datetime.now(timezone.utc),
+    )
+    await handler(reaction)
+    handler.store_reaction.assert_awaited_once_with(reaction)
+    handler.store_message.assert_not_awaited()
+    mock_whatsapp.send_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_store_reaction_ignores_empty_emoji(
+    mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+):
+    from whatsapp import InboundReaction
+
+    handler = MessageHandler(
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+    )
+    removal = InboundReaction(
+        message_id="m1",
+        sender_jid="user@s.whatsapp.net",
+        emoji="",
+        timestamp=datetime.now(timezone.utc),
+    )
+    assert await handler.store_reaction(removal) is None
+    mock_session.execute.assert_not_called()

@@ -14,7 +14,7 @@ from tenacity import (
 from voyageai.client_async import AsyncClient
 
 from models import Message
-from whatsapp import WhatsAppClient
+from whatsapp import WhatsAppGateway
 from whatsapp.jid import parse_jid
 from utils.chat_text import chat2text
 from utils.opt_out import get_opt_out_map
@@ -32,7 +32,7 @@ class KnowledgeBaseAnswers(BaseHandler):
     def __init__(
         self,
         session: AsyncSession,
-        whatsapp: WhatsAppClient,
+        whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
     ):

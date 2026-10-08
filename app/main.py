@@ -11,7 +11,7 @@ import logfire
 from api import load_new_kbtopics_api, status, summarize_and_send_to_group_api, webhook
 import models  # noqa
 from config import get_settings
-from whatsapp import WhatsAppClient
+from whatsapp import OpenWAGateway
 from whatsapp.init_groups import gather_groups
 from voyageai.client_async import AsyncClient
 
@@ -28,10 +28,10 @@ async def lifespan(app: FastAPI):
 
     app.state.settings = settings
 
-    app.state.whatsapp = WhatsAppClient(
+    app.state.whatsapp = OpenWAGateway(
         settings.whatsapp_host,
-        settings.whatsapp_basic_auth_user,
-        settings.whatsapp_basic_auth_password,
+        settings.openwa_api_key,
+        settings.openwa_session_id,
     )
 
     if settings.db_uri.startswith("postgresql://"):
@@ -69,6 +69,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.whatsapp.aclose()
         await engine.dispose()
 
 

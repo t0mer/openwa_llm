@@ -4,7 +4,6 @@ import pytest
 
 from handler.kb_qa import KBQAHandler
 from models import Message, Group
-from whatsapp import SendMessageRequest
 from whatsapp.jid import JID
 
 from config import Settings
@@ -13,10 +12,7 @@ from config import Settings
 @pytest.fixture
 def mock_whatsapp():
     client = AsyncMock()
-    # Mock the return value of send_message to match expected structure
-    mock_response = AsyncMock()
-    mock_response.results.message_id = "mock_msg_id"
-    client.send_message = AsyncMock(return_value=mock_response)
+    client.send_text = AsyncMock(return_value="mock_msg_id")
 
     client.get_my_jid = AsyncMock(return_value=JID(user="bot", server="s.whatsapp.net"))
     return client
@@ -146,10 +142,8 @@ async def test_kb_qa_handler_group_not_found(
         )
         await handler(test_message)
 
-        mock_whatsapp.send_message.assert_called_with(
-            SendMessageRequest(
-                phone="allowed@g.us",
-                message="No group found matching 'target_group'",
-                reply_message_id=None,
-            )
+        mock_whatsapp.send_text.assert_called_with(
+            "allowed@g.us",
+            "No group found matching 'target_group'",
+            None,
         )

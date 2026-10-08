@@ -9,7 +9,6 @@ from pydantic_ai.agent import AgentRunResult
 from handler.router import Router, IntentEnum, Intent
 from models import Message
 from test_utils.mock_session import AsyncSessionMock
-from whatsapp import SendMessageRequest
 from whatsapp.jid import JID
 from config import Settings
 
@@ -17,7 +16,7 @@ from config import Settings
 @pytest.fixture
 def mock_whatsapp():
     client = AsyncMock()
-    client.send_message = AsyncMock()
+    client.send_text = AsyncMock(return_value="response_id")
     client.get_my_jid = AsyncMock(return_value=JID(user="bot", server="s.whatsapp.net"))
     return client
 
@@ -118,11 +117,6 @@ async def test_router_ask_question_route(
     mock_nested.__aexit__ = AsyncMock(return_value=None)
     mock_session.begin_nested = Mock(return_value=mock_nested)
 
-    # Set up mock response for send_message
-    mock_response = AsyncMock()
-    mock_response.results.message_id = "response_id"
-    mock_whatsapp.send_message.return_value = mock_response
-
     # Create router instance
     router = Router(mock_session, mock_whatsapp, mock_embedding_client, mock_settings)
 
@@ -130,11 +124,10 @@ async def test_router_ask_question_route(
     await router(test_message)
 
     # Verify the message was sent
-    mock_whatsapp.send_message.assert_called_once_with(
-        SendMessageRequest(
-            phone="user@s.whatsapp.net",
-            message="cool response",
-        )
+    mock_whatsapp.send_text.assert_called_once_with(
+        "user@s.whatsapp.net",
+        "cool response",
+        None,
     )
 
 
@@ -175,11 +168,6 @@ async def test_router_summarize_route(
     mock_exec.all.return_value = [test_message]
     mock_session.exec.return_value = mock_exec
 
-    # Set up mock response for send_message
-    mock_response = AsyncMock()
-    mock_response.results.message_id = "response_id"
-    mock_whatsapp.send_message.return_value = mock_response
-
     # Create router instance
     router = Router(mock_session, mock_whatsapp, mock_embedding_client, mock_settings)
 
@@ -187,11 +175,10 @@ async def test_router_summarize_route(
     await router(test_message)
 
     # Verify the summary was sent
-    mock_whatsapp.send_message.assert_called_once_with(
-        SendMessageRequest(
-            phone="user@s.whatsapp.net",
-            message="Summary of messages",
-        )
+    mock_whatsapp.send_text.assert_called_once_with(
+        "user@s.whatsapp.net",
+        "Summary of messages",
+        None,
     )
 
 
@@ -209,11 +196,6 @@ async def test_router_other_route(
     monkeypatch.setattr(Agent, "__init__", lambda *args, **kwargs: None)
     monkeypatch.setattr(Agent, "run", mock_agent.run)
 
-    # Set up mock response for send_message
-    mock_response = AsyncMock()
-    mock_response.results.message_id = "response_id"
-    mock_whatsapp.send_message.return_value = mock_response
-
     # Create router instance
     router = Router(mock_session, mock_whatsapp, mock_embedding_client, mock_settings)
 
@@ -221,7 +203,7 @@ async def test_router_other_route(
     await router(test_message)
 
     # Verify the default response message was sent
-    mock_whatsapp.send_message.assert_called_once()
+    mock_whatsapp.send_text.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -232,9 +214,6 @@ async def test_send_message(
     mock_settings: Mock,
 ):
     # Set up mock response
-    mock_response = AsyncMock()
-    mock_response.results.message_id = "response_id"
-    mock_whatsapp.send_message.return_value = mock_response
     mock_session.get.return_value = None  # Simulate sender doesn't exist
 
     # Create router instance
@@ -244,7 +223,7 @@ async def test_send_message(
     await router.send_message("user@s.whatsapp.net", "Test message")
 
     # Verify the message was sent and stored
-    mock_whatsapp.send_message.assert_called_once()
+    mock_whatsapp.send_text.assert_called_once()
     mock_session.flush.assert_called()
 
 
@@ -285,11 +264,6 @@ async def test_router_summarize_with_opt_out(
     mock_exec.all.return_value = [test_message]
     mock_session.exec.return_value = mock_exec
 
-    # Set up mock response for send_message
-    mock_response = AsyncMock()
-    mock_response.results.message_id = "response_id"
-    mock_whatsapp.send_message.return_value = mock_response
-
     # Create router instance
     router = Router(mock_session, mock_whatsapp, mock_embedding_client, mock_settings)
 
@@ -306,11 +280,10 @@ async def test_router_summarize_with_opt_out(
         mock_get_opt_out_map.assert_called_once()
 
     # Verify the summary was sent
-    mock_whatsapp.send_message.assert_called_once_with(
-        SendMessageRequest(
-            phone="user@s.whatsapp.net",
-            message="Summary of messages",
-        )
+    mock_whatsapp.send_text.assert_called_once_with(
+        "user@s.whatsapp.net",
+        "Summary of messages",
+        None,
     )
 
     # Verify the prompt contained the opted-out name (indirectly via agent call)

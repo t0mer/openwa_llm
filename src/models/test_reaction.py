@@ -1,7 +1,6 @@
 import pytest
 from datetime import datetime, timezone
 from models.reaction import Reaction
-from gowa_sdk.webhooks import WebhookEnvelope
 from unittest.mock import AsyncMock, MagicMock
 from whatsapp.types import InboundReaction
 
@@ -14,46 +13,6 @@ def test_reaction_normalization():
             "emoji": "👍",
         }
     )
-    assert reaction.sender_jid == "1234567890@s.whatsapp.net"
-
-
-def test_from_webhook():
-    payload = WebhookEnvelope.model_validate(
-        {
-            "event": "message.reaction",
-            "payload": {
-                "id": "reaction_msg_id",
-                "chat_id": "1234567890@s.whatsapp.net",
-                "from": "1234567890@s.whatsapp.net",
-                "from_name": "Test",
-                "timestamp": datetime.now(timezone.utc),
-                "reaction": "👍",
-                "reacted_message_id": "msg1",
-            },
-        }
-    )
-    reaction = Reaction.from_webhook(payload)
-    assert reaction.message_id == "msg1"
-    assert reaction.sender_jid == "1234567890@s.whatsapp.net"
-    assert reaction.emoji == "👍"
-
-
-def test_from_webhook_in_group():
-    payload = WebhookEnvelope.model_validate(
-        {
-            "event": "message.reaction",
-            "payload": {
-                "id": "reaction_msg_id",
-                "chat_id": "group@g.us",
-                "from": "1234567890@s.whatsapp.net",
-                "from_name": "Test",
-                "timestamp": datetime.now(timezone.utc),
-                "reaction": "👍",
-                "reacted_message_id": "msg1",
-            },
-        }
-    )
-    reaction = Reaction.from_webhook(payload)
     assert reaction.sender_jid == "1234567890@s.whatsapp.net"
 
 

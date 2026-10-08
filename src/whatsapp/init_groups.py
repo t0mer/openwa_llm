@@ -3,19 +3,12 @@ from datetime import datetime
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from models import Group, BaseGroup, Sender, BaseSender, upsert
-from .client import WhatsAppClient
+from .gateway import WhatsAppGateway
 
 
-async def gather_groups(session: AsyncSession, client: WhatsAppClient) -> None:
-    groups = await client.get_user_groups()
-
-    if groups is None or groups.results is None:
-        return
-
-    for g in groups.results.data:
-        if not g.jid:
-            continue
-        owner_usr = g.owner_pn or g.owner_jid or None
+async def gather_groups(session: AsyncSession, client: WhatsAppGateway) -> None:
+    for g in await client.list_groups():
+        owner_usr = g.owner_jid or None
         if owner_usr and (await session.get(Sender, owner_usr)) is None:
             owner = Sender(
                 **BaseSender(

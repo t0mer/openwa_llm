@@ -3,7 +3,6 @@ import logging
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
 
-from gowa_sdk.webhooks import WebhookEnvelope, WebhookMessagePayload
 from models import (
     BaseGroup,
     BaseSender,
@@ -14,7 +13,7 @@ from models import (
     Reaction,
     upsert,
 )
-from whatsapp import WhatsAppClient, SendMessageRequest
+from whatsapp import InboundMessage, InboundReaction, WhatsAppGateway
 from whatsapp.jid import normalize_jid
 
 logger = logging.getLogger(__name__)
@@ -24,7 +23,7 @@ class BaseHandler:
     def __init__(
         self,
         session: AsyncSession,
-        whatsapp: WhatsAppClient,
+        whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
     ):
         self.session = session
@@ -33,30 +32,18 @@ class BaseHandler:
 
     async def store_message(
         self,
-        message: Message | BaseMessage | WebhookEnvelope,
+        message: Message | BaseMessage | InboundMessage,
         sender_pushname: str | None = None,
     ) -> Message | None:
         """
-        Store a message or reaction in the database
-        :param message:  Message to store - can be a Message, BaseMessage or WebhookEnvelope
-        :param sender_pushname:  Pushname of the sender [Optional]
-        :return: The stored message, or None if a reaction was stored
+        Store a message in the database
+        :param message: Message to store - a Message, BaseMessage or InboundMessage
+        :param sender_pushname: Pushname of the sender [Optional]
+        :return: The stored message
         """
-        # Handle webhook payload - could be message or reaction
-        if isinstance(message, WebhookEnvelope):
-            data = WebhookMessagePayload.model_validate(message.payload)
-            sender_pushname = data.from_name
-
-            # Check if this is a reaction payload
-            if message.event == "message.reaction":
-                await self.store_reaction(message)
-                return None  # Reaction stored, no message to return
-
-            if message.event != "message":
-                return None
-
-            # Otherwise, treat as regular message
-            message = Message.from_webhook(message)
+        if isinstance(message, InboundMessage):
+            sender_pushname = message.sender_name
+            message = Message.from_inbound(message)
 
         if isinstance(message, BaseMessage):
             message = Message(**message.model_dump())
@@ -90,20 +77,17 @@ class BaseHandler:
             stored_message = await self.upsert(message)
             return stored_message if isinstance(stored_message, Message) else message
 
-    async def store_reaction(self, payload: WebhookEnvelope) -> Reaction | None:
+    async def store_reaction(self, event: InboundReaction) -> Reaction | None:
         """
-        Store a reaction from a WhatsApp webhook payload
-        :param payload: WhatsApp webhook payload containing reaction data
-        :return: The stored reaction, or None if failed
+        Store a reaction from an inbound gateway event
+        :return: The stored reaction, or None if ignored/failed
         """
-        data = WebhookMessagePayload.model_validate(payload.payload)
-        if payload.event != "message.reaction" or not data.reaction:
-            logger.warning("No reaction found in webhook payload")
+        if not event.emoji:
+            logger.info("Ignoring empty reaction (removal) on %s", event.message_id)
             return None
 
         try:
-            # Create reaction from webhook payload
-            reaction = Reaction.from_webhook(payload)
+            reaction = Reaction.from_inbound(event)
 
             async with self.session.begin_nested():
                 # Ensure sender exists
@@ -112,7 +96,7 @@ class BaseHandler:
                     sender = Sender(
                         **BaseSender(
                             jid=reaction.sender_jid,
-                            push_name=data.from_name,
+                            push_name=event.sender_name,
                         ).model_dump()
                     )
                     await self.upsert(sender)
@@ -124,10 +108,7 @@ class BaseHandler:
                     logger.warning(
                         f"Message {reaction.message_id} not found for reaction"
                     )
-                    # We could still store the reaction, but log it as orphaned
-                    # return None  # Uncomment to skip storing orphaned reactions
 
-                # Use custom upsert method for reactions
                 stored_reaction = await Reaction.upsert_reaction(self.session, reaction)
                 logger.info(
                     f"Stored/updated reaction from {reaction.sender_jid} on message {reaction.message_id}"
@@ -152,15 +133,7 @@ class BaseHandler:
         assert message, "message is required"
         to_jid = normalize_jid(to_jid)
 
-        resp = await self.whatsapp.send_message(
-            SendMessageRequest(
-                phone=to_jid,
-                message=message,
-                reply_message_id=in_reply_to,
-            )
-        )
-        assert resp.results, "Failed to send message"
-        sent_message_id = resp.results.message_id
+        sent_message_id = await self.whatsapp.send_text(to_jid, message, in_reply_to)
         assert sent_message_id, "Failed to get sent message ID"
         my_number = await self.whatsapp.get_my_jid()
         new_message = BaseMessage(

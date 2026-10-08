@@ -14,7 +14,7 @@ from models import Message
 from whatsapp.jid import parse_jid
 from utils.chat_text import chat2text
 from utils.opt_out import get_opt_out_map
-from whatsapp import WhatsAppClient
+from whatsapp import WhatsAppGateway
 from config import Settings
 from .base_handler import BaseHandler
 from services.prompt_manager import prompt_manager
@@ -45,7 +45,7 @@ class Router(BaseHandler):
     def __init__(
         self,
         session: AsyncSession,
-        whatsapp: WhatsAppClient,
+        whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
     ):

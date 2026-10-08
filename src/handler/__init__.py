@@ -9,8 +9,7 @@ from config import Settings
 from handler.router import Router
 from handler.whatsapp_group_link_spam import WhatsappGroupLinkSpamHandler
 from handler.kb_qa import KBQAHandler
-from gowa_sdk.webhooks import WebhookEnvelope
-from whatsapp import WhatsAppClient
+from whatsapp import InboundMessage, InboundReaction, WhatsAppGateway
 from .base_handler import BaseHandler
 from models import Message, OptOut
 from urllib.parse import urlparse
@@ -27,7 +26,7 @@ class MessageHandler(BaseHandler):
     def __init__(
         self,
         session: AsyncSession,
-        whatsapp: WhatsAppClient,
+        whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
     ):
@@ -39,8 +38,13 @@ class MessageHandler(BaseHandler):
         self.settings = settings
         super().__init__(session, whatsapp, embedding_client)
 
-    async def __call__(self, payload: WebhookEnvelope):
-        message = await self.store_message(payload)
+    async def __call__(self, event: InboundMessage | InboundReaction):
+        if isinstance(event, InboundReaction):
+            await self.store_reaction(event)
+            await self.session.commit()
+            return
+
+        message = await self.store_message(event)
 
         # Persist immediately: a failure later in the handler must not roll
         # back the stored message (it would be lost for the daily summary).
@@ -52,13 +56,11 @@ class MessageHandler(BaseHandler):
 
         # Ignore messages sent by the bot itself
         my_jid = await self.whatsapp.get_my_jid()
-        if message.sender_jid == my_jid.normalize_str():
+        if event.from_me or message.sender_jid == my_jid.normalize_str():
             return
 
         if message.sender_jid.endswith("@lid"):
-            logging.info(
-                f"Received message from {message.sender_jid}: {payload.model_dump_json()}"
-            )
+            logging.info("Received message from %s: %s", message.sender_jid, event)
 
         # direct message
         if message and not message.group:
@@ -111,7 +113,10 @@ class MessageHandler(BaseHandler):
         if message and message.group and not message.group.managed:
             return
 
-        mentioned = message.has_mentioned(my_jid)
+        mentioned = (
+            message.has_mentioned(my_jid)
+            or my_jid.normalize_str() in event.mentioned_jids
+        )
         if mentioned:
             await self.router(message)
             return

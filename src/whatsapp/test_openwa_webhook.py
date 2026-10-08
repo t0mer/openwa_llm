@@ -169,6 +169,9 @@ def test_parse_media_caption_and_document_filename():
             },
         )
     )
+    assert isinstance(image, InboundMessage)
+    assert isinstance(doc, InboundMessage)
+    assert isinstance(empty_image, InboundMessage)
     assert image.text == "[[Attached Image]] look at this"
     assert doc.text == "[[Attached Document]] plan.pdf"
     assert empty_image.text is None

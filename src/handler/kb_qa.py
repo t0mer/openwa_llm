@@ -7,7 +7,7 @@ from config import Settings
 from handler.base_handler import BaseHandler
 from handler.knowledge_base_answers import KnowledgeBaseAnswers
 from models import Message, Group
-from whatsapp import WhatsAppClient
+from whatsapp import WhatsAppGateway
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class KBQAHandler(BaseHandler):
     def __init__(
         self,
         session: AsyncSession,
-        whatsapp: WhatsAppClient,
+        whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
     ):

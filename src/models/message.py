@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import field_validator, model_validator
 from sqlmodel import Field, Relationship, SQLModel, Column, DateTime
@@ -7,7 +7,6 @@ from sqlmodel import Field, Relationship, SQLModel, Column, DateTime
 
 from whatsapp.jid import normalize_jid, parse_jid, JID
 from whatsapp.types import InboundMessage
-from gowa_sdk.webhooks import WebhookEnvelope, WebhookMessagePayload
 from .kb_topic_message import KBTopicMessage
 
 if TYPE_CHECKING:
@@ -87,42 +86,6 @@ class Message(BaseMessage, table=True):
     )
 
     @classmethod
-    def from_webhook(cls, payload: WebhookEnvelope) -> "Message":
-        """Create Message instance from WhatsApp webhook payload."""
-        if payload.event != "message":
-            raise ValueError(f"Unsupported webhook event: {payload.event}")
-
-        data = WebhookMessagePayload.model_validate(payload.payload)
-        if not data.id:
-            timestamp = data.timestamp or payload.timestamp
-            if timestamp:
-                fallback = timestamp.timestamp()
-            else:
-                fallback = datetime.now(timezone.utc).timestamp()
-            data.id = f"na-{fallback}"
-
-        assert data.id, "Missing message ID"
-        assert data.from_, "Missing sender"
-
-        chat_jid = data.chat_id or data.from_
-        assert chat_jid, "Missing chat ID"
-        sender_jid = data.from_
-
-        return cls(
-            **BaseMessage(
-                message_id=data.id,
-                text=cls._extract_message_text(data),
-                chat_jid=chat_jid,
-                sender_jid=normalize_jid(sender_jid),
-                timestamp=data.timestamp
-                or payload.timestamp
-                or datetime.now(timezone.utc),
-                reply_to_id=data.replied_to_id,
-                media_url=cls._extract_media_url(data),
-            ).model_dump()
-        )
-
-    @classmethod
     def from_inbound(cls, m: InboundMessage) -> "Message":
         """Create a Message from a gateway-neutral inbound message."""
         return cls(
@@ -136,69 +99,6 @@ class Message(BaseMessage, table=True):
                 media_url=m.media_url,
             ).model_dump()
         )
-
-    @staticmethod
-    def _extract_media_url(payload: WebhookMessagePayload) -> Optional[str]:
-        """Get media URL from first available media attachment."""
-        media_types = ["image", "video", "audio", "document", "sticker"]
-
-        for media_type in media_types:
-            if media := getattr(payload, media_type, None):
-                url = Message._extract_media_path(media)
-                if url:
-                    return url
-
-        return None
-
-    @staticmethod
-    def _extract_message_text(payload: WebhookMessagePayload) -> Optional[str]:
-        """Extract message text based on content type."""
-        # Return direct message text if available
-        if payload.text:
-            return payload.text
-
-        # Map content types to their caption attributes
-        content_types = {
-            "image": ["caption"],
-            "video": ["caption"],
-            "audio": ["caption"],
-            "document": ["caption", "file_name", "filename"],
-            "sticker": ["caption"],
-            "contact": ["display_name", "displayName", "name"],
-            "location": ["name", "address"],
-            "poll": ["question", "title"],
-            "list": ["title", "description"],
-            "order": ["message", "order_title", "orderTitle"],
-        }
-
-        # Check each content type for available caption
-        for content_type, caption_keys in content_types.items():
-            if content := getattr(payload, content_type, None):
-                caption = Message._extract_caption(content, caption_keys)
-                if caption:
-                    return f"[[Attached {content_type.title()}]] {caption}"
-
-        return None
-
-    @staticmethod
-    def _extract_media_path(media: Any) -> Optional[str]:
-        if isinstance(media, str):
-            return media
-        if isinstance(media, dict):
-            for key in ("media_path", "path", "url", "direct_path"):
-                value = media.get(key)
-                if value:
-                    return value
-        return None
-
-    @staticmethod
-    def _extract_caption(media: Any, keys: list[str]) -> Optional[str]:
-        if isinstance(media, dict):
-            for key in keys:
-                value = media.get(key)
-                if value:
-                    return str(value)
-        return None
 
 
 Message.model_rebuild()

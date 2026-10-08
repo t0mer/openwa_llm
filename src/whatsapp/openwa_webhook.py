@@ -68,7 +68,8 @@ def _message_text(data: dict[str, Any]) -> str | None:
     label = _MEDIA_LABELS.get(type_)
     if label is None:
         return body
-    media = data.get("media") if isinstance(data.get("media"), dict) else {}
+    raw_media = data.get("media")
+    media: dict[str, Any] = raw_media if isinstance(raw_media, dict) else {}
     caption = body or (_str(media.get("filename")) if type_ == "document" else None)
     return f"[[Attached {label}]] {caption}" if caption else None
 
@@ -99,10 +100,10 @@ def _parse_message(
         logger.warning("Ignoring message without sender/chat: %s", data.get("id"))
         return None
     timestamp = _parse_ts(data.get("timestamp"), envelope_ts)
-    contact = data.get("contact") if isinstance(data.get("contact"), dict) else {}
-    quoted = (
-        data.get("quotedMessage") if isinstance(data.get("quotedMessage"), dict) else {}
-    )
+    raw_contact = data.get("contact")
+    contact: dict[str, Any] = raw_contact if isinstance(raw_contact, dict) else {}
+    raw_quoted = data.get("quotedMessage")
+    quoted: dict[str, Any] = raw_quoted if isinstance(raw_quoted, dict) else {}
     mentions = (
         data.get("mentionedIds") if isinstance(data.get("mentionedIds"), list) else None
     )

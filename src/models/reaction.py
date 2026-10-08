@@ -6,7 +6,6 @@ from sqlmodel import Field, Relationship, SQLModel, Column, DateTime
 
 from whatsapp.jid import normalize_jid
 from whatsapp.types import InboundReaction
-from gowa_sdk.webhooks import WebhookEnvelope, WebhookMessagePayload
 
 if TYPE_CHECKING:
     from .message import Message
@@ -51,29 +50,6 @@ class Reaction(BaseReaction, table=True):
     sender: Optional["Sender"] = Relationship(
         back_populates="reactions", sa_relationship_kwargs={"lazy": "selectin"}
     )
-
-    @classmethod
-    def from_webhook(cls, payload: WebhookEnvelope) -> "Reaction":
-        """Create Reaction instance from WhatsApp webhook payload."""
-        if payload.event != "message.reaction":
-            raise ValueError(f"Unsupported webhook event: {payload.event}")
-
-        data = WebhookMessagePayload.model_validate(payload.payload)
-        if not data.reacted_message_id:
-            raise ValueError("Missing reacted message ID")
-
-        if not data.reaction:
-            raise ValueError("Missing reaction emoji")
-
-        if not data.from_:
-            raise ValueError("Missing sender in webhook payload")
-
-        return cls(
-            message_id=data.reacted_message_id,
-            sender_jid=normalize_jid(data.from_),
-            emoji=data.reaction,
-            timestamp=data.timestamp or payload.timestamp or datetime.now(timezone.utc),
-        )
 
     @classmethod
     def from_inbound(cls, r: InboundReaction) -> "Reaction":
