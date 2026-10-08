@@ -24,6 +24,10 @@ async def test_contacts_list_opt_out_flag_search_and_edit(
         "/api/v1/admin/contacts/2@s.whatsapp.net", json={"push_name": "Eli"}
     )
     assert resp.json()["push_name"] == "Eli" and resp.json()["opted_out"] is False
+    opted = await admin_client.patch(
+        "/api/v1/admin/contacts/1@s.whatsapp.net", json={"push_name": "Dani"}
+    )
+    assert opted.json()["push_name"] == "Dani" and opted.json()["opted_out"] is True
 
 
 async def test_opt_out_roundtrip(admin_client, db_sessionmaker):

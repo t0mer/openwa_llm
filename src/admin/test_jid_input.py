@@ -13,6 +13,8 @@ from admin.jid_input import parse_user_jid
         ("972501234567@s.whatsapp.net", "972501234567@s.whatsapp.net"),
         ("972501234567:12@s.whatsapp.net", "972501234567@s.whatsapp.net"),
         ("55512345@lid", "55512345@lid"),
+        ("123456:4@lid", "123456@lid"),
+        ("972501234567890", "972501234567890@s.whatsapp.net"),
     ],
 )
 def test_valid_inputs(raw, expected):

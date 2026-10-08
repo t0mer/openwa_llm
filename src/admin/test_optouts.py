@@ -80,3 +80,17 @@ def test_list_opt_outs(ctx):
     session.execute.return_value = res
     body = client.get("/opt-outs").json()
     assert body[0]["jid"] == "9725@s.whatsapp.net" and body[0]["push_name"] == "Dana"
+
+
+@pytest.mark.parametrize("bad", ["972\x00@c.us", "٣٤٥"])
+def test_add_opt_out_rejects_nul_and_non_ascii_digits(ctx, bad):
+    client, session = ctx
+    assert client.post("/opt-outs", json={"jid": bad}).status_code == 422
+    session.add.assert_not_called()
+
+
+@pytest.mark.parametrize("bad", ["972%00@c.us", "garbage", "%D9%A3%D9%A4%D9%A5"])
+def test_delete_opt_out_rejects_garbage(ctx, bad):
+    client, session = ctx
+    assert client.delete(f"/opt-outs/{bad}").status_code == 422
+    session.delete.assert_not_called()

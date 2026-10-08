@@ -12,7 +12,8 @@ from whatsapp.jid import (
 )
 
 _MAX_LEN = 255
-_PHONE_CHARS = re.compile(r"^[+\d\s().-]+$")
+_PHONE_CHARS = re.compile(r"^[+0-9\s().-]+$", re.ASCII)
+_USER_DIGITS = re.compile(r"^[0-9]{5,20}$")
 
 
 def parse_user_jid(raw: str) -> str:
@@ -23,16 +24,21 @@ def parse_user_jid(raw: str) -> str:
     if "@" not in text:
         if not _PHONE_CHARS.match(text):
             raise ValueError("not a phone number")
-        digits = re.sub(r"\D", "", text)
-        if not digits:
+        digits = re.sub(r"[^0-9]", "", text)
+        if not _USER_DIGITS.match(digits):
             raise ValueError("not a phone number")
         return f"{digits}@{DefaultUserServer}"
+    if text.count("@") != 1 or any(ord(ch) < 32 or ch.isspace() for ch in text):
+        raise ValueError("invalid JID")
     try:
         jid = parse_jid(to_canonical_jid(text))
     except JIDParseError as e:
         raise ValueError(str(e)) from e
-    if not jid.user or jid.server not in (DefaultUserServer, HiddenUserServer):
+    if jid.server not in (DefaultUserServer, HiddenUserServer):
         raise ValueError("expected a user JID (@s.whatsapp.net, @c.us or @lid)")
-    if text.count("@") != 1:
-        raise ValueError("invalid JID")
-    return normalize_jid(jid)
+    user = normalize_jid(jid).split("@", 1)[0]
+    if jid.server == HiddenUserServer:
+        user = user.split(":", 1)[0]
+    if not _USER_DIGITS.match(user):
+        raise ValueError("invalid JID user")
+    return f"{user}@{jid.server}"
