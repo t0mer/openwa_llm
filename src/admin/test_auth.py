@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from fastapi import FastAPI
@@ -8,7 +9,7 @@ from fastapi import APIRouter, Depends
 
 from admin import auth
 from admin.router import build_admin_router
-from config import get_settings
+from config import Settings, get_settings
 
 SECRET = "s" * 32
 HDR = {"X-Requested-With": "admin-ui"}
@@ -232,8 +233,9 @@ def test_protected_routes_404_when_disabled(make_client):
     assert client.get("/api/v1/admin/_probe").status_code == 404
 
 
-def _cfg(password, secret):
-    return SimpleNamespace(admin_password=password, admin_session_secret=secret)
+def _cfg(password, secret) -> Settings:
+    ns = SimpleNamespace(admin_password=password, admin_session_secret=secret)
+    return cast(Settings, ns)
 
 
 def test_admin_config_warning():
