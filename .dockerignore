@@ -17,3 +17,7 @@ build/
 *.log
 .git
 .github
+web/node_modules/
+web/.vite/
+src/admin/static/dist/
+docs/

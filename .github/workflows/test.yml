@@ -47,6 +47,8 @@ jobs:
       - name: Install the project
         run: uv sync --all-extras --dev
       - name: Test with pytest
+        env:
+          ADMIN_TEST_DB_URI: postgresql+asyncpg://user:password@localhost:5432/test_db
         run: |
           uv run coverage run --source=pytest_evals -m pytest --junitxml=junit/test-results.xml
           uv run coverage xml coverage.xml
@@ -64,3 +66,20 @@ jobs:
             junit/**/*.xml
             junit/**/*.trx
             junit/**/*.json
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
