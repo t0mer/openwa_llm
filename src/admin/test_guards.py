@@ -28,3 +28,7 @@ def test_nul_in_query_value_key_and_path_is_422():
     assert client.get("/q?a=a%00b").status_code == 422
     assert client.get("/q?a%00=1").status_code == 422
     assert client.get("/p/a%00b").status_code == 422
+
+
+def test_nul_in_earlier_repeated_query_value_is_422():
+    assert client.get("/q?a=a%00&a=b").status_code == 422
