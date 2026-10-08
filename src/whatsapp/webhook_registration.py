@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from .gateway import WhatsAppGateway
+from .openwa import OpenWAGateway
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ DEFAULT_DELAYS: tuple[float, ...] = (5, 10, 20, 30) + (30,) * 8
 
 
 async def register_webhook_with_retry(
-    gateway: WhatsAppGateway,
+    gateway: OpenWAGateway,
     url: str,
     secret: str,
     events: list[str],
