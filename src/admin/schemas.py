@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -152,3 +152,14 @@ class MessageOut(BaseModel):
 class MessagePage(BaseModel):
     items: list[MessageOut]
     next_cursor: str | None
+
+
+class ActionStatus(BaseModel):
+    state: Literal["idle", "running", "succeeded", "failed"]
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: str | None = None
+
+
+class ActionStarted(BaseModel):
+    job_id: str

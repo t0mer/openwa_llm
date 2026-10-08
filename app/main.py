@@ -9,6 +9,7 @@ import logging
 import logfire
 
 from admin import admin_router
+from admin.actions import runner as admin_actions
 from api import load_new_kbtopics_api, status, summarize_and_send_to_group_api, webhook
 import models  # noqa
 from config import get_settings
@@ -91,6 +92,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await admin_actions.shutdown()
         for task in app.state.bg_tasks:
             task.cancel()
         await asyncio.gather(*app.state.bg_tasks, return_exceptions=True)
