@@ -74,6 +74,17 @@ def _message_text(data: dict[str, Any]) -> str | None:
     return f"[[Attached {label}]] {caption}" if caption else None
 
 
+def _resolve_jid(raw: str | None, phone: Any) -> str | None:
+    """Canonicalize a JID, mapping an `@lid` to the sender's phone JID if known."""
+    if not raw:
+        return None
+    if raw.endswith(f"@{HiddenUserServer}"):
+        digits = re.sub(r"\D", "", phone) if isinstance(phone, str) else ""
+        if digits:
+            return f"{digits}@{DefaultUserServer}"
+    return to_canonical_jid(raw)
+
+
 def _sender(data: dict[str, Any]) -> str | None:
     is_group = bool(data.get("isGroup"))
     # If isGroup is not set, check if chatId ends with @g.us
@@ -81,14 +92,16 @@ def _sender(data: dict[str, Any]) -> str | None:
         chat_id = _str(data.get("chatId"))
         if chat_id and chat_id.endswith("@g.us"):
             is_group = True
-    raw = _str(data.get("author")) if is_group else None
-    raw = raw or _str(data.get("from"))
-    if raw and raw.endswith(f"@{HiddenUserServer}"):
-        phone = _str(data.get("senderPhone"))
-        digits = re.sub(r"\D", "", phone) if phone else ""
-        if digits:
-            return f"{digits}@{DefaultUserServer}"
-    return to_canonical_jid(raw) if raw else None
+    if is_group:
+        # In a group `from` is the group JID: never accept it as the sender.
+        candidates = (data.get("author"), data.get("participant"), data.get("from"))
+        raw = next(
+            (c for c in map(_str, candidates) if c and not c.endswith("@g.us")),
+            None,
+        )
+    else:
+        raw = _str(data.get("from"))
+    return _resolve_jid(raw, data.get("senderPhone"))
 
 
 def _parse_message(

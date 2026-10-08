@@ -88,18 +88,56 @@ def test_parse_dm_uses_from_as_sender():
     assert ev.chat_jid == "972501234567@s.whatsapp.net"
 
 
-def test_parse_group_message_without_author_falls_back_to_from():
+def test_parse_group_message_without_author_or_user_from_is_ignored():
+    ev = parse_event(
+        _envelope(
+            "message.received",
+            {
+                "id": "m1",
+                "from": "1203@g.us",
+                "chatId": "1203@g.us",
+                "body": "x",
+                "type": "chat",
+                "timestamp": 1790000000,
+                "isGroup": True,
+            },
+        )
+    )
+    assert ev is None
+
+
+def test_parse_group_message_uses_participant_when_no_author():
+    ev = parse_event(
+        _envelope(
+            "message.received",
+            {
+                "id": "m1",
+                "from": "1203@g.us",
+                "participant": "972501234567@c.us",
+                "chatId": "1203@g.us",
+                "body": "x",
+                "type": "chat",
+                "timestamp": 1790000000,
+                "isGroup": True,
+            },
+        )
+    )
+    assert isinstance(ev, InboundMessage)
+    assert ev.sender_jid == "972501234567@s.whatsapp.net"
+
+
+def test_parse_non_group_message_falls_back_to_from():
     ev = parse_event(
         _envelope(
             "message.received",
             {
                 "id": "m1",
                 "from": "972501234567@c.us",
-                "chatId": "1203@g.us",
+                "chatId": "972501234567@c.us",
                 "body": "x",
                 "type": "chat",
                 "timestamp": 1790000000,
-                "isGroup": True,
+                "isGroup": False,
             },
         )
     )
