@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -1234,19 +1234,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/99/96/a0205167fa0154f4a542fd6925bdc63d039d88dab3588b875078107e6f06/googleapis_common_protos-1.73.0.tar.gz", hash = "sha256:778d07cd4fbeff84c6f7c72102f0daf98fa2bfd3fa8bea426edc545588da0b5a", size = 147323, upload-time = "2026-03-06T21:53:09.727Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/69/28/23eea8acd65972bbfe295ce3666b28ac510dfcb115fac089d3edb0feb00a/googleapis_common_protos-1.73.0-py3-none-any.whl", hash = "sha256:dfdaaa2e860f242046be561e6d6cb5c5f1541ae02cfbcb034371aadb2942b4e8", size = 297578, upload-time = "2026-03-06T21:52:33.933Z" },
-]
-
-[[package]]
-name = "gowa"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/87/11/f2ae4ef9d6955cdbdd0812d087ab4d31234e3c41375e156b0215b1f0f7db/gowa-0.1.0.tar.gz", hash = "sha256:f02c18de8e332de8a15e4ac2acd60f9d639059b74d2a6fadec0b990290ec6dfa", size = 9222, upload-time = "2026-02-07T06:14:03.277Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/be/2b0e263bb82cf0c7fd30f621d277c0d3eb31281d0cee95ad869929d20c10/gowa-0.1.0-py3-none-any.whl", hash = "sha256:42264ab04b6934cdd276a6373907e56ce65b59fc907c292c3e81a4938c1fcdc7", size = 14431, upload-time = "2026-02-07T06:14:01.564Z" },
 ]
 
 [[package]]
@@ -4513,14 +4500,13 @@ wheels = [
 
 [[package]]
 name = "wa-llm"
-version = "1.4.8"
+version = "1.4.10"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "cachetools" },
     { name = "fastapi" },
-    { name = "gowa" },
     { name = "httpx" },
     { name = "jinja2" },
     { name = "logfire", extra = ["fastapi", "httpx", "sqlalchemy", "system-metrics"] },
@@ -4557,7 +4543,6 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "cachetools", specifier = ">=7.1.4" },
     { name = "fastapi", specifier = ">=0.139.0" },
-    { name = "gowa", specifier = ">=0.1.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "logfire", extras = ["fastapi", "httpx", "sqlalchemy", "system-metrics"], specifier = ">=4.37.0" },
