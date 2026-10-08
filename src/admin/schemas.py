@@ -117,3 +117,21 @@ class OptOutOut(BaseModel):
 
 class OptOutCreate(BaseModel):
     jid: str = Field(max_length=300)
+
+
+class MessageOut(BaseModel):
+    message_id: str
+    timestamp: datetime
+    text: str | None
+    sender_jid: str
+    sender_name: str | None
+    group_jid: str | None
+    chat_jid: str
+    reply_to_id: str | None
+    reaction_count: int
+    has_media: bool
+
+
+class MessagePage(BaseModel):
+    items: list[MessageOut]
+    next_cursor: str | None
