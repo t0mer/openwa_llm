@@ -99,9 +99,11 @@ def _contact_detail(data: dict[str, Any]) -> str | None:
     for card in cards:
         if not isinstance(card, str):
             continue
-        match = re.search(r"^FN[;:][^\r\n]*?:?([^:\r\n]+)$", card, re.M)
-        if match and match.group(1).strip():
-            names.append(match.group(1).strip())
+        for line in card.splitlines():
+            match = re.match(r"FN(?:;[^:]*)?:(.*)$", line.strip(), re.I)
+            if match and match.group(1).strip():
+                names.append(match.group(1).strip())
+                break
     return ", ".join(names) or None
 
 

@@ -516,3 +516,10 @@ def test_broadcast_and_newsletter_chats_are_ignored():
     assert _msg(chatId="status@broadcast", body="x", type="chat") is None
     assert _msg(chatId="120363@newsletter", body="x", type="chat") is None
     assert _msg(**{"from": "status@broadcast"}, chatId=None, body="x") is None
+
+
+def test_vcard_crlf_and_param_forms():
+    crlf = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Dana Levi\r\nEND:VCARD"
+    param = "BEGIN:VCARD\nFN;CHARSET=UTF-8:Avi Cohen\nEND:VCARD"
+    assert _text(type="vcard", vCards=[crlf]) == "[[Attached Contact]] Dana Levi"
+    assert _text(type="vcard", vCards=[param]) == "[[Attached Contact]] Avi Cohen"
