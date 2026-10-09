@@ -50,7 +50,7 @@ async def test_sent():
     assert res == GroupSummaryResult(
         status="sent", message_count=20, required=MIN_MESSAGES_TO_SUMMARIZE
     )
-    wa.send_text.assert_awaited_once_with("g1@g.us", "sum")
+    wa.send_text.assert_awaited_once_with("g1@g.us", "sum", mentions=[])
 
 
 async def test_skipped_not_enough_messages():

@@ -20,6 +20,7 @@ from config import Settings
 from models import Group, Message
 from services.prompt_manager import prompt_manager
 from utils.chat_text import chat2text
+from utils.mentions import extract_mentions
 from utils.opt_out import get_opt_out_map
 from whatsapp import WhatsAppGateway
 from whatsapp.identity import get_bot_identity
@@ -100,13 +101,24 @@ async def summarize_and_send_to_group(
         )
 
     outcome = GroupSummaryResult(status="sent", message_count=count)
+    # Mentions are best-effort: never let them block sending the text.
+    mentions: list[str] = []
     try:
-        await whatsapp.send_text(group.group_jid, result.output)
+        sender_jids = {m.sender_jid for m in messages}
+        opt_out_map = await get_opt_out_map(session, list(sender_jids))
+        mentions = extract_mentions(result.output, sender_jids, opt_out_map)
+    except Exception as e:
+        logging.warning(
+            "Could not compute mentions for group %s: %s", group.group_name, e
+        )
+
+    try:
+        await whatsapp.send_text(group.group_jid, result.output, mentions=mentions)
 
         # Send the summary to the community groups
         community_groups = await group.get_related_community_groups(session)
         for cg in community_groups:
-            await whatsapp.send_text(cg.group_jid, result.output)
+            await whatsapp.send_text(cg.group_jid, result.output, mentions=mentions)
 
     except Exception as e:
         logging.error("Error sending message to group %s: %s", group.group_name, e)
