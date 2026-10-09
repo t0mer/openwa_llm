@@ -8,7 +8,7 @@ import type { Group } from "../types";
 
 vi.mock("../api", async (orig) => {
   const actual = await orig<typeof import("../api")>();
-  return { ...actual, api: { listGroups: vi.fn(), patchGroup: vi.fn() } };
+  return { ...actual, api: { listGroups: vi.fn(), patchGroup: vi.fn(), listSchedules: vi.fn() } };
 });
 vi.mock("../alerts");
 import { confirm, toast } from "../alerts";
@@ -250,5 +250,62 @@ describe("Groups across a viewport resize", () => {
     expect(screen.getByRole("combobox", { name: /summary language/i })).toBeDisabled();
     await act(async () => release());
     await waitFor(() => expect(screen.getByRole("switch", { name: /spam/i })).toBeEnabled());
+  });
+});
+
+describe("Groups dialogs across the table/cards swap", () => {
+  const user = userEvent.setup({ pointerEventsCheck: 0 }); // Radix sets pointer-events:none on <body>
+
+  async function expectModal(dialog: HTMLElement) {
+    // The page behind stays hidden from assistive tech and out of the Tab order after the swap.
+    expect(screen.queryByRole("list", { name: "Groups", hidden: false })).not.toBeInTheDocument();
+    const list = screen.getByRole("list", { name: "Groups", hidden: true });
+    expect(list.closest("[aria-hidden=true]")).not.toBeNull();
+    expect(screen.queryByRole("table", { hidden: true })).not.toBeInTheDocument();
+    for (let i = 0; i < 15; i++) {
+      await user.tab();
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+    for (let i = 0; i < 5; i++) {
+      await user.tab({ shift: true });
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+  }
+
+  it.each([
+    ["Edit", "Edit 1@g.us", "Edit group"],
+    ["Schedules", "Schedules for WA name", /Schedules/],
+  ] as const)("%s: stays modal and keeps its state when the table becomes cards", async (_n, opener, title) => {
+    const vp = mockViewport(1024);
+    vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [] });
+    setup([base]);
+    await user.click(await screen.findByRole("button", { name: opener }));
+    const dialog = await screen.findByRole("dialog", { name: title });
+    if (_n === "Edit") await user.type(within(dialog).getByLabelText("Display name"), "Draft");
+    else await screen.findByText("No schedules yet.");
+    vp.setWidth(600);
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    if (_n === "Edit") expect(within(dialog).getByLabelText("Display name")).toHaveValue("Draft");
+    await expectModal(dialog);
+  });
+
+  it.each([
+    ["Edit", "Edit 1@g.us"],
+    ["Schedules", "Schedules for WA name"],
+  ] as const)("%s: returns focus to the new opener when the old one was removed by the swap", async (_n, opener) => {
+    const vp = mockViewport(1024);
+    vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [] });
+    setup([base]);
+    const old = await screen.findByRole("button", { name: opener });
+    await user.click(old);
+    await screen.findByRole("dialog");
+    vp.setWidth(600);
+    expect(old.isConnected).toBe(false);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const fresh = screen.getByRole("button", { name: opener });
+    expect(fresh.closest("li")).not.toBeNull();
+    await waitFor(() => expect(fresh).toHaveFocus());
+    vp.setWidth(1024);
   });
 });
