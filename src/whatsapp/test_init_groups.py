@@ -26,11 +26,13 @@ async def test_gather_groups_updates_only_gateway_owned_columns():
     insert_part, set_part = sql.split("DO UPDATE SET")
     assert "ON CONFLICT (group_jid)" in insert_part
     assert "display_name" in insert_part  # new rows still insert every column
+    assert "summary_language" in insert_part
     assert "group_name = excluded.group_name" in set_part
     assert "group_topic = excluded.group_topic" in set_part
     assert "owner_jid = excluded.owner_jid" in set_part
     for column in (
         "display_name",
+        "summary_language",
         "managed",
         "notify_on_spam",
         "community_keys",
