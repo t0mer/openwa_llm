@@ -44,3 +44,10 @@ async def test_get_related_community_groups_no_keys():
     related = await group.get_related_community_groups(mock_session)
     assert related == []
     mock_session.exec.assert_not_called()
+
+
+def test_summary_language_column_is_nullable_two_char_string():
+    column = Group.__table__.c.summary_language  # pyright: ignore[reportAttributeAccessIssue]
+    assert column.nullable is True
+    assert column.type.length == 2
+    assert Group(group_jid="1@g.us").summary_language is None
