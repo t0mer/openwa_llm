@@ -1,11 +1,13 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import "@fontsource-variable/rubik";
 import App from "./App";
-import { applyTheme, getTheme } from "./theme";
+import { applyTheme } from "./lib/theme";
 import "./styles.css";
+import "./index.css";
 
-applyTheme(getTheme());
+applyTheme();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

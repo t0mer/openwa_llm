@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
-import { applyTheme, getTheme, type Theme } from "../theme";
+import { getThemeMode, setThemeMode, type ThemeMode } from "../lib/theme";
 
 const LINKS: [string, string][] = [
   ["groups", "Groups"],
@@ -27,7 +27,7 @@ function Burger({ open }: { open: boolean }) {
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { logout } = useAuth();
-  const [theme, setTheme] = useState<Theme>(getTheme());
+  const [theme, setTheme] = useState<ThemeMode>(getThemeMode());
   const [open, setOpen] = useState(false);
   const burger = useRef<HTMLButtonElement>(null);
   const header = useRef<HTMLElement>(null);
@@ -57,8 +57,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   }, [open]);
 
   function cycleTheme() {
-    const next: Theme = theme === "system" ? "light" : theme === "light" ? "dark" : "system";
-    applyTheme(next);
+    const next: ThemeMode = theme === "system" ? "light" : theme === "light" ? "dark" : "system";
+    setThemeMode(next);
     setTheme(next);
   }
 
