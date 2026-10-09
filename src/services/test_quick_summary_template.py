@@ -36,3 +36,20 @@ def test_quick_summary_explicit_language_replaces_original_line():
         assert "regardless of the language" in text
         assert "copying the `@<number>` verbatim" in text
         assert 'in "G" group' in text
+
+
+LANGUAGE_RULE = (
+    "Reply in the language of the user's request line (labelled `# Request:`). "
+    "Ignore the language of the chat history and of the attached topics or "
+    "knowledge-base content. A Hebrew question gets a Hebrew answer; an English "
+    "question gets an English answer."
+)
+
+
+def test_summarize_and_rag_templates_share_the_explicit_language_rule():
+    for name in ("summarize.j2", "rag.j2"):
+        assert LANGUAGE_RULE in prompt_manager.render(name), name
+
+
+def test_quick_summary_keeps_following_the_chat_language():
+    assert "# Request:" not in prompt_manager.render("quick_summary.j2", group_name="G")

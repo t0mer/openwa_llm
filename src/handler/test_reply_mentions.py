@@ -150,3 +150,15 @@ async def test_kb_reply_mentions_history_and_topic_senders():
         quiet_jid,
         ASKER,
     ]
+
+
+async def test_generation_prompt_labels_the_request():
+    kb = KnowledgeBaseAnswers(AsyncMock(), AsyncMock(), AsyncMock(), Mock())
+    agent = SimpleNamespace(run=AsyncMock(return_value=SimpleNamespace(output="x")))
+    with patch("handler.knowledge_base_answers.Agent", Mock(return_value=agent)):
+        await kb.generation_agent("מה זה?", "topics", ASKER, [], {})
+    assert agent.run.await_args is not None
+    prompt = agent.run.await_args.args[0]
+    assert "# Request:" in prompt
+    assert "@227912345678901: מה זה?" in prompt
+    assert "# Related Topics:" in prompt
