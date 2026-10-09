@@ -130,9 +130,9 @@ interface Props {
 
 /** Day toggles look like chips; the native checkbox keeps its role, name and keyboard behaviour. */
 const DAY_CHIP =
-  "inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-sm font-medium md:min-h-9 has-[:checked]:border-primary has-[:checked]:bg-primary-soft has-[:checked]:text-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60";
+  "inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-sm font-medium lg:min-h-9 has-[:checked]:border-primary has-[:checked]:bg-primary-soft has-[:checked]:text-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60";
 /** Compact selects in the time row; still 44px tall on phones. */
-const TIME_SELECT = "w-[4.75rem] md:min-h-9";
+const TIME_SELECT = "w-[4.75rem] lg:min-h-9";
 
 export default function SchedulesDialog({ group, onClose, onChanged, returnFocus }: Props) {
   const [timezone, setTimezone] = useState<string | null>(null);
@@ -403,10 +403,10 @@ export default function SchedulesDialog({ group, onClose, onChanged, returnFocus
                   {row.weekdays.length === 0 && row.attempted && <InlineError>Select at least one day.</InlineError>}
                   {/* aria-disabled, not disabled: a clicked Save/Delete keeps focus while saving */}
                   <div className="flex flex-wrap justify-end gap-2">
-                    <Button variant={b ? "danger-outline" : "outline"} size="sm" className="min-h-11 md:min-h-9" onClick={() => void remove(row)} aria-disabled={row.saving || undefined} aria-label={`${b ? "Delete" : "Remove"} ${name}`}>
+                    <Button variant={b ? "danger-outline" : "outline"} size="sm" className="min-h-11 lg:min-h-9" onClick={() => void remove(row)} aria-disabled={row.saving || undefined} aria-label={`${b ? "Delete" : "Remove"} ${name}`}>
                       {b ? "Delete" : "Remove"}
                     </Button>
-                    <Button variant="primary" size="sm" className="min-h-11 md:min-h-9" onClick={() => void save(row)} aria-disabled={row.saving || !dirty || undefined} aria-label={`Save ${name}`}>
+                    <Button variant="primary" size="sm" className="min-h-11 lg:min-h-9" onClick={() => void save(row)} aria-disabled={row.saving || !dirty || undefined} aria-label={`Save ${name}`}>
                       Save
                     </Button>
                   </div>
@@ -415,11 +415,11 @@ export default function SchedulesDialog({ group, onClose, onChanged, returnFocus
             })}
           </ul>
           <div className="flex flex-wrap items-center gap-2">
-            <Button ref={addBtn} size="lg" className="md:min-h-10 md:text-sm" onClick={addRow} disabled={loading || !!loadError || rows.length >= MAX_SCHEDULES}>
+            <Button ref={addBtn} size="lg" className="lg:min-h-10 md:text-sm" onClick={addRow} disabled={loading || !!loadError || rows.length >= MAX_SCHEDULES}>
               Add schedule
             </Button>
             {rows.length >= MAX_SCHEDULES && <span className="text-sm text-muted-foreground">Limit of {MAX_SCHEDULES} schedules reached.</span>}
-            <Button variant="primary" size="lg" className="ms-auto md:min-h-10 md:text-sm" onClick={() => void close()} disabled={busy}>
+            <Button variant="primary" size="lg" className="ms-auto lg:min-h-10 md:text-sm" onClick={() => void close()} disabled={busy}>
               Close
             </Button>
           </div>

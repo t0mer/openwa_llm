@@ -195,7 +195,7 @@ export default function Messages() {
         {loading && !first && <p role="status" className="text-sm text-muted-foreground">Loading…</p>}
         {cursor && (
           <div className="flex items-center gap-2">
-            <Button size="lg" className="md:min-h-9" disabled={loading} onClick={() => void fetchPage(filters, cursor)}>Load older</Button>
+            <Button size="lg" className="lg:min-h-9" disabled={loading} onClick={() => void fetchPage(filters, cursor)}>Load older</Button>
           </div>
         )}
       </div>

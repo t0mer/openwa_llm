@@ -556,6 +556,20 @@ describe("SchedulesDialog", () => {
     expect(row).toHaveClass("flex-col", "rounded-lg", "border");
   });
 
+  it("keeps 44px touch targets until lg (day chips, time selects, row buttons, footer buttons)", async () => {
+    open([sched()]);
+    const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+    const dialog = screen.getByRole("dialog");
+    const chip = within(row).getByRole("checkbox", { name: "Mon" }).closest("label")!;
+    expect(chip).toHaveClass("min-h-11", "lg:min-h-9");
+    for (const sel of within(row).getAllByRole("combobox")) expect(sel).toHaveClass("lg:min-h-9");
+    for (const name of ["Save schedule at 9:30 AM", "Delete schedule at 9:30 AM"]) {
+      expect(within(row).getByRole("button", { name })).toHaveClass("min-h-11", "lg:min-h-9");
+    }
+    expect(within(dialog).getByRole("button", { name: /Add schedule/ })).toHaveClass("min-h-11", "lg:min-h-10");
+    expect(dialog.innerHTML).not.toMatch(/\bmd:min-h-9\b/);
+  });
+
   describe("closing with unsaved changes", () => {
     const dirty = async () => {
       const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
