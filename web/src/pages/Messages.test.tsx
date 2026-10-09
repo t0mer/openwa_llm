@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Messages from "./Messages";
+import { mockViewport } from "../hooks/mockViewport";
 import { ApiError, api } from "../api";
 import type { MessageItem } from "../types";
 
@@ -21,6 +22,7 @@ const msg = (id: string, text: string): MessageItem => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockViewport(1024);
   vi.mocked(api.listGroups).mockResolvedValue({
     items: [{ group_jid: "1@g.us", group_name: "Alpha", display_name: null } as never],
     total: 1,
