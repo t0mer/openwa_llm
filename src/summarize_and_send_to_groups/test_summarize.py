@@ -6,6 +6,7 @@ import pytest
 from datetime import datetime
 
 import summarize_and_send_to_groups as mod
+from summarize_and_send_to_groups import summarize as real_summarize
 from summarize_and_send_to_groups import (
     MIN_MESSAGES_TO_SUMMARIZE,
     GroupSummaryResult,
@@ -14,11 +15,12 @@ from summarize_and_send_to_groups import (
 )
 
 
-def _group(jid="g1@g.us", name="Name", display=None):
+def _group(jid="g1@g.us", name="Name", display=None, language=None):
     return SimpleNamespace(
         group_jid=jid,
         group_name=name,
         display_name=display,
+        summary_language=language,
         last_summary_sync=datetime(2026, 1, 1),
         get_related_community_groups=AsyncMock(return_value=[]),
     )
@@ -108,3 +110,35 @@ async def test_groups_none_managed():
     resp.all.return_value = []
     session.exec = AsyncMock(return_value=resp)
     assert await summarize_and_send_to_groups(object(), session, object()) == []
+
+
+@pytest.mark.parametrize("language", [None, "he", "en", "ru"])
+async def test_summarize_receives_group_language(monkeypatch, language):
+    summarize_mock = AsyncMock(return_value=SimpleNamespace(output="sum"))
+    monkeypatch.setattr(mod, "summarize", summarize_mock)
+    wa = MagicMock(send_text=AsyncMock())
+    await summarize_and_send_to_group(
+        object(), _session([1] * 20), wa, _group(language=language)
+    )
+    assert summarize_mock.await_args is not None
+    assert summarize_mock.await_args.kwargs["summary_language"] == language
+
+
+async def test_summarize_renders_prompt_with_language(monkeypatch):
+    agent_cls = MagicMock()
+    agent_cls.return_value.run = AsyncMock(return_value=SimpleNamespace(output="x"))
+    monkeypatch.setattr(mod, "Agent", agent_cls)
+    monkeypatch.setattr(mod, "get_opt_out_map", AsyncMock(return_value={}))
+    monkeypatch.setattr(mod, "chat2text", MagicMock(return_value="chat"))
+    settings = SimpleNamespace(model_name="test")
+
+    await real_summarize(object(), settings, "G", [], summary_language="ru")
+    assert (
+        "Write the entire summary in Russian"
+        in (agent_cls.call_args.kwargs["system_prompt"])
+    )
+    await real_summarize(object(), settings, "G", [])
+    assert (
+        "Write in the same language as the chat group"
+        in (agent_cls.call_args.kwargs["system_prompt"])
+    )

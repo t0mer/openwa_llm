@@ -38,6 +38,7 @@ async def test_summary_sends_mentions_to_group_and_community(monkeypatch):
     group = SimpleNamespace(
         group_jid="main@g.us",
         group_name="G",
+        summary_language=None,
         last_summary_sync=None,
         get_related_community_groups=AsyncMock(return_value=[community]),
     )
@@ -77,6 +78,7 @@ async def _run_degraded(monkeypatch, sender_jid, opt_out_exc=None):
     group = SimpleNamespace(
         group_jid="main@g.us",
         group_name="G",
+        summary_language=None,
         last_summary_sync=None,
         get_related_community_groups=AsyncMock(
             return_value=[SimpleNamespace(group_jid="community@g.us")]
