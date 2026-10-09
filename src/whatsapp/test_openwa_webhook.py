@@ -503,7 +503,11 @@ def test_rich_text_kinds():
 def test_rich_text_malformed_falls_back_to_label():
     assert _text(type="location", location="nope") == "[[Attached Location]]"
     assert (
-        _text(type="location", location={"latitude": float("nan"), "longitude": None})
+        _text(type="location", location={"latitude": float("nan"), "longitude": 5.0})
+        == "[[Attached Location]]"
+    )
+    assert (
+        _text(type="location", location={"latitude": "x", "longitude": 5.0})
         == "[[Attached Location]]"
     )
     assert _text(type="vcard", vCards="oops", vcard=5) == "[[Attached Contact]]"
