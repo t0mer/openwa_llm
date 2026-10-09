@@ -19,27 +19,64 @@ beforeAll(async () => {
   css = files.filter((f) => f.fileName.endsWith(".css")).map((f) => String(f.source)).join("\n");
 }, 60_000);
 
-/** Split minified CSS into top-level blocks, tracking brace depth. */
-function topLevel(src: string): { head: string; body: string }[] {
-  const out: { head: string; body: string }[] = [];
-  let depth = 0;
-  let start = 0;
-  let head = "";
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (ch === "{") {
-      if (depth === 0) head = src.slice(start, i).trim();
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-      if (depth === 0) {
-        out.push({ head, body: src.slice(src.indexOf("{", start) + 1, i) });
-        start = i + 1;
+type Node = { head: string; children?: Node[]; body: string };
+
+/** Parse minified CSS into a tree: statements ("@layer a,b;") have no children, blocks do. */
+function parse(raw: string): Node[] {
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, "");
+  let i = 0;
+  function list(): Node[] {
+    const out: Node[] = [];
+    for (;;) {
+      let head = "";
+      while (i < src.length && src[i] !== "{" && src[i] !== "}" && src[i] !== ";") head += src[i++];
+      head = head.trim();
+      const ch = src[i++];
+      if (ch === undefined || ch === "}") return out;
+      if (ch === ";") {
+        if (head) out.push({ head, body: "" });
+        continue;
       }
-    } else if (ch === ";" && depth === 0) {
-      out.push({ head: src.slice(start, i).trim(), body: "" });
-      start = i + 1;
+      // block: decide whether it holds rules (at-rule containers) or declarations
+      const startBody = i;
+      if (/^@(layer|media|supports|container)\b/.test(head)) {
+        out.push({ head, children: list(), body: "" });
+      } else {
+        let depth = 1;
+        while (i < src.length && depth > 0) depth += src[i] === "{" ? 1 : src[i] === "}" ? -1 : 0, i++;
+        out.push({ head, body: src.slice(startBody, i - 1) });
+      }
     }
+  }
+  return list();
+}
+
+const LAYERS = ["theme", "base", "legacy", "components", "utilities"];
+
+/** Layer names in the order the browser first meets them (statements and blocks, in document order). */
+function layerFirstMention(nodes: Node[], seen: string[] = []): string[] {
+  for (const n of nodes) {
+    const m = /^@layer\s+([^{]*)$/.exec(n.head);
+    if (m) for (const name of m[1].split(",").map((x) => x.trim())) if (name && !seen.includes(name)) seen.push(name);
+    if (n.children) layerFirstMention(n.children, seen);
+  }
+  return seen;
+}
+
+const ALLOWED_RULE = /^(:root(\.dark)?|:host|\.swal-[\w-]+|\.swal2-[\w-]+|\.tabular)\b/;
+const ALLOWED_AT = /^@(property|font-face|keyframes)\b/;
+
+/** Return the offending selector of the first unlayered rule that is not on the allowlist. */
+function unlayeredViolations(nodes: Node[], out: string[] = []): string[] {
+  for (const n of nodes) {
+    if (/^@layer\b/.test(n.head)) continue; // layer statements and layer blocks
+    if (ALLOWED_AT.test(n.head)) continue;
+    if (n.children) {
+      unlayeredViolations(n.children, out); // @media / @supports: contents must be allowed too
+      continue;
+    }
+    // selector lists may be comma separated; each part must be allowed
+    for (const sel of n.head.split(",").map((x) => x.trim())) if (!ALLOWED_RULE.test(sel)) out.push(sel);
   }
   return out;
 }
@@ -52,35 +89,34 @@ describe("production bundle", () => {
     expect(text.some((t) => /url\(data:font/.test(t))).toBe(false);
   });
 
-  it("declares the layer order with legacy between base and components", () => {
-    expect(css).toMatch(/@layer theme,\s*base,\s*legacy,\s*components,\s*utilities;/);
-    // the statement must come first so no layer is ordered implicitly before it
-    expect(css.search(/@layer theme,\s*base,\s*legacy/)).toBeLessThan(css.indexOf("@layer legacy{"));
+  it("the effective cascade order is theme < base < legacy < components < utilities", () => {
+    const seen = layerFirstMention(parse(css));
+    const pos = LAYERS.map((l) => seen.indexOf(l));
+    expect(pos.every((p) => p >= 0), `layers seen: ${seen.join(",")}`).toBe(true);
+    expect([...pos].sort((a, b) => a - b)).toEqual(pos);
   });
 
-  it("keeps every legacy rule inside @layer legacy; only SweetAlert and token rules are unlayered", () => {
-    const blocks = topLevel(css);
-    const unlayered = blocks.filter((b) => b.body && !b.head.startsWith("@layer") && !b.head.startsWith("@media") && !b.head.startsWith("@font-face") && !b.head.startsWith("@property") && !b.head.startsWith("@keyframes") && !b.head.startsWith("@supports"));
-    for (const b of unlayered) {
-      const sel = b.head;
-      // legacy global selectors must not appear outside a layer
-      expect(sel, sel).not.toMatch(/^(body|html|button|input|select|textarea|th|td|h1|h2|label|table|a)\b/);
-      expect(sel, sel).not.toMatch(/^(\.btn|\.card|\.badge|\.navbar|\.modal)\b/);
-    }
-    const legacy = blocks.find((b) => b.head === "@layer legacy");
-    expect(legacy).toBeDefined();
-    expect(legacy!.body).toMatch(/\.btn/);
-    expect(legacy!.body).toMatch(/body\{[^}]*font:/);
+  it("every unlayered rule is on the allowlist (tokens, @property/@font-face/@keyframes, SweetAlert)", () => {
+    const tree = parse(css);
+    expect(unlayeredViolations(tree)).toEqual([]);
+    // and the legacy rules really live in the legacy layer
+    const legacy = tree.find((n) => n.head === "@layer legacy" && n.children)!;
+    expect(legacy.children!.some((n) => /^button(,|$)/.test(n.head) || n.head.includes(".btn"))).toBe(true);
     // swal rules stay unlayered so they beat sweetalert2's own unlayered CSS
-    expect(unlayered.some((b) => b.head.includes(".swal-popup"))).toBe(true);
+    expect(tree.some((n) => n.head.includes(".swal-popup"))).toBe(true);
   });
 
-  it("applies Rubik to the body and keeps button variants as utilities in a later layer", () => {
-    // base layer: body uses the Rubik stack
-    expect(css).toMatch(/body\{[^}]*font-family:\s*var\(--font-sans\)/);
-    // the legacy body font shorthand resolves to Rubik as well (and sits in a lower layer)
-    expect(css).toMatch(/--font:\s*"Rubik Variable"/);
-    const blocks = topLevel(css);
-    expect(blocks.find((b) => b.head === "@layer utilities")!.body).toContain(".bg-primary");
+  it("body text is Rubik through the effective chain: legacy body font -> --font -> Rubik Variable", () => {
+    const tree = parse(css);
+    const legacy = tree.find((n) => n.head === "@layer legacy" && n.children)!.children!;
+    const body = legacy.find((n) => n.head === "body")!;
+    expect(body.body).toMatch(/font:\s*15px\/1\.5 var\(--font\)/);
+    const rootTokens = legacy.filter((n) => n.head === ":root").map((n) => n.body).join(";");
+    expect(rootTokens).toMatch(/--font:\s*"Rubik Variable"/);
+    // legacy is above base, so nothing unlayered may re-set the body font
+    const unlayeredBody = tree.filter((n) => !n.children && /^(body|html)\b/.test(n.head));
+    expect(unlayeredBody).toEqual([]);
+    // the Rubik face is declared for that family name
+    expect(css).toMatch(/@font-face\{font-family:Rubik Variable/);
   });
 });
