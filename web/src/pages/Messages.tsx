@@ -101,12 +101,12 @@ export default function Messages() {
         <tbody>
           {items.map((m) => (
             <tr key={m.message_id}>
-              <td data-label="Time" className="muted">{new Date(m.timestamp).toLocaleString()}</td>
-              <td data-label="Sender">{m.sender_name ?? m.sender_jid}<div className="muted">{m.sender_jid}</div></td>
-              <td data-label="Message" className="msg-text">
+              <td data-label="Time" className="muted"><div className="cell-value">{new Date(m.timestamp).toLocaleString()}</div></td>
+              <td data-label="Sender"><div className="cell-value">{m.sender_name ?? m.sender_jid}<div className="muted">{m.sender_jid}</div></div></td>
+              <td data-label="Message" className="msg-text"><div className="cell-value">
                 {m.reply_to_id && <span className="badge">reply</span>} {m.has_media && <span className="badge">media</span>} {m.text}
-              </td>
-              <td data-label="Reactions">{m.reaction_count || ""}</td>
+              </div></td>
+              <td data-label="Reactions"><div className="cell-value">{m.reaction_count || ""}</div></td>
             </tr>
           ))}
         </tbody>

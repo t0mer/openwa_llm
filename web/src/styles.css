@@ -181,6 +181,7 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
   table.responsive td { display: grid; grid-template-columns: minmax(84px, 36%) 1fr; gap: var(--s3); align-items: start; padding: var(--s2) 0; border-bottom: 1px solid var(--border); min-width: 0; overflow-wrap: anywhere; }
   table.responsive td:last-child { border-bottom: none; }
   table.responsive td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding-top: 2px; }
+  table.responsive td > .cell-value { min-width: 0; }
   table.responsive td.cell-primary { display: block; font-size: 1.05rem; }
   table.responsive td.cell-primary::before { display: block; margin-bottom: 2px; }
   table.responsive td.cell-actions { display: flex; flex-wrap: wrap; gap: var(--s2); padding-top: var(--s3); white-space: normal; }

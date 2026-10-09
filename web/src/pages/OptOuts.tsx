@@ -61,9 +61,9 @@ export default function OptOuts() {
           <tbody>
             {(data ?? []).map((o) => (
               <tr key={o.jid}>
-                <td data-label="Name" className="cell-primary">{o.push_name ?? <span className="muted">—</span>}</td>
-                <td data-label="JID" className="muted">{o.jid}</td>
-                <td data-label="Since">{new Date(o.created_at).toLocaleString()}</td>
+                <td data-label="Name" className="cell-primary"><div className="cell-value">{o.push_name ?? <span className="muted">—</span>}</div></td>
+                <td data-label="JID" className="muted"><div className="cell-value">{o.jid}</div></td>
+                <td data-label="Since"><div className="cell-value">{new Date(o.created_at).toLocaleString()}</div></td>
                 <td className="cell-actions"><button type="button" className="danger" aria-label={`Remove ${o.jid}`} disabled={busy !== null} onClick={() => void remove(o.jid)}>Remove</button></td>
               </tr>
             ))}

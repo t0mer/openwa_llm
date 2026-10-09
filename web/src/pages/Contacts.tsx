@@ -92,7 +92,7 @@ export default function Contacts() {
           <tbody>
             {(data?.items ?? []).map((c) => (
               <tr key={c.jid}>
-                <td data-label="Name" className="cell-primary">
+                <td data-label="Name" className="cell-primary"><div className="cell-value">
                   {editJid === c.jid ? (
                     <>
                       <input aria-label={`Name for ${c.jid}`} value={name} onChange={(e) => setName(e.target.value)} maxLength={255} disabled={saving} />
@@ -101,9 +101,9 @@ export default function Contacts() {
                   ) : (
                     c.push_name ?? <span className="muted">—</span>
                   )}
-                </td>
-                <td data-label="JID" className="muted">{c.jid}</td>
-                <td data-label="Status">{c.opted_out ? <span className="badge warn">Opted out</span> : <span className="badge">Tagged</span>}</td>
+                </div></td>
+                <td data-label="JID" className="muted"><div className="cell-value">{c.jid}</div></td>
+                <td data-label="Status"><div className="cell-value">{c.opted_out ? <span className="badge warn">Opted out</span> : <span className="badge">Tagged</span>}</div></td>
                 <td className="cell-actions">
                   {editJid === c.jid ? (
                     <>

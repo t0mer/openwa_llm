@@ -107,22 +107,22 @@ export default function Groups() {
           <tbody>
             {(data?.items ?? []).map((g) => (
               <tr key={g.group_jid}>
-                <td data-label="Group" className="cell-primary">
+                <td data-label="Group" className="cell-primary"><div className="cell-value">
                   <strong>{label(g)}</strong>
                   <div className="muted">
                     {g.display_name && g.group_name ? `WhatsApp: ${g.group_name} · ` : ""}{g.group_jid}
                   </div>
                   {g.group_topic && <div className="muted">{g.group_topic}</div>}
-                </td>
-                <td data-label="Respond">
+                </div></td>
+                <td data-label="Respond"><div className="cell-value">
                   <input type="checkbox" className="switch" checked={g.managed} onChange={() => void toggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
-                </td>
-                <td data-label="Spam notice">
+                </div></td>
+                <td data-label="Spam notice"><div className="cell-value">
                   <input type="checkbox" className="switch" checked={g.notify_on_spam} onChange={() => void save(g, { notify_on_spam: !g.notify_on_spam })} aria-label={`Spam notice in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
-                </td>
-                <td data-label="Community keys">{g.community_keys.length ? g.community_keys.join(", ") : <span className="muted">—</span>}</td>
-                <td data-label="Messages">{g.message_count}</td>
-                <td data-label="Last summary">{fmt(g.last_summary_sync)}</td>
+                </div></td>
+                <td data-label="Community keys"><div className="cell-value">{g.community_keys.length ? g.community_keys.join(", ") : <span className="muted">—</span>}</div></td>
+                <td data-label="Messages"><div className="cell-value">{g.message_count}</div></td>
+                <td data-label="Last summary"><div className="cell-value">{fmt(g.last_summary_sync)}</div></td>
                 <td className="cell-actions"><button type="button" onClick={() => setEditing(g)} aria-label={`Edit ${g.group_jid}`}>Edit</button></td>
               </tr>
             ))}
