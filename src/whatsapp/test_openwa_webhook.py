@@ -506,3 +506,9 @@ def test_rich_text_malformed_falls_back_to_label():
     assert _msg(type="poll", poll=[1]).text == "[[Attached Poll]]"
     assert _msg(type="list", list=None).text == "[[Attached List]]"
     assert _msg(type="order").text == "[[Attached Order]]"
+
+
+def test_broadcast_and_newsletter_chats_are_ignored():
+    assert _msg(chatId="status@broadcast", body="x", type="chat") is None
+    assert _msg(chatId="120363@newsletter", body="x", type="chat") is None
+    assert _msg(**{"from": "status@broadcast"}, chatId=None, body="x") is None

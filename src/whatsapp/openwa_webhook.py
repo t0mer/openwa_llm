@@ -205,9 +205,16 @@ def _sender(data: dict[str, Any]) -> str | None:
     return _resolve_jid(raw, data.get("senderPhone"))
 
 
+_IGNORED_CHAT_SUFFIXES = ("@broadcast", "@newsletter")
+
+
 def _parse_message(
     data: dict[str, Any], envelope_ts: datetime
 ) -> InboundMessage | None:
+    for key in ("chatId", "from", "to"):
+        value = _str(data.get(key))
+        if value and value.endswith(_IGNORED_CHAT_SUFFIXES):
+            return None  # status/broadcast lists and channels: nothing to store
     sender = _sender(data)
     # For our own outgoing messages `from` is the bot itself; the chat is `to`.
     fallback_chat = data.get("to") if data.get("fromMe") else data.get("from")
