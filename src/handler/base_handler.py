@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
@@ -120,20 +121,32 @@ class BaseHandler:
             return None
 
     async def send_message(
-        self, to_jid: str, message: str, in_reply_to: str | None = None
+        self,
+        to_jid: str,
+        message: str,
+        in_reply_to: str | None = None,
+        mentions: Sequence[str] = (),
     ) -> Message:
         """
         Send a message to a JID over WhatsApp, and store the message in the database
         :param to_jid: The JID to send the message to
         :param message: The message text to send
         :param in_reply_to: The JID of the message to reply to [Optional]
+        :param mentions: JIDs tagged in the message text as @<number> [Optional]
         :return: The stored message
         """
         assert to_jid, "to_jid is required"
         assert message, "message is required"
         to_jid = normalize_jid(to_jid)
 
-        sent_message_id = await self.whatsapp.send_text(to_jid, message, in_reply_to)
+        if mentions:
+            sent_message_id = await self.whatsapp.send_text(
+                to_jid, message, in_reply_to, mentions=mentions
+            )
+        else:
+            sent_message_id = await self.whatsapp.send_text(
+                to_jid, message, in_reply_to
+            )
         assert sent_message_id, "Failed to get sent message ID"
         my_number = await self.whatsapp.get_my_jid()
         new_message = BaseMessage(

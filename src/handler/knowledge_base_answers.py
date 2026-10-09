@@ -18,6 +18,7 @@ from whatsapp import WhatsAppGateway
 from whatsapp.identity import get_bot_identity
 from whatsapp.jid import parse_jid
 from utils.chat_text import chat2text
+from utils.mentions import extract_mentions
 from utils.opt_out import get_opt_out_map
 from utils.voyage_embed_text import voyage_embed_text
 from .base_handler import BaseHandler
@@ -123,6 +124,9 @@ class KnowledgeBaseAnswers(BaseHandler):
             message.chat_jid,
             generation_result.output,
             # in_reply_to=message.message_id,
+            mentions=extract_mentions(
+                generation_result.output, [message.sender_jid], opt_out_map
+            ),
         )
 
     @retry(

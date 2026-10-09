@@ -42,6 +42,43 @@ async def test_send_text_group_without_reply_omits_quote(gateway, httpx_mock):
     assert await gateway.send_text("120363@g.us", "yo") == "out2"
 
 
+async def test_send_text_sends_mapped_deduped_mentions(gateway, httpx_mock):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{SESSION}/messages/send-text",
+        match_json={
+            "chatId": "120363@g.us",
+            "text": "hi @111 @222 @333",
+            "mentions": ["111@c.us", "222@lid", "333@c.us"],
+        },
+        json={"messageId": "out3"},
+        status_code=201,
+    )
+    sent = await gateway.send_text(
+        "120363@g.us",
+        "hi @111 @222 @333",
+        mentions=[
+            "111@s.whatsapp.net",
+            "222@lid",
+            "111@s.whatsapp.net",
+            "333@c.us",
+        ],
+    )
+    assert sent == "out3"
+
+
+async def test_send_text_caps_mentions(gateway, httpx_mock):
+    jids = [f"{10000 + i}@lid" for i in range(1100)]
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{SESSION}/messages/send-text",
+        match_json={"chatId": "120363@g.us", "text": "x", "mentions": jids[:1024]},
+        json={"messageId": "out4"},
+        status_code=201,
+    )
+    assert await gateway.send_text("120363@g.us", "x", mentions=jids) == "out4"
+
+
 async def test_send_text_session_not_ready_raises(gateway, httpx_mock):
     httpx_mock.add_response(
         method="POST", url=f"{SESSION}/messages/send-text", status_code=409
