@@ -1,5 +1,12 @@
 import { ChevronDown } from "lucide-react";
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import {
+  cloneElement,
+  useId,
+  type InputHTMLAttributes,
+  type ReactElement,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+} from "react";
 import { cn } from "../../lib/cn";
 
 const control =
@@ -28,7 +35,11 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
   );
 }
 
-/** A labelled control. The label is a real <label>, never a placeholder standing in for one. */
+/**
+ * A labelled control. The <label> holds only the label text (so it is the whole accessible name)
+ * and points at the control by id; the hint sits outside it and is linked with aria-describedby.
+ * The control must accept `id` and `aria-describedby` (Input, Select and Textarea do).
+ */
 export function Field({
   label,
   hint,
@@ -37,14 +48,22 @@ export function Field({
 }: {
   label: string;
   hint?: string;
-  children: ReactNode;
+  children: ReactElement<{ id?: string; "aria-describedby"?: string }>;
   className?: string;
 }) {
+  const auto = useId();
+  const id = children.props.id ?? auto;
+  const hintId = `${id}-hint`;
+  const describedBy = [children.props["aria-describedby"], hint ? hintId : undefined].filter(Boolean).join(" ") || undefined;
   return (
-    <label className={cn("flex flex-col gap-1.5 text-sm font-medium", className)}>
-      {label}
-      {children}
-      {hint && <span className="text-xs font-normal text-muted-foreground">{hint}</span>}
-    </label>
+    <div className={cn("flex flex-col gap-1.5 text-sm font-medium", className)}>
+      <label htmlFor={id}>{label}</label>
+      {cloneElement(children, { id, "aria-describedby": describedBy })}
+      {hint && (
+        <span id={hintId} className="text-xs font-normal text-muted-foreground">
+          {hint}
+        </span>
+      )}
+    </div>
   );
 }
