@@ -14,8 +14,8 @@ type ContentProps = Omit<ComponentPropsWithoutRef<typeof DialogPrimitive.Content
 
 /**
  * A bottom sheet on phones, a centred dialog from md. `wide` widens it (Schedules). Extra Radix
- * Content props (onEscapeKeyDown, onInteractOutside, ...) pass through so callers can keep a
- * dialog open while it is saving. `closeDisabled` disables the close button for the same reason.
+ * Content props pass through. `closeDisabled` (use while saving) disables the close button and
+ * blocks Escape and outside clicks, after any caller handlers have run.
  */
 export function DialogContent({
   title,
@@ -24,6 +24,9 @@ export function DialogContent({
   className,
   wide = false,
   closeDisabled = false,
+  onEscapeKeyDown,
+  onPointerDownOutside,
+  onInteractOutside,
   ...props
 }: ContentProps & {
   title: string;
@@ -38,6 +41,19 @@ export function DialogContent({
       <DialogPrimitive.Content
         {...(description ? {} : { "aria-describedby": undefined })}
         {...props}
+        // Caller handlers run first; closeDisabled then still blocks every way of closing.
+        onEscapeKeyDown={(e) => {
+          onEscapeKeyDown?.(e);
+          if (closeDisabled) e.preventDefault();
+        }}
+        onPointerDownOutside={(e) => {
+          onPointerDownOutside?.(e);
+          if (closeDisabled) e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          onInteractOutside?.(e);
+          if (closeDisabled) e.preventDefault();
+        }}
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] flex-col gap-4 overflow-y-auto rounded-t-xl border border-border bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-overlay",
           "md:inset-x-auto md:bottom-auto md:left-1/2 md:top-1/2 md:w-full md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-lg",
