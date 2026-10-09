@@ -59,7 +59,7 @@ a { color: var(--accent); }
 .navbar nav a:hover { background: var(--surface-2); color: var(--text); }
 .navbar nav a.active { background: var(--accent-soft); color: var(--accent); }
 .nav-actions { margin-left: auto; display: flex; gap: var(--s1); }
-.burger { display: none; margin-left: auto; }
+button.burger { display: none; margin-left: auto; }
 
 /* ---------- Layout ---------- */
 .content { padding: var(--s5); max-width: 1200px; margin: 0 auto; }
@@ -85,7 +85,7 @@ button.ghost, .btn.ghost { background: transparent; border-color: transparent; c
 button.ghost:hover:not(:disabled), .btn.ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 .icon-btn { padding: 0; min-width: var(--tap); min-height: var(--tap); }
-input:not([type="checkbox"]), select, textarea { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 var(--s3); min-height: 38px; font: inherit; }
+input:not([type="checkbox"]), select, textarea { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px var(--s3); min-height: 38px; line-height: 1.4; font: inherit; }
 input:not([type="checkbox"]):focus, select:focus { border-color: var(--focus); }
 input::placeholder { color: var(--muted); opacity: .8; }
 label { font-weight: 500; }
@@ -168,7 +168,7 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
 /* ---------- Responsive ---------- */
 @media (max-width: 959px) {
   .navbar-inner { padding: var(--s2) var(--s4); }
-  .burger { display: inline-flex; }
+  button.burger { display: inline-flex; }
   .navbar nav { display: none; position: absolute; top: 100%; left: 0; right: 0; flex-direction: column; align-items: stretch; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-lg); padding: var(--s2) var(--s4) var(--s4); gap: var(--s1); }
   .navbar nav.open { display: flex; }
   .navbar nav a { min-height: var(--tap); }
@@ -180,7 +180,7 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
   body { font-size: 16px; }
   .content { padding: var(--s4); }
   button, .btn { min-height: var(--tap); }
-  input:not([type="checkbox"]), select { min-height: var(--tap); }
+  input:not([type="checkbox"]), select { min-height: var(--tap); font-size: 16px; line-height: 1.4; padding-top: 10px; padding-bottom: 10px; }
   .toolbar > * { flex: 1 1 100%; }
   .toolbar > button, .toolbar > .muted { flex: 1 1 auto; }
   h1 { font-size: 1.4rem; }
@@ -217,3 +217,6 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
 .results h3 { margin: var(--s2) 0 var(--s1); font-size: .95rem; }
 .results ul { list-style: none; margin: var(--s2) 0 0; padding: 0; display: grid; gap: var(--s2); max-height: 360px; overflow-y: auto; }
 .results li { padding: var(--s2) var(--s3); background: var(--surface-2); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+
+/* Keep identifiers (JIDs, numbers) left-to-right inside RTL text. */
+bdi.jid { unicode-bidi: isolate; direction: ltr; }
