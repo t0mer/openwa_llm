@@ -1,7 +1,9 @@
 import asyncio
 import logging
 from collections.abc import Collection
+from dataclasses import dataclass, replace
 from datetime import datetime
+from typing import Literal
 
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunResult
@@ -23,6 +25,20 @@ from whatsapp import WhatsAppGateway
 from whatsapp.identity import get_bot_identity
 
 logger = logging.getLogger(__name__)
+
+MIN_MESSAGES_TO_SUMMARIZE = 15
+
+
+@dataclass(frozen=True)
+class GroupSummaryResult:
+    """Outcome of summarizing one group. Identity fields are filled by the caller."""
+
+    status: Literal["sent", "skipped", "failed"]
+    reason: str | None = None
+    message_count: int | None = None
+    required: int = MIN_MESSAGES_TO_SUMMARIZE
+    group_jid: str = ""
+    group_name: str = ""
 
 
 @retry(
@@ -61,14 +77,17 @@ def messages_to_summarize_stmt(group: Group, bot_jids: Collection[str]):
 
 async def summarize_and_send_to_group(
     settings: Settings, session, whatsapp: WhatsAppGateway, group: Group
-):
+) -> GroupSummaryResult:
     bot = await get_bot_identity(whatsapp)
     resp = await session.exec(messages_to_summarize_stmt(group, bot.normalized()))
     messages: list[Message] = resp.all()
+    count = len(messages)
 
-    if len(messages) < 15:
+    if count < MIN_MESSAGES_TO_SUMMARIZE:
         logging.info("Not enough messages to summarize in group %s", group.group_name)
-        return
+        return GroupSummaryResult(
+            status="skipped", reason="not_enough_messages", message_count=count
+        )
 
     try:
         result = await summarize(
@@ -76,8 +95,11 @@ async def summarize_and_send_to_group(
         )
     except Exception as e:
         logging.error("Error summarizing group %s: %s", group.group_name, e)
-        return
+        return GroupSummaryResult(
+            status="failed", reason="summarize_error", message_count=count
+        )
 
+    outcome = GroupSummaryResult(status="sent", message_count=count)
     try:
         await whatsapp.send_text(group.group_jid, result.output)
 
@@ -88,6 +110,9 @@ async def summarize_and_send_to_group(
 
     except Exception as e:
         logging.error("Error sending message to group %s: %s", group.group_name, e)
+        outcome = GroupSummaryResult(
+            status="failed", reason="send_error", message_count=count
+        )
 
     finally:
         # Update the group with the new last_summary_sync
@@ -95,16 +120,30 @@ async def summarize_and_send_to_group(
         session.add(group)
         await session.commit()
 
+    return outcome
+
 
 async def summarize_and_send_to_groups(
     settings: Settings, session: AsyncSession, whatsapp: WhatsAppGateway
-):
-    groups = await session.exec(select(Group).where(Group.managed == True))  # noqa: E712 https://stackoverflow.com/a/18998106
+) -> list[GroupSummaryResult]:
+    groups = list(
+        (await session.exec(select(Group).where(Group.managed == True))).all()  # noqa: E712 https://stackoverflow.com/a/18998106
+    )
     tasks = [
         summarize_and_send_to_group(settings, session, whatsapp, group)
-        for group in list(groups.all())
+        for group in groups
     ]
-    errs = await asyncio.gather(*tasks, return_exceptions=True)
-    for e in errs:
-        if isinstance(e, BaseException):
-            logging.error("Error syncing group: %s", e)
+    outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+    results: list[GroupSummaryResult] = []
+    for group, outcome in zip(groups, outcomes):
+        if isinstance(outcome, BaseException):
+            logging.error("Error syncing group: %s", outcome)
+            outcome = GroupSummaryResult(status="failed", reason="unexpected_error")
+        results.append(
+            replace(
+                outcome,
+                group_jid=group.group_jid,
+                group_name=group.display_name or group.group_name or "",
+            )
+        )
+    return results
