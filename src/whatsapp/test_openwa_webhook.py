@@ -447,3 +447,26 @@ def test_reaction_lid_sender_without_phone_stays_lid():
     ev = _reaction(senderId="123@lid")
     assert isinstance(ev, InboundReaction)
     assert ev.sender_jid == "123@lid"
+
+
+def _msg(**over):
+    data = {
+        "id": "m1",
+        "from": "9725@c.us",
+        "chatId": "9725@c.us",
+        "timestamp": 1790000000,
+        **over,
+    }
+    return parse_event(_envelope("message.received", data))
+
+
+def test_media_message_gets_reference_instead_of_url():
+    by_media = _msg(body="x", type="chat", media={"mimetype": "image/jpeg"})
+    by_type = _msg(type="image")
+    plain = _msg(body="hi", type="chat")
+    assert isinstance(by_media, InboundMessage)
+    assert isinstance(by_type, InboundMessage)
+    assert isinstance(plain, InboundMessage)
+    assert by_media.media_url == "openwa-media:9725@c.us/m1"
+    assert by_type.media_url == "openwa-media:9725@c.us/m1"
+    assert plain.media_url is None

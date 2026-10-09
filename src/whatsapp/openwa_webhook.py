@@ -74,6 +74,18 @@ def _message_text(data: dict[str, Any]) -> str | None:
     return f"[[Attached {label}]] {caption}" if caption else None
 
 
+def _media_ref(data: dict[str, Any], chat_id: str, message_id: str) -> str | None:
+    """Reference (not a download) for media messages: `openwa-media:<chat>/<id>` (raw OpenWA chat id).
+
+    Media is detected from `data.media` being truthy or a media `type`. Both are
+    from the OpenWA docs, not verified against a live payload.
+    """
+    type_ = str(data.get("type") or "").lower()
+    if data.get("media") or type_ in _MEDIA_LABELS:
+        return f"openwa-media:{chat_id}/{message_id}"
+    return None
+
+
 def _resolve_jid(raw: str | None, phone: Any) -> str | None:
     """Canonicalize a JID, mapping an `@lid` to the sender's phone JID if known."""
     if not raw:
@@ -122,15 +134,17 @@ def _parse_message(
     mentions = (
         data.get("mentionedIds") if isinstance(data.get("mentionedIds"), list) else None
     )
+    message_id = _str(data.get("id")) or f"na-{timestamp.timestamp()}"
+    chat_jid = to_canonical_jid(chat)
     return InboundMessage(
-        id=_str(data.get("id")) or f"na-{timestamp.timestamp()}",
-        chat_jid=to_canonical_jid(chat),
+        id=message_id,
+        chat_jid=chat_jid,
         sender_jid=sender,
         timestamp=timestamp,
         text=_message_text(data),
         sender_name=_str(contact.get("pushName")),
         reply_to_id=_str(quoted.get("id")),
-        media_url=None,
+        media_url=_media_ref(data, chat, message_id),
         from_me=bool(data.get("fromMe")),
         mentioned_jids=tuple(
             normalize_jid(to_canonical_jid(m))
