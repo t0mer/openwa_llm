@@ -2,7 +2,7 @@
 import Swal from "sweetalert2";
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { confirm, errorDialog, toast } from "./alerts";
+import { confirm, errorDialog, toast, modalsIdle } from "./alerts";
 
 window.matchMedia ??= ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as never;
 window.scrollTo = (() => {}) as never;
@@ -14,8 +14,7 @@ const swalCss = css.slice(css.indexOf("/* SweetAlert2 theme"));
 
 afterEach(async () => {
   await flush();
-  Swal.close();
-  await flush();
+  await modalsIdle(() => Swal.close());
   await flush();
 });
 
@@ -40,8 +39,7 @@ describe("SweetAlert2 theme", () => {
     void errorDialog("Oops", "bad");
     await flush();
     expect(document.querySelector(".swal2-popup")).toHaveClass("swal-popup");
-    Swal.close();
-    await flush();
+    await modalsIdle(() => Swal.close());
     toast.info("hi");
     await flush();
     expect(document.querySelector(".swal2-popup.swal2-toast")).toHaveClass("swal-popup", "swal-toast");

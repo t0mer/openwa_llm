@@ -2,8 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fire = vi.fn();
 const toastFire = vi.fn();
+// Like SweetAlert2: fire() resolves when the popup starts closing, didDestroy runs after teardown.
 vi.mock("sweetalert2", () => ({
-  default: { fire: (...a: unknown[]) => fire(...a), mixin: () => ({ fire: (...a: unknown[]) => toastFire(...a) }) },
+  default: {
+    fire: (...a: unknown[]) => {
+      const p = Promise.resolve(fire(...a));
+      void p.then(() => setTimeout(() => (a[0] as { didDestroy?: () => void }).didDestroy?.(), 0));
+      return p;
+    },
+    mixin: () => ({ fire: (...a: unknown[]) => toastFire(...a) }),
+  },
 }));
 
 import { confirm, errorDialog, showSummaryResults, summaryIcon, toast } from "./alerts";

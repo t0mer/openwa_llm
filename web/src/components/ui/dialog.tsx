@@ -48,6 +48,23 @@ function SwalFocusPassThrough() {
 
 /** How many open dialogs made each element inert; only elements we made inert are released. */
 const inertCount = new Map<Element, number>();
+/** Dialogs currently open (mounted content). */
+let openDialogs = 0;
+
+/**
+ * A SweetAlert modal records each <body> child's aria-hidden when it opens and puts it back when
+ * it closes. If the last Radix dialog closes while such a modal is open (e.g. a 401 logout
+ * unmounts the page), the recorded "true" came from Radix and is stale: drop the record so
+ * SweetAlert un-hides the app, and keep it hidden behind the modal until then.
+ */
+function forgetRadixAriaHidden() {
+  if (openDialogs > 0 || !swalModalOpen()) return;
+  for (const el of Array.from(document.body.children)) {
+    if (el.matches(SWAL_CONTAINER) || el.getAttribute("data-previous-aria-hidden") !== "true") continue;
+    el.removeAttribute("data-previous-aria-hidden");
+    el.setAttribute("aria-hidden", "true");
+  }
+}
 
 /**
  * Marks every other child of <body> (the app root, earlier dialogs' portals) `inert` while the
@@ -61,6 +78,7 @@ function InertOutside() {
   useEffect(() => {
     const own = marker.current?.closest("[role=dialog]");
     if (!own) return;
+    openDialogs++;
     const marked: Element[] = [];
     for (const el of Array.from(document.body.children)) {
       if (el.contains(own) || el.matches(`${SWAL_CONTAINER}, [data-radix-focus-guard], [data-dialog-overlay]`)) continue;
@@ -79,6 +97,8 @@ function InertOutside() {
           el.removeAttribute("inert");
         }
       }
+      openDialogs--;
+      forgetRadixAriaHidden();
     };
   }, []);
   return <span ref={marker} hidden />;
