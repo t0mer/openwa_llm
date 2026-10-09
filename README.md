@@ -28,7 +28,7 @@ This project includes multiple Docker Compose files for different environments:
 | File                           | Purpose                                                                        | Usage                                                  |
 | ------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
 | `docker-compose.yml`           | **Default/Development**. Builds the application from source code.              | `docker compose up -d`                                 |
-| `docker-compose.prod.yml`      | **Production**. Uses pre-built images from GHCR. Recommended for deployment.   | `docker compose -f docker-compose.prod.yml up -d`      |
+| `docker-compose.prod.yml`      | **Production**. Uses the pre-built `techblog/openwa_llm` image from Docker Hub. Recommended for deployment.   | `docker compose -f docker-compose.prod.yml up -d`      |
 | `docker-compose.local-run.yml` | **Local Execution**. For running the app on host while services run in Docker. | `docker compose -f docker-compose.local-run.yml up -d` |
 | `docker-compose.base.yml`      | **Base Configuration**. Contains shared service definitions.                   | ❌ **Do not use directly**                             |
 
