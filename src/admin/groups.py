@@ -137,6 +137,8 @@ async def patch_group(
         group.community_keys = clean_keys(patch.community_keys)
     if "display_name" in sent:
         group.display_name = clean_text(patch.display_name)
+    if "summary_language" in sent:
+        group.summary_language = patch.summary_language
     session.add(group)
     await session.flush()
     return GroupOut.from_group(group, await _message_count(session, jid))

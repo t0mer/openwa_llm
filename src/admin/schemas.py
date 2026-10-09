@@ -10,6 +10,7 @@ T = TypeVar("T")
 MAX_KEYS = 50
 MAX_KEY_LEN = 100
 MAX_OFFSET = 1_000_000
+SUMMARY_LANGUAGES = ("he", "en", "ru")
 
 
 class Page(BaseModel, Generic[T]):
@@ -41,6 +42,7 @@ class GroupOut(BaseModel):
     group_jid: str
     group_name: str | None
     display_name: str | None
+    summary_language: Literal["he", "en", "ru"] | None
     group_topic: str | None
     owner_jid: str | None
     managed: bool
@@ -56,6 +58,7 @@ class GroupOut(BaseModel):
             group_jid=group.group_jid,
             group_name=group.group_name,
             display_name=group.display_name,
+            summary_language=group.summary_language,
             group_topic=group.group_topic,
             owner_jid=group.owner_jid,
             managed=group.managed,
@@ -78,6 +81,7 @@ class GroupPatch(BaseModel):
     notify_on_spam: bool | None = None
     community_keys: list[str] | None = None
     display_name: str | None = Field(default=None, max_length=255)
+    summary_language: str | None = None
 
     @field_validator("community_keys", mode="before")
     @classmethod
@@ -91,6 +95,18 @@ class GroupPatch(BaseModel):
             if not isinstance(key, str) or len(key.strip()) > MAX_KEY_LEN:
                 raise ValueError(f"each key must be a string of <= {MAX_KEY_LEN} chars")
         return clean_keys(value) or []
+
+    @field_validator("summary_language")
+    @classmethod
+    def _normalise_summary_language(cls, value):
+        if value is None:
+            return None
+        value = value.strip().lower()
+        if value in ("", "auto"):
+            return None
+        if value not in SUMMARY_LANGUAGES:
+            raise ValueError("summary_language must be one of he, en, ru, auto")
+        return value
 
     @field_validator("display_name")
     @classmethod
