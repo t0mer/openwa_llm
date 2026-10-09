@@ -36,15 +36,20 @@ async def _run(output, opt_out):
     return router.send_message
 
 
+def _kwargs(send):
+    assert send.await_args is not None
+    return send.await_args.kwargs
+
+
 async def test_summary_passes_mentions_of_non_opted_out_senders():
     send = await _run(
         "@972501234567 @972509999999 @227912345678901 @123456789012",
         {"972509999999": "Quiet"},
     )
-    assert send.await_args.kwargs["mentions"] == [OTHER, ASKER]
+    assert _kwargs(send)["mentions"] == [OTHER, ASKER]
 
 
 async def test_summary_mentions_failure_sends_without_mentions():
     with patch("handler.router.safe_extract_mentions", return_value=[]):
         send = await _run("@972501234567", {})
-    assert send.await_args.kwargs["mentions"] == []
+    assert _kwargs(send)["mentions"] == []
