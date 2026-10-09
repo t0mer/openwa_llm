@@ -155,20 +155,56 @@ function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; e
   const [displayName, setDisplayName] = useState(group.display_name ?? "");
   const [keys, setKeys] = useState<string[]>(group.community_keys);
   const nameInput = useRef<HTMLInputElement>(null);
+  const backdrop = useRef<HTMLDivElement>(null);
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
+  const cancel = () => {
+    if (!savingRef.current) onCancel();
+  };
+  const cancelRef = useRef(cancel);
+  cancelRef.current = cancel;
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     nameInput.current?.focus();
+    // Make everything outside the dialog inert while it is open.
+    const inerted: Element[] = [];
+    for (let node: Element | null = backdrop.current; node && node !== document.body; node = node.parentElement) {
+      for (const sib of Array.from(node.parentElement?.children ?? [])) {
+        if (sib !== node && !sib.hasAttribute("inert")) {
+          sib.setAttribute("inert", "");
+          inerted.push(sib);
+        }
+      }
+    }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") cancelRef.current();
     }
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
+      for (const el of inerted) el.removeAttribute("inert");
       opener?.focus?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function trapTab(e: React.KeyboardEvent<HTMLFormElement>) {
+    if (e.key !== "Tab") return;
+    const focusable = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])"),
+    ).filter((el) => !(el as HTMLButtonElement).disabled);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || !e.currentTarget.contains(active))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !e.currentTarget.contains(active))) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -180,8 +216,8 @@ function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; e
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
-      <form className="modal" role="dialog" aria-modal="true" aria-label="Edit group" onSubmit={submit}>
+    <div ref={backdrop} className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) cancel(); }}>
+      <form className="modal" role="dialog" aria-modal="true" aria-label="Edit group" onSubmit={submit} onKeyDown={trapTab}>
         <h2>{group.group_name || group.group_jid}</h2>
         <p className="muted">WhatsApp name, topic and owner come from WhatsApp and cannot be edited here.</p>
         {group.group_topic && <p className="muted">Topic: {group.group_topic}</p>}

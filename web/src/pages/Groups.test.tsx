@@ -171,4 +171,35 @@ describe("Groups page", () => {
     await userEvent.pointer({ keys: "[MouseLeft]", target: screen.getByRole("dialog").parentElement! });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it("traps Tab inside the edit dialog and makes the page inert", async () => {
+    setup([base]);
+    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    const cancelBtn = within(dialog).getByRole("button", { name: "Cancel" });
+    const name = within(dialog).getByLabelText("Display name");
+    expect(name).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(cancelBtn).toHaveFocus();
+    await userEvent.tab();
+    expect(name).toHaveFocus();
+    expect(document.querySelector("section > .toolbar")).toHaveAttribute("inert");
+    await userEvent.click(cancelBtn);
+    expect(document.querySelector("section > .toolbar")).not.toHaveAttribute("inert");
+  });
+
+  it("ignores Escape and backdrop clicks while saving", async () => {
+    setup([base]);
+    let release!: () => void;
+    vi.mocked(api.patchGroup).mockReturnValueOnce(new Promise((r) => { release = () => r(base); }));
+    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Display name"), "X");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await userEvent.keyboard("{Escape}");
+    await userEvent.pointer({ keys: "[MouseLeft]", target: dialog.parentElement! });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
 });
