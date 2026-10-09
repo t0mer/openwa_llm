@@ -48,4 +48,24 @@ describe("alerts never render data as HTML", () => {
     expect(injected()).toBeNull();
     expect(document.body.textContent).toContain(EVIL);
   });
+
+  it("a toast raised while a confirm is open does not dismiss the confirm", async () => {
+    let settled: boolean | undefined;
+    void confirm({ title: "Sure?" }).then((v) => { settled = v; });
+    await flush();
+    toast.success("Saved");
+    void showSummaryResults([]);
+    await flush();
+    expect(settled).toBeUndefined();
+    expect(document.querySelector(".swal2-container:not(.swal2-top-end) .swal2-confirm")).not.toBeNull();
+    Swal.clickConfirm();
+    await flush();
+    expect(settled).toBe(true);
+    // the queued results modal now shows; close it, then the deferred toast appears
+    expect(document.body.textContent).toContain("No groups were processed.");
+    Swal.clickConfirm();
+    await flush();
+    await flush();
+    expect(document.querySelector(".swal-toast")).not.toBeNull();
+  });
 });
