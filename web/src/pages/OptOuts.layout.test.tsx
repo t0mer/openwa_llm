@@ -94,6 +94,21 @@ describe("Opt-outs at phone width", () => {
   });
 });
 
+describe("Opt-outs add form", () => {
+  it("keeps the hint outside the input row so the button aligns with the input", async () => {
+    mockViewport(1024);
+    render(<OptOuts />);
+    const input = await screen.findByLabelText("Phone number or JID");
+    const add = screen.getByRole("button", { name: "Add" });
+    const row = add.parentElement!;
+    expect(row).toContainElement(input);
+    expect(row).toHaveClass("sm:items-end");
+    const hint = screen.getByText(/International format/);
+    expect(row).not.toContainElement(hint);
+    expect(input).toHaveAccessibleDescription(/International format/);
+  });
+});
+
 describe("Opt-outs table on tablets", () => {
   it("keeps a 44px Remove until lg", async () => {
     mockViewport(800);

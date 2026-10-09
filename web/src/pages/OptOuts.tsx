@@ -111,11 +111,15 @@ export default function OptOuts() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Opt-outs" description="Opted-out contacts are shown by name instead of being @-mentioned in summaries and answers." />
-      <form aria-label="Add opt-out" className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end" onSubmit={add}>
-        <Field className="min-w-0 flex-1" label="Phone number or JID" hint="International format, e.g. +972 50 123 4567 or 972501234567@s.whatsapp.net">
-          <Input placeholder="+972 50 123 4567 or 972501234567@s.whatsapp.net" value={jid} onChange={(e) => setJid(e.target.value)} required disabled={busy !== null} />
-        </Field>
-        <Button type="submit" variant="primary" size="lg" disabled={busy !== null}>Add</Button>
+      <form aria-label="Add opt-out" className="flex flex-col gap-2" onSubmit={add}>
+        {/* The hint sits below the row, so the button lines up with the input itself (sm:items-end). */}
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
+          <Field className="min-w-0 flex-1" label="Phone number or JID">
+            <Input aria-describedby="optout-hint" placeholder="+972 50 123 4567 or 972501234567@s.whatsapp.net" value={jid} onChange={(e) => setJid(e.target.value)} required disabled={busy !== null} />
+          </Field>
+          <Button type="submit" variant="primary" size="lg" disabled={busy !== null}>Add</Button>
+        </div>
+        <p id="optout-hint" className="text-xs text-muted-foreground">International format, e.g. +972 50 123 4567 or 972501234567@s.whatsapp.net</p>
       </form>
       <div className="flex flex-col gap-5">
         {inlineError && <InlineError>{inlineError}</InlineError>}
