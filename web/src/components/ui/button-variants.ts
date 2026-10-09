@@ -16,6 +16,8 @@ export const buttonVariants = cva(
       size: {
         default: "min-h-10 px-4 py-2",
         sm: "min-h-9 px-3 text-sm",
+        /** Table-row actions: 44px on touch-sized (tablet) viewports, compact from lg. */
+        table: "min-h-11 px-3 text-sm lg:min-h-9",
         lg: "min-h-11 px-5 text-base",
         icon: "size-10",
       },

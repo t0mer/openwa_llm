@@ -117,9 +117,11 @@ export default function Messages() {
     }
   }, []);
 
+  // One channel per failure: a toast while rows are on screen, otherwise the inline error below.
+  const hasRows = items.length > 0;
   useEffect(() => {
-    if (error) toast.error(error);
-  }, [error]);
+    if (error && hasRows) toast.error(error);
+  }, [error, hasRows]);
 
   useEffect(() => {
     void fetchPage(filters);
@@ -164,7 +166,7 @@ export default function Messages() {
         </div>
       </form>
       <div className="flex flex-col gap-5">
-        {error && <InlineError>{error}</InlineError>}
+        {error && !hasRows && <InlineError>{error}</InlineError>}
         {first ? (
           <div role="status" className="rounded-lg border bg-surface p-3">
             <span className="sr-only">Loading…</span>

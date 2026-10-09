@@ -12,7 +12,7 @@ import { PageHeader } from "../components/ui/page-header";
 import { Skeleton } from "../components/ui/skeleton";
 import { MD_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import type { Contact } from "../types";
-import { useErrorToast, useLoad } from "../useLoad";
+import { useLoad, useLoadError } from "../useLoad";
 
 const PAGE = 50;
 
@@ -52,7 +52,7 @@ function Status({ c }: { c: Contact }) {
   return c.opted_out ? <Badge tone="warning">Opted out</Badge> : <Badge>Tagged</Badge>;
 }
 
-function Actions({ p, className, size }: { p: RowProps; className?: string; size?: "sm" | "lg" }) {
+function Actions({ p, className, size }: { p: RowProps; className?: string; size?: "table" | "lg" }) {
   const c = p.contact;
   return p.editing ? (
     <>
@@ -71,7 +71,7 @@ function ContactTableRow(p: RowProps) {
       <td className="px-3 py-2"><NameCell {...p} /></td>
       <td className="break-all px-3 py-2 text-muted-foreground"><bdi className="jid">{c.jid}</bdi></td>
       <td className="px-3 py-2"><Status c={c} /></td>
-      <td className="px-3 py-2"><div className="flex items-center justify-end gap-2"><Actions p={p} size="sm" /></div></td>
+      <td className="px-3 py-2"><div className="flex items-center justify-end gap-2"><Actions p={p} size="table" /></div></td>
     </tr>
   );
 }
@@ -122,7 +122,7 @@ export default function Contacts() {
       }),
     [query, filter, offset],
   );
-  useErrorToast(error);
+  const inlineError = useLoadError(error, data !== null);
 
   useEffect(() => {
     setEditJid(null);
@@ -197,14 +197,14 @@ export default function Contacts() {
         <p aria-live="polite" className="text-sm text-muted-foreground">{total} contacts</p>
       </form>
       <div className="flex flex-col gap-5">
-        {error && <InlineError>{error}</InlineError>}
+        {inlineError && <InlineError>{inlineError}</InlineError>}
         {loading && !data ? (
           <LoadingRows desktop={desktop} />
         ) : data && items.length === 0 ? (
           <div className="rounded-lg border bg-surface">
             <EmptyState icon={UserRound} title="No contacts match.">Try a different search or filter.</EmptyState>
           </div>
-        ) : desktop ? (
+        ) : !data ? null : desktop ? (
           <div className="overflow-x-auto rounded-lg border bg-surface">
             <table className="w-full text-start text-sm" aria-label="Contacts">
               <thead>
@@ -222,8 +222,8 @@ export default function Contacts() {
           </ul>
         )}
         <div className="flex items-center gap-2">
-          <Button size="lg" className="md:min-h-9" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</Button>
-          <Button size="lg" className="md:min-h-9" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</Button>
+          <Button size="lg" className="lg:min-h-9" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</Button>
+          <Button size="lg" className="lg:min-h-9" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</Button>
         </div>
       </div>
     </div>

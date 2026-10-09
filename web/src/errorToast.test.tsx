@@ -1,6 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { toastDedupeSize, useErrorToast } from "./useLoad";
+import { toastDedupeSize, useErrorToast, useLoadError } from "./useLoad";
 
 vi.mock("./alerts");
 import { toast } from "./alerts";
@@ -39,5 +39,19 @@ describe("useErrorToast", () => {
     vi.advanceTimersByTime(61_000);
     rerender({ e: "fresh" });
     expect(toastDedupeSize()).toBe(1);
+  });
+});
+
+describe("useLoadError", () => {
+  it("returns the error for inline display without toasting when there is no data", () => {
+    const { result } = renderHook(() => useLoadError("first-load-fail", false));
+    expect(result.current).toBe("first-load-fail");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("toasts and returns null when data is on screen", () => {
+    const { result } = renderHook(() => useLoadError("refresh-fail", true));
+    expect(result.current).toBeNull();
+    expect(toast.error).toHaveBeenCalledWith("refresh-fail");
   });
 });

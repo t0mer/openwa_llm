@@ -14,7 +14,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+    <div role="status" className="flex flex-col items-center gap-3 px-6 py-12 text-center">
       <span className="grid size-12 place-items-center rounded-full bg-primary-soft text-primary">
         <Icon aria-hidden="true" className="size-6" />
       </span>

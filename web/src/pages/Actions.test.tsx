@@ -108,10 +108,27 @@ describe("Actions page", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("shows load errors as a toast", async () => {
+  it("shows a failed first load inline only, without a toast", async () => {
     vi.mocked(api.getActions).mockRejectedValue(new ApiError(500, "server down"));
     render(<Actions />);
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("server down"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("server down");
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Run summaries now" })).not.toBeInTheDocument();
+  });
+
+  it("toasts, without an inline error, when a poll fails while statuses are shown", async () => {
+    vi.mocked(api.getActions).mockResolvedValueOnce(statuses()).mockRejectedValue(new ApiError(500, "poll failed"));
+    vi.useFakeTimers();
+    try {
+      render(<Actions />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(toast.error).toHaveBeenCalledWith("poll failed");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Run summaries now" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   const results = [

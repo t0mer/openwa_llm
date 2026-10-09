@@ -58,3 +58,12 @@ export function useErrorToast(error: string | null) {
     toast.error(error);
   }, [error]);
 }
+
+/**
+ * One channel per load failure. With nothing to show yet (first load) the error is returned to render
+ * inline and persistently; with data on screen (refresh, poll) it is only toasted, de-duplicated.
+ */
+export function useLoadError(error: string | null, hasData: boolean): string | null {
+  useErrorToast(hasData ? error : null);
+  return hasData ? null : error;
+}

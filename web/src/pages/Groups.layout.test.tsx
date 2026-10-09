@@ -124,11 +124,32 @@ describe("Groups toolbar (desktop)", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  it("shows a load failure inline and as a toast", async () => {
+  it("shows a failed first load only inline: no toast, no empty table", async () => {
     vi.mocked(api.listGroups).mockRejectedValue(new Error("server down"));
     render(<Groups />);
     expect(await screen.findByRole("alert")).toHaveTextContent("server down");
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("server down"));
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("toasts only when a refresh fails while rows are on screen", async () => {
+    setup([base]);
+    await screen.findByRole("table", { name: "Groups" });
+    vi.mocked(api.listGroups).mockRejectedValue(new Error("refresh failed"));
+    await userEvent.click(screen.getByRole("button", { name: "Enabled" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("refresh failed"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Groups" })).toBeInTheDocument();
+  });
+});
+
+describe("Groups table on tablets", () => {
+  it("keeps 44px row actions and language select until lg", async () => {
+    mockViewport(800);
+    setup([base]);
+    expect(await screen.findByRole("button", { name: "Edit 1@g.us" })).toHaveClass("min-h-11", "lg:min-h-9");
+    expect(screen.getByRole("button", { name: "Schedules for WA name" })).toHaveClass("min-h-11", "lg:min-h-9");
+    expect(screen.getByRole("combobox", { name: /summary language/i })).toHaveClass("min-h-11", "lg:min-h-9");
   });
 });
 

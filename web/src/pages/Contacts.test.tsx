@@ -94,11 +94,23 @@ describe("Contacts page", () => {
     expect(await screen.findByText("No contacts match.")).toBeInTheDocument();
   });
 
-  it("toasts a load error and keeps it out of the edit row", async () => {
+  it("shows a failed first load only inline: no toast, no empty table", async () => {
     vi.mocked(api.listContacts).mockRejectedValue(new ApiError(500, "load failed"));
     render(<Contacts />);
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("load failed"));
-    expect(screen.queryByLabelText(/^Name for/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("load failed");
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("toasts (and shows no inline error) when a refresh fails while rows are on screen", async () => {
+    render(<Contacts />);
+    await screen.findByText("Dana");
+    vi.mocked(api.listContacts).mockRejectedValue(new ApiError(500, "refresh failed"));
+    await userEvent.click(screen.getByRole("button", { name: "Opted out" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("refresh failed"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Dana")).toBeInTheDocument();
   });
 
   it("resets the offset when the filter changes", async () => {
@@ -171,9 +183,4 @@ describe("Contacts states", () => {
     expect(await screen.findByText("2 contacts")).toHaveAttribute("aria-live", "polite");
   });
 
-  it("shows a load error inline (role=alert) and as a toast", async () => {
-    vi.mocked(api.listContacts).mockRejectedValue(new ApiError(500, "load failed"));
-    render(<Contacts />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("load failed");
-  });
 });

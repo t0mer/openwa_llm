@@ -49,6 +49,7 @@ describe("Button", () => {
   it.each([
     ["default", "min-h-10"],
     ["sm", "min-h-9"],
+    ["table", "min-h-11"],
     ["lg", "min-h-11"],
     ["icon", "size-10"],
   ] as const)("renders the %s size", (size, cls) => {

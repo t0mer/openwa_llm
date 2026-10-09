@@ -72,6 +72,19 @@ describe("Contacts at phone width", () => {
   });
 });
 
+describe("Contacts table on tablets", () => {
+  it("keeps 44px row actions until lg", async () => {
+    mockViewport(800);
+    render(<Contacts />);
+    const edit = await screen.findByRole("button", { name: "Edit 1@s.whatsapp.net" });
+    expect(edit).toHaveClass("min-h-11", "lg:min-h-9");
+    await userEvent.click(edit);
+    expect(screen.getByRole("button", { name: "Save" })).toHaveClass("min-h-11", "lg:min-h-9");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveClass("min-h-11", "lg:min-h-9");
+    expect(screen.getByRole("button", { name: "Next" })).toHaveClass("lg:min-h-9");
+  });
+});
+
 describe("Contacts across a viewport resize", () => {
   it("swaps table and cards without duplicating controls or losing state", async () => {
     const vp = mockViewport(1024);

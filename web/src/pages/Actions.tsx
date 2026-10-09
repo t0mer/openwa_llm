@@ -10,7 +10,7 @@ import { Section } from "../components/ui/section";
 import { Skeleton } from "../components/ui/skeleton";
 import { describeResult } from "../results";
 import type { ActionName, ActionStatus } from "../types";
-import { useErrorToast, useLoad } from "../useLoad";
+import { useLoad, useLoadError } from "../useLoad";
 
 const CARDS: { name: ActionName; icon: typeof Send; title: string; button: string; description: string; confirm: string }[] = [
   {
@@ -79,7 +79,7 @@ export default function Actions() {
   const [starting, setStarting] = useState<ActionName | null>(null);
   const startingRef = useRef<ActionName | null>(null);
   const { data, error, loading, reload } = useLoad(() => api.getActions(), [], 5_000);
-  useErrorToast(error);
+  const inlineError = useLoadError(error, data !== null);
 
   // Pop the per-group results up when a summarize run finishes while this page is open.
   const seenFinish = useRef<string | null | undefined>(undefined);
@@ -116,14 +116,14 @@ export default function Actions() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Bot actions" description="Jobs run in the background on the server. Status is kept in memory and resets when the server restarts." />
-      {error && <InlineError>{error}</InlineError>}
+      {inlineError && <InlineError>{inlineError}</InlineError>}
       {loading && !data ? (
         <div role="status" className="grid gap-4 md:grid-cols-2">
           <span className="sr-only">Loading…</span>
           <Skeleton className="h-56" />
           <Skeleton className="h-56" />
         </div>
-      ) : (
+      ) : !data ? null : (
         <div className="grid items-start gap-4 md:grid-cols-2">
           {CARDS.map((card) => {
             const status = data?.[card.name];

@@ -14,7 +14,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { Switch } from "../components/ui/switch";
 import { MD_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import type { Group, GroupPatch, GroupSort } from "../types";
-import { useErrorToast, useLoad } from "../useLoad";
+import { useLoad, useLoadError } from "../useLoad";
 
 const PAGE = 50;
 
@@ -90,17 +90,17 @@ function GroupTableRow(p: RowProps) {
       <td className="px-3 py-1.5"><GroupName g={g} /></td>
       <td className="px-3 py-1.5"><RespondSwitch {...p} /></td>
       <td className="px-3 py-1.5"><SpamSwitch {...p} /></td>
-      <td className="px-3 py-1.5"><div className="w-28"><LanguageSelect {...p} className="min-h-9" /></div></td>
+      <td className="px-3 py-1.5"><div className="w-28"><LanguageSelect {...p} className="min-h-11 lg:min-h-9" /></div></td>
       <td className="px-3 py-1.5"><Keys g={g} /></td>
       <td className="tabular px-3 py-1.5">{g.message_count}</td>
       <td className="whitespace-nowrap px-3 py-1.5">{fmt(g.last_summary_sync)}</td>
       <td className="px-3 py-1.5">
         <span className="inline-flex items-center gap-2">
           <span className="schedule-count tabular">{g.schedule_count}</span>
-          <Button size="sm" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
+          <Button size="table" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
         </span>
       </td>
-      <td className="px-3 py-1.5 text-end"><Button size="sm" data-opener={openerKey("edit", g)} onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button></td>
+      <td className="px-3 py-1.5 text-end"><Button size="table" data-opener={openerKey("edit", g)} onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button></td>
     </tr>
   );
 }
@@ -183,7 +183,7 @@ export default function Groups() {
       }),
     [query, managed, sort, offset],
   );
-  useErrorToast(error);
+  const inlineError = useLoadError(error, data !== null);
 
   const label = groupLabel;
 
@@ -269,14 +269,14 @@ export default function Groups() {
         this wrapper (e.g. the cards after a resize) inherit that, instead of appearing un-hidden.
       */}
       <div className="flex flex-col gap-5">
-      {error && <InlineError>{error}</InlineError>}
+      {inlineError && <InlineError>{inlineError}</InlineError>}
       {loading && !data ? (
         <LoadingRows desktop={desktop} />
       ) : data && items.length === 0 ? (
         <div className="rounded-lg border bg-surface">
           <EmptyState icon={Users} title="No groups match.">Try a different search or filter.</EmptyState>
         </div>
-      ) : desktop ? (
+      ) : !data ? null : desktop ? (
         <div className="overflow-x-auto rounded-lg border bg-surface">
           <table className="w-full text-start text-sm" aria-label="Groups">
             <thead>
@@ -296,8 +296,8 @@ export default function Groups() {
         </ul>
       )}
       <div className="flex items-center gap-2">
-        <Button size="lg" className="md:min-h-9" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</Button>
-        <Button size="lg" className="md:min-h-9" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</Button>
+        <Button size="lg" className="lg:min-h-9" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</Button>
+        <Button size="lg" className="lg:min-h-9" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</Button>
       </div>
       </div>
       {scheduling && (

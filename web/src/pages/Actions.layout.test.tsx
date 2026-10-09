@@ -1,4 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Actions from "./Actions";
 import { ApiError, api } from "../api";
@@ -10,6 +11,7 @@ vi.mock("../api", async (orig) => {
   return { ...actual, api: { getActions: vi.fn(), runAction: vi.fn() } };
 });
 vi.mock("../alerts");
+import { confirm, toast } from "../alerts";
 
 const idle = { state: "idle", started_at: null, finished_at: null, error: null } as const;
 const done = {
@@ -26,6 +28,8 @@ const set = (over: Partial<ActionsT> = {}): ActionsT => ({ summarize: idle, load
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.getActions).mockResolvedValue(set());
+  vi.mocked(api.runAction).mockResolvedValue({ job_id: "j" });
+  vi.mocked(confirm).mockResolvedValue(true);
 });
 
 describe.each([390, 1024])("Bot actions at %i", (width) => {
@@ -76,6 +80,7 @@ describe.each([390, 1024])("Bot actions at %i", (width) => {
     vi.mocked(api.getActions).mockRejectedValue(new ApiError(500, "server down"));
     render(<Actions />);
     expect(await screen.findByRole("alert")).toHaveTextContent("server down");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });
 
@@ -85,5 +90,10 @@ describe("Bot actions touch targets", () => {
     render(<Actions />);
     const run = await screen.findByRole("button", { name: "Run summaries now" });
     expect(run).toHaveClass("min-h-11", "w-full");
+    expect(run).toBeEnabled();
+    expect(run).toHaveAccessibleName("Run summaries now");
+    await userEvent.click(run);
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: "Group summaries" }));
+    await waitFor(() => expect(api.runAction).toHaveBeenCalledWith("summarize"));
   });
 });

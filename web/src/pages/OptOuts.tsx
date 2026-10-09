@@ -10,7 +10,7 @@ import { PageHeader } from "../components/ui/page-header";
 import { Skeleton } from "../components/ui/skeleton";
 import { MD_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import type { OptOutItem } from "../types";
-import { useErrorToast, useLoad } from "../useLoad";
+import { useLoad, useLoadError } from "../useLoad";
 
 interface RowProps {
   optOut: OptOutItem;
@@ -24,7 +24,7 @@ function Person({ o }: { o: OptOutItem }) {
   return o.push_name ? <strong className="font-medium" dir="auto"><bdi>{o.push_name}</bdi></strong> : <span className="text-muted-foreground">—</span>;
 }
 
-function RemoveButton({ optOut: o, busy, onRemove, className, size }: RowProps & { className?: string; size?: "sm" | "lg" }) {
+function RemoveButton({ optOut: o, busy, onRemove, className, size }: RowProps & { className?: string; size?: "table" | "lg" }) {
   return <Button variant="danger-outline" size={size} className={className} aria-label={`Remove ${o.jid}`} disabled={busy} onClick={() => onRemove(o.jid)}>Remove</Button>;
 }
 
@@ -35,7 +35,7 @@ function OptOutTableRow(p: RowProps) {
       <td className="px-3 py-2"><Person o={o} /></td>
       <td className="break-all px-3 py-2 text-muted-foreground"><bdi className="jid">{o.jid}</bdi></td>
       <td className="whitespace-nowrap px-3 py-2">{since(o)}</td>
-      <td className="px-3 py-2 text-end"><RemoveButton {...p} size="sm" /></td>
+      <td className="px-3 py-2 text-end"><RemoveButton {...p} size="table" /></td>
     </tr>
   );
 }
@@ -66,10 +66,9 @@ function LoadingRows({ desktop }: { desktop: boolean }) {
 export default function OptOuts() {
   const desktop = useMediaQuery(MD_QUERY);
   const { data, error, loading, reload } = useLoad(() => api.listOptOuts(), []);
-  useErrorToast(error);
+  const inlineError = useLoadError(error, data !== null);
   const [jid, setJid] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-
   async function add(e: FormEvent) {
     e.preventDefault();
     if (!jid.trim()) return;
@@ -119,14 +118,14 @@ export default function OptOuts() {
         <Button type="submit" variant="primary" size="lg" disabled={busy !== null}>Add</Button>
       </form>
       <div className="flex flex-col gap-5">
-        {error && <InlineError>{error}</InlineError>}
+        {inlineError && <InlineError>{inlineError}</InlineError>}
         {loading && !data ? (
           <LoadingRows desktop={desktop} />
         ) : data && items.length === 0 ? (
           <div className="rounded-lg border bg-surface">
             <EmptyState icon={BellRing} title="Nobody has opted out.">Contacts you add here are no longer @-mentioned by the bot.</EmptyState>
           </div>
-        ) : desktop ? (
+        ) : !data ? null : desktop ? (
           <div className="overflow-x-auto rounded-lg border bg-surface">
             <table className="w-full text-start text-sm" aria-label="Opt-outs">
               <thead>

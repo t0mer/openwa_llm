@@ -11,6 +11,7 @@ vi.mock("../api", async (orig) => {
   return { ...actual, api: { listMessages: vi.fn(), listGroups: vi.fn() } };
 });
 vi.mock("../alerts");
+import { toast } from "../alerts";
 
 const msg = (id: string, text: string, over: Partial<MessageItem> = {}): MessageItem => ({
   message_id: id, timestamp: "2026-03-01T10:00:00Z", text, sender_jid: "1@s.whatsapp.net",
@@ -76,7 +77,7 @@ describe("Messages at phone width", () => {
     expect(screen.getByLabelText("Search text")).toHaveClass("min-h-11");
   });
 
-  it("shows skeletons while loading, an empty state, and an inline error that keeps rows", async () => {
+  it("shows skeletons while loading, an announced empty state, and a toast (no inline error) when Load older fails", async () => {
     vi.mocked(api.listMessages).mockReturnValueOnce(new Promise(() => {}));
     const { unmount } = render(<Messages />);
     expect(screen.getByRole("status")).toHaveTextContent("Loading…");
@@ -84,12 +85,14 @@ describe("Messages at phone width", () => {
     vi.mocked(api.listMessages).mockResolvedValueOnce({ items: [], next_cursor: null });
     const second = render(<Messages />);
     expect(await screen.findByText("No messages match.")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("No messages match.");
     second.unmount();
     vi.mocked(api.listMessages).mockResolvedValueOnce({ items: [msg("m1", "kept")], next_cursor: "CUR" }).mockRejectedValueOnce(new ApiError(500, "boom"));
     render(<Messages />);
     await screen.findByText("kept");
     await userEvent.click(screen.getByRole("button", { name: "Load older" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByText("kept")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Load older" })).toBeEnabled();
   });
@@ -100,7 +103,16 @@ describe("Messages at phone width", () => {
     fireEvent.change(screen.getByLabelText("From date"), { target: { value: "2026-03-10" } });
     fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-03-01" } });
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(toast.error).toHaveBeenCalledWith("To date must not be before From date.");
     expect(api.listMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a failed first page inline only, with no toast and no empty state", async () => {
+    vi.mocked(api.listMessages).mockReset().mockRejectedValue(new ApiError(500, "down"));
+    render(<Messages />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("down");
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByText("No messages match.")).not.toBeInTheDocument();
   });
 });
 

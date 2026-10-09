@@ -75,10 +75,30 @@ describe("Opt-outs at phone width", () => {
     expect(await screen.findByText("Nobody has opted out.")).toBeInTheDocument();
   });
 
-  it("shows a load error inline", async () => {
+  it("shows a failed first load only inline, with nothing else under it", async () => {
     vi.mocked(api.listOptOuts).mockRejectedValue(new ApiError(500, "load failed"));
     render(<OptOuts />);
     expect(await screen.findByRole("alert")).toHaveTextContent("load failed");
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByRole("list", { name: "Opt-outs" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("toasts only when a refresh fails while rows are on screen", async () => {
+    render(<OptOuts />);
+    await screen.findByRole("list", { name: "Opt-outs" });
+    vi.mocked(api.listOptOuts).mockRejectedValue(new ApiError(500, "refresh failed"));
+    await userEvent.click(screen.getByRole("button", { name: "Remove 1@s.whatsapp.net" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("refresh failed"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("Opt-outs table on tablets", () => {
+  it("keeps a 44px Remove until lg", async () => {
+    mockViewport(800);
+    render(<OptOuts />);
+    expect(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" })).toHaveClass("min-h-11", "lg:min-h-9");
   });
 });
 
