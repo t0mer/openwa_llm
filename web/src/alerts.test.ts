@@ -6,7 +6,7 @@ vi.mock("sweetalert2", () => ({
   default: { fire: (...a: unknown[]) => fire(...a), mixin: () => ({ fire: (...a: unknown[]) => toastFire(...a) }) },
 }));
 
-import { confirm, errorDialog, showSummaryResults, toast } from "./alerts";
+import { confirm, errorDialog, showSummaryResults, summaryIcon, toast } from "./alerts";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -52,12 +52,21 @@ describe("alerts", () => {
     expect(text).toContain("9 of 15 messages needed");
     expect(text).toContain("boom");
     expect((opts.html as HTMLElement).querySelector("b")).toBeNull();
-    expect(opts.icon).toBe("error");
+    expect(opts.icon).toBe("warning");
   });
 
   it("showSummaryResults handles an empty list", async () => {
     fire.mockResolvedValueOnce({});
     await showSummaryResults([], "No managed groups");
     expect((fire.mock.calls[0][0].html as HTMLElement).textContent).toContain("No managed groups");
+  });
+
+  it("picks the results icon by outcome mix", () => {
+    expect(summaryIcon({ sent: 3, skipped: 0, failed: 0 }, 3)).toBe("success");
+    expect(summaryIcon({ sent: 2, skipped: 0, failed: 1 }, 3)).toBe("warning");
+    expect(summaryIcon({ sent: 1, skipped: 2, failed: 0 }, 3)).toBe("warning");
+    expect(summaryIcon({ sent: 0, skipped: 0, failed: 3 }, 3)).toBe("error");
+    expect(summaryIcon({ sent: 0, skipped: 3, failed: 0 }, 3)).toBe("info");
+    expect(summaryIcon({ sent: 0, skipped: 0, failed: 0 }, 0)).toBe("warning");
   });
 });

@@ -118,6 +118,15 @@ export function errorDialog(title: string, message: string): Promise<void> {
   });
 }
 
+/** Icon for a results dialog: success if all sent, error if all failed, info if all skipped, else warning. */
+export function summaryIcon(counts: { sent: number; skipped: number; failed: number }, total: number): "success" | "error" | "info" | "warning" {
+  if (total === 0) return "warning";
+  if (counts.sent === total) return "success";
+  if (counts.failed === total) return "error";
+  if (counts.skipped === total) return "info";
+  return "warning";
+}
+
 /** Show per-group outcome of a summarize run. */
 export function showSummaryResults(results: GroupActionResult[], message?: string | null): Promise<void> {
   return modal(async () => {
@@ -147,7 +156,7 @@ export function showSummaryResults(results: GroupActionResult[], message?: strin
   root.append(head, list);
   await Swal.fire({
     ...baseOptions,
-    icon: counts.failed ? "error" : counts.skipped || !results.length ? "warning" : "success",
+    icon: summaryIcon(counts, results.length),
     titleText: "Summary results",
     html: root,
     confirmButtonText: "Close",
