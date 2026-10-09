@@ -23,7 +23,14 @@ from .locks import group_lock
 logger = logging.getLogger(__name__)
 
 GRACE = timedelta(minutes=60)
-SCHEDULED_RUN_TIMEOUT: float = 20 * 60  # seconds; read at call time (tests patch it)
+# Seconds; both are read at call time (tests patch them). The run budget is
+# deliberately far above the 30 s per-request HTTP timeout, so a healthy send
+# never hits it; it only frees the group lock when something hangs. If it does
+# fire mid-send, last_summary_sync may still advance after the main group got
+# the summary (accepted).
+SCHEDULED_RUN_TIMEOUT: float = 20 * 60
+GROUP_LOCK_WAIT_TIMEOUT: float = 30 * 60
+LOCK_TIMEOUT = "lock_timeout"
 UNEXPECTED_ERROR = "unexpected_error"
 TIMEOUT = "timeout"
 GROUP_NOT_MANAGED = "group_not_managed"
@@ -85,9 +92,23 @@ async def _run_claimed(
     schedule_id: str,
     group_jid: str,
 ) -> RunRecord:
+    lock = group_lock(group_jid)
+    rec: RunRecord
     try:
-        async with asyncio.timeout(SCHEDULED_RUN_TIMEOUT):
-            async with group_lock(group_jid):
+        async with asyncio.timeout(GROUP_LOCK_WAIT_TIMEOUT) as wait_cm:
+            await lock.acquire()
+    except asyncio.CancelledError:
+        raise
+    except TimeoutError:
+        if wait_cm.expired():
+            logger.warning("Timed out waiting for group lock %s", group_jid)
+            rec = RunRecord(schedule_id, group_jid, "failed", LOCK_TIMEOUT)
+        else:
+            logger.exception("Scheduled summary failed for group %s", group_jid)
+            rec = RunRecord(schedule_id, group_jid, "failed", UNEXPECTED_ERROR)
+    else:
+        try:
+            async with asyncio.timeout(SCHEDULED_RUN_TIMEOUT) as run_cm:
                 async with session_factory() as session:
                     group = await session.get(Group, group_jid)
                     if group is None or not group.managed:
@@ -98,21 +119,27 @@ async def _run_claimed(
                         result = await summarize_and_send_to_group(
                             settings, session, whatsapp, group
                         )
-        rec = RunRecord(
-            schedule_id,
-            group_jid,
-            result.status,
-            result.reason,
-            result.message_count,
-        )
-    except asyncio.CancelledError:
-        raise
-    except TimeoutError:
-        logger.warning("Scheduled summary timed out for group %s", group_jid)
-        rec = RunRecord(schedule_id, group_jid, "failed", TIMEOUT)
-    except Exception:
-        logger.exception("Scheduled summary failed for group %s", group_jid)
-        rec = RunRecord(schedule_id, group_jid, "failed", UNEXPECTED_ERROR)
+            rec = RunRecord(
+                schedule_id,
+                group_jid,
+                result.status,
+                result.reason,
+                result.message_count,
+            )
+        except asyncio.CancelledError:
+            raise
+        except TimeoutError:
+            if run_cm.expired():
+                logger.warning("Scheduled summary timed out for group %s", group_jid)
+                rec = RunRecord(schedule_id, group_jid, "failed", TIMEOUT)
+            else:
+                logger.exception("Scheduled summary failed for group %s", group_jid)
+                rec = RunRecord(schedule_id, group_jid, "failed", UNEXPECTED_ERROR)
+        except Exception:
+            logger.exception("Scheduled summary failed for group %s", group_jid)
+            rec = RunRecord(schedule_id, group_jid, "failed", UNEXPECTED_ERROR)
+        finally:
+            lock.release()
     try:
         await _record(session_factory, schedule_id, rec)
     except Exception:

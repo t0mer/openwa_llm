@@ -321,3 +321,65 @@ async def test_cancellation_still_propagates_through_timeout(
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, 2)
+
+
+async def test_plain_timeout_error_is_unexpected_not_timeout(
+    db_sessionmaker, monkeypatch
+):
+    monkeypatch.setattr(runner, "SCHEDULED_RUN_TIMEOUT", 60)
+    sid = await seed(db_sessionmaker)
+
+    async def boom(*a, **k):
+        raise TimeoutError("db connect")
+
+    monkeypatch.setattr(runner, "summarize_and_send_to_group", boom)
+    rec = await runner._run_claimed(
+        SETTINGS, db_sessionmaker, MagicMock(), sid, "1@g.us"
+    )
+    assert (rec.status, rec.reason) == ("failed", "unexpected_error")
+    assert "db connect" not in repr(rec)
+
+
+async def test_lock_wait_timeout_records_lock_timeout_and_next_runs(
+    db_sessionmaker, monkeypatch, summarize
+):
+    from scheduling.locks import group_lock
+
+    monkeypatch.setattr(runner, "GROUP_LOCK_WAIT_TIMEOUT", 0.2)
+    sid = await seed(db_sessionmaker)
+    lock = group_lock("1@g.us")
+    await lock.acquire()
+    try:
+        rec = await asyncio.wait_for(
+            runner._run_claimed(SETTINGS, db_sessionmaker, MagicMock(), sid, "1@g.us"),
+            5,
+        )
+        assert (rec.status, rec.reason) == ("failed", "lock_timeout")
+        summarize.assert_not_awaited()
+        assert lock.locked()  # the holder's lock is untouched
+    finally:
+        lock.release()
+    # a later run proceeds normally
+    rec = await runner._run_claimed(
+        SETTINGS, db_sessionmaker, MagicMock(), sid, "1@g.us"
+    )
+    assert rec.status == "sent"
+
+
+async def test_lock_wait_does_not_consume_run_budget(
+    db_sessionmaker, monkeypatch, summarize
+):
+    from scheduling.locks import group_lock
+
+    monkeypatch.setattr(runner, "GROUP_LOCK_WAIT_TIMEOUT", 5)
+    monkeypatch.setattr(runner, "SCHEDULED_RUN_TIMEOUT", 0.5)
+    sid = await seed(db_sessionmaker)
+    lock = group_lock("1@g.us")
+    await lock.acquire()
+    task = asyncio.create_task(
+        runner._run_claimed(SETTINGS, db_sessionmaker, MagicMock(), sid, "1@g.us")
+    )
+    await asyncio.sleep(0.8)  # longer than the run budget
+    lock.release()
+    rec = await asyncio.wait_for(task, 5)
+    assert rec.status == "sent"
