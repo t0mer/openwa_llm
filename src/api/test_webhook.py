@@ -188,3 +188,12 @@ async def test_concurrent_duplicate_delivery_is_processed_once(ctx):
         first_resp = await first
     assert second.status_code == 200 and first_resp.status_code == 200
     assert handler.await_count == 1
+
+
+@pytest.mark.parametrize("chat", ["status@broadcast", "120363@newsletter"])
+def test_broadcast_and_newsletter_messages_are_acknowledged_and_ignored(ctx, chat):
+    client, handler, gather, *_ = ctx
+    payload = {**MESSAGE, "data": {**MESSAGE["data"], "chatId": chat, "from": chat}}
+    assert _post(client, payload).status_code == 200
+    handler.assert_not_awaited()
+    gather.assert_not_awaited()

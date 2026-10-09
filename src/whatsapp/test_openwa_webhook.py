@@ -212,7 +212,7 @@ def test_parse_media_caption_and_document_filename():
     assert isinstance(empty_image, InboundMessage)
     assert image.text == "[[Attached Image]] look at this"
     assert doc.text == "[[Attached Document]] plan.pdf"
-    assert empty_image.text is None
+    assert empty_image.text == "[[Attached Image]]"
 
 
 def test_parse_message_without_id_gets_fallback_id():
@@ -447,3 +447,108 @@ def test_reaction_lid_sender_without_phone_stays_lid():
     ev = _reaction(senderId="123@lid")
     assert isinstance(ev, InboundReaction)
     assert ev.sender_jid == "123@lid"
+
+
+def _msg(**over):
+    data = {
+        "id": "m1",
+        "from": "9725@c.us",
+        "chatId": "9725@c.us",
+        "timestamp": 1790000000,
+        **over,
+    }
+    return parse_event(_envelope("message.received", data))
+
+
+def test_media_message_gets_reference_instead_of_url():
+    by_media = _msg(body="x", type="chat", media={"mimetype": "image/jpeg"})
+    by_type = _msg(type="image")
+    plain = _msg(body="hi", type="chat")
+    assert isinstance(by_media, InboundMessage)
+    assert isinstance(by_type, InboundMessage)
+    assert isinstance(plain, InboundMessage)
+    assert by_media.media_url == "openwa-media:9725@c.us/m1"
+    assert by_type.media_url == "openwa-media:9725@c.us/m1"
+    assert plain.media_url is None
+
+
+def _text(**over) -> str | None:
+    ev = _msg(**over)
+    assert isinstance(ev, InboundMessage)
+    return ev.text
+
+
+def test_rich_text_kinds():
+    assert _text(type="ptt") == "[[Attached Audio]]"
+    assert (
+        _text(
+            type="location",
+            location={"latitude": 32.08, "longitude": 34.78, "name": "Cafe"},
+        )
+        == "[[Attached Location]] 32.08,34.78 Cafe"
+    )
+    assert (
+        _text(type="location", latitude=1.5, longitude=2.5, address="Main St")
+        == "[[Attached Location]] 1.5,2.5 Main St"
+    )
+    assert (
+        _text(type="vcard", vCards=["BEGIN:VCARD\nFN:Dana Levi\nEND:VCARD"])
+        == "[[Attached Contact]] Dana Levi"
+    )
+    assert _text(type="poll", poll={"name": "Lunch?"}) == "[[Attached Poll]] Lunch?"
+    assert _text(type="list", list={"title": "Menu"}) == "[[Attached List]] Menu"
+    assert _text(type="order", orderTitle="Order #5") == "[[Attached Order]] Order #5"
+
+
+def test_rich_text_malformed_falls_back_to_label():
+    assert _text(type="location", location="nope") == "[[Attached Location]]"
+    assert (
+        _text(type="location", location={"latitude": float("nan"), "longitude": 5.0})
+        == "[[Attached Location]]"
+    )
+    assert (
+        _text(type="location", location={"latitude": "x", "longitude": 5.0})
+        == "[[Attached Location]]"
+    )
+    assert _text(type="vcard", vCards="oops", vcard=5) == "[[Attached Contact]]"
+    assert _text(type="poll", poll=[1]) == "[[Attached Poll]]"
+    assert _text(type="list", list=None) == "[[Attached List]]"
+    assert _text(type="order") == "[[Attached Order]]"
+
+
+def test_broadcast_and_newsletter_chats_are_ignored():
+    assert _msg(chatId="status@broadcast", body="x", type="chat") is None
+    assert _msg(chatId="120363@newsletter", body="x", type="chat") is None
+    assert _msg(**{"from": "status@broadcast"}, chatId=None, body="x") is None
+
+
+def test_vcard_crlf_and_param_forms():
+    crlf = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Dana Levi\r\nEND:VCARD"
+    param = "BEGIN:VCARD\nFN;CHARSET=UTF-8:Avi Cohen\nEND:VCARD"
+    assert _text(type="vcard", vCards=[crlf]) == "[[Attached Contact]] Dana Levi"
+    assert _text(type="vcard", vCards=[param]) == "[[Attached Contact]] Avi Cohen"
+
+
+def test_location_keeps_full_coordinate_precision():
+    assert (
+        _text(type="location", latitude=32.0853, longitude=34.781768)
+        == "[[Attached Location]] 32.0853,34.781768"
+    )
+
+
+def test_location_ignores_body_and_long_bodies_are_capped():
+    thumb = "/9j/4AAQSkZJRg" * 500
+    assert (
+        _text(type="location", latitude=1.5, longitude=2.5, body=thumb)
+        == "[[Attached Location]] 1.5,2.5"
+    )
+    poll = _text(type="poll", body="q" * 1000)
+    assert poll == "[[Attached Poll]] " + "q" * 200
+
+
+def test_contact_detail_is_capped():
+    one = _text(type="vcard", vcard="FN:" + "x" * 5000)
+    assert one is not None and len(one) <= len("[[Attached Contact]] ") + 200
+    cards = [f"FN:{'n' * 100}{i}" for i in range(50)]
+    many = _text(type="vcard", vCards=cards)
+    assert many is not None and len(many) <= len("[[Attached Contact]] ") + 200
