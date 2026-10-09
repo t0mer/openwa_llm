@@ -532,7 +532,7 @@ describe("Groups integration", () => {
     vi.mocked(api.createSchedule).mockResolvedValue(sched());
     render(<Groups />);
     const opener = await screen.findByRole("button", { name: "Schedules for WA" });
-    expect(document.querySelector('td[data-label="Schedules"] .schedule-count')).toHaveTextContent("0");
+    expect(document.querySelector('.schedule-count')).toHaveTextContent("0");
     await userEvent.click(opener);
     expect(api.listSchedules).toHaveBeenCalledWith("1@g.us");
     expect(await screen.findByText("Schedules only run for managed groups.")).toBeInTheDocument();
@@ -542,7 +542,7 @@ describe("Groups integration", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save new schedule" }));
     await waitFor(() => expect(vi.mocked(api.listGroups).mock.calls.length).toBeGreaterThan(before));
     await userEvent.click(screen.getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(document.querySelector('td[data-label="Schedules"] .schedule-count')).toHaveTextContent("1"));
+    await waitFor(() => expect(document.querySelector('.schedule-count')).toHaveTextContent("1"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
   });
