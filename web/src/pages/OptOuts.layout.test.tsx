@@ -148,3 +148,31 @@ describe("Opt-outs across a viewport resize", () => {
     expect(screen.getByLabelText("Phone number or JID")).toHaveValue("972501");
   });
 });
+
+describe("Opt-outs focus after Remove", () => {
+  const user = userEvent.setup();
+
+  it("moves focus to the next row's Remove, then the previous, then the Add field", async () => {
+    mockViewport(1024);
+    const three = [...rows, { jid: "3@s.whatsapp.net", push_name: "C", created_at: "2026-01-03T00:00:00Z" }];
+    let current = three;
+    vi.mocked(api.listOptOuts).mockImplementation(async () => current);
+    vi.mocked(api.removeOptOut).mockImplementation(async (j) => { current = current.filter((o) => o.jid !== j); });
+    render(<OptOuts />);
+    await user.click(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove 2@s.whatsapp.net" })).toHaveFocus());
+    await user.click(screen.getByRole("button", { name: "Remove 3@s.whatsapp.net" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove 2@s.whatsapp.net" })).toHaveFocus());
+    await user.click(screen.getByRole("button", { name: "Remove 2@s.whatsapp.net" }));
+    await waitFor(() => expect(screen.getByLabelText("Phone number or JID")).toHaveFocus());
+  });
+
+  it("keeps focus on the same Remove when it fails", async () => {
+    mockViewport(390);
+    vi.mocked(api.removeOptOut).mockRejectedValueOnce(new ApiError(500, "nope"));
+    render(<OptOuts />);
+    await user.click(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("nope"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove 1@s.whatsapp.net" })).toHaveFocus());
+  });
+});

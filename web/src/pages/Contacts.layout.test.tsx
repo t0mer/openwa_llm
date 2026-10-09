@@ -111,3 +111,50 @@ describe("Contacts across a viewport resize", () => {
     }
   });
 });
+
+describe("Contacts focus", () => {
+  const user = userEvent.setup();
+
+  it("moves focus into the name input on Edit and back to the row's Edit button on Cancel", async () => {
+    mockViewport(1024);
+    render(<Contacts />);
+    await user.click(await screen.findByRole("button", { name: "Edit 2@s.whatsapp.net" }));
+    expect(screen.getByLabelText("Name for 2@s.whatsapp.net")).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Edit 2@s.whatsapp.net" })).toHaveFocus();
+  });
+
+  it("returns focus to the Edit button after a successful Save", async () => {
+    mockViewport(390);
+    render(<Contacts />);
+    await user.click(await screen.findByRole("button", { name: "Edit 2@s.whatsapp.net" }));
+    expect(screen.getByLabelText("Name for 2@s.whatsapp.net")).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit 2@s.whatsapp.net" })).toHaveFocus());
+  });
+
+  it("puts focus back in the input after a failed Save", async () => {
+    mockViewport(1024);
+    vi.mocked(api.patchContact).mockRejectedValueOnce(new Error("boom"));
+    render(<Contacts />);
+    await user.click(await screen.findByRole("button", { name: "Edit 2@s.whatsapp.net" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("alert");
+    await waitFor(() => expect(screen.getByLabelText("Name for 2@s.whatsapp.net")).toHaveFocus());
+  });
+
+  it("keeps focus in the edit input across a table/cards swap, and does not steal it otherwise", async () => {
+    const vp = mockViewport(1024);
+    render(<Contacts />);
+    await user.click(await screen.findByRole("button", { name: "Edit 2@s.whatsapp.net" }));
+    await user.type(screen.getByLabelText("Name for 2@s.whatsapp.net"), "Eli");
+    vp.setWidth(600);
+    await screen.findByRole("list", { name: "Contacts" });
+    expect(screen.getByLabelText("Name for 2@s.whatsapp.net")).toHaveFocus();
+    expect(screen.getByLabelText("Name for 2@s.whatsapp.net")).toHaveValue("Eli");
+    await user.click(screen.getByRole("textbox", { name: "Search contacts" }));
+    vp.setWidth(1024);
+    await screen.findByRole("table", { name: "Contacts" });
+    expect(screen.getByRole("textbox", { name: "Search contacts" })).toHaveFocus();
+  });
+});

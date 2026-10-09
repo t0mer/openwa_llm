@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { BellRing } from "lucide-react";
 import { api } from "../api";
 import { confirm, toast } from "../alerts";
@@ -25,7 +25,7 @@ function Person({ o }: { o: OptOutItem }) {
 }
 
 function RemoveButton({ optOut: o, busy, onRemove, className, size }: RowProps & { className?: string; size?: "table" | "lg" }) {
-  return <Button variant="danger-outline" size={size} className={className} aria-label={`Remove ${o.jid}`} disabled={busy} onClick={() => onRemove(o.jid)}>Remove</Button>;
+  return <Button variant="danger-outline" size={size} className={className} data-remove-for={o.jid} aria-label={`Remove ${o.jid}`} disabled={busy} onClick={() => onRemove(o.jid)}>Remove</Button>;
 }
 
 function OptOutTableRow(p: RowProps) {
@@ -69,6 +69,21 @@ export default function OptOuts() {
   const inlineError = useLoadError(error, data !== null);
   const [jid, setJid] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const addInput = useRef<HTMLInputElement>(null);
+  const [settled, setSettled] = useState(0);
+  /** After a remove: focus the next row's Remove (else the previous, else the Add field); on failure keep it where it was. */
+  const afterRemove = useRef<{ jid: string; next: string | null } | null>(null);
+  useEffect(() => {
+    const target = afterRemove.current;
+    if (!target) return;
+    afterRemove.current = null;
+    const present = (j: string) => (data ?? []).some((o) => o.jid === j);
+    const jid = present(target.jid) ? target.jid : target.next;
+    const button = jid && Array.from(document.querySelectorAll<HTMLElement>("[data-remove-for]")).find((el) => el.dataset.removeFor === jid);
+    (button || addInput.current)?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settled]);
+
   async function add(e: FormEvent) {
     e.preventDefault();
     if (!jid.trim()) return;
@@ -93,6 +108,9 @@ export default function OptOuts() {
       danger: true,
     });
     if (!ok) return;
+    const list = data ?? [];
+    const at = list.findIndex((o) => o.jid === target);
+    afterRemove.current = { jid: target, next: (list[at + 1] ?? list[at - 1])?.jid ?? null };
     setBusy(target);
     try {
       await api.removeOptOut(target);
@@ -103,6 +121,7 @@ export default function OptOuts() {
       setBusy(null);
     }
     await reload();
+    setSettled((n) => n + 1);
   }
 
   const items = data ?? [];
@@ -115,7 +134,7 @@ export default function OptOuts() {
         {/* The hint sits below the row, so the button lines up with the input itself (sm:items-end). */}
         <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
           <Field className="min-w-0 flex-1" label="Phone number or JID">
-            <Input aria-describedby="optout-hint" placeholder="+972 50 123 4567 or 972501234567@s.whatsapp.net" value={jid} onChange={(e) => setJid(e.target.value)} required disabled={busy !== null} />
+            <Input ref={addInput} aria-describedby="optout-hint" placeholder="+972 50 123 4567 or 972501234567@s.whatsapp.net" value={jid} onChange={(e) => setJid(e.target.value)} required disabled={busy !== null} />
           </Field>
           <Button type="submit" variant="primary" size="lg" disabled={busy !== null}>Add</Button>
         </div>

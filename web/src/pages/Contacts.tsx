@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { UserRound } from "lucide-react";
 import { api } from "../api";
 import { toast } from "../alerts";
@@ -34,13 +34,15 @@ interface RowProps {
   onEdit: (c: Contact) => void;
   onCancel: () => void;
   onSave: (jid: string) => void;
+  onInputFocus: () => void;
+  onInputBlur: (el: HTMLInputElement) => void;
 }
 
-function NameCell({ contact: c, editing, name, saving, actionError, onName }: RowProps) {
+function NameCell({ contact: c, editing, name, saving, actionError, onName, onInputFocus, onInputBlur }: RowProps) {
   if (editing) {
     return (
       <div className="flex min-w-0 flex-col gap-2">
-        <Input aria-label={`Name for ${c.jid}`} value={name} onChange={(e) => onName(e.target.value)} maxLength={255} disabled={saving} />
+        <Input data-edit-input={c.jid} onFocus={onInputFocus} onBlur={(e) => onInputBlur(e.currentTarget)} aria-label={`Name for ${c.jid}`} value={name} onChange={(e) => onName(e.target.value)} maxLength={255} disabled={saving} />
         {actionError && <InlineError>{actionError}</InlineError>}
       </div>
     );
@@ -60,7 +62,7 @@ function Actions({ p, className, size }: { p: RowProps; className?: string; size
       <Button size={size} className={className} disabled={p.saving} onClick={p.onCancel}>Cancel</Button>
     </>
   ) : (
-    <Button size={size} className={className} aria-label={`Edit ${c.jid}`} disabled={p.saving} onClick={() => p.onEdit(c)}>Edit</Button>
+    <Button size={size} className={className} data-edit-for={c.jid} aria-label={`Edit ${c.jid}`} disabled={p.saving} onClick={() => p.onEdit(c)}>Edit</Button>
   );
 }
 
@@ -142,22 +144,40 @@ export default function Contacts() {
     setQuery(search.trim());
   }
 
+  /** Focus follows the edit: into the input on Edit, back to the row's Edit button when it closes. */
+  const focusEdit = useRef(false);
+  const returnTo = useRef<string | null>(null);
+  useEffect(() => {
+    const all = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+    if (editJid) {
+      if (focusEdit.current) all("[data-edit-input]").find((el) => el.dataset.editInput === editJid)?.focus();
+    } else if (returnTo.current) {
+      const jid = returnTo.current;
+      returnTo.current = null;
+      all("[data-edit-for]").find((el) => el.dataset.editFor === jid)?.focus();
+    }
+  }, [editJid, desktop, saving]);
+
   function startEdit(c: Contact) {
+    focusEdit.current = true;
     setActionError(null);
     setEditJid(c.jid);
     setName(c.push_name ?? "");
   }
 
   function cancelEdit() {
+    returnTo.current = editJid;
     setActionError(null);
     setEditJid(null);
   }
 
   async function save(jid: string) {
     setActionError(null);
+    focusEdit.current = true;
     setSaving(true);
     try {
       await api.patchContact(jid, name.trim() || null);
+      returnTo.current = jid;
       setEditJid(null);
       toast.success("Contact updated");
     } catch (e) {
@@ -179,6 +199,9 @@ export default function Contacts() {
     onEdit: startEdit,
     onCancel: cancelEdit,
     onSave: (jid) => void save(jid),
+    onInputFocus: () => { focusEdit.current = true; },
+    // A removed input (table <-> cards swap) or a disabled one (saving) keeps the flag; a real blur clears it.
+    onInputBlur: (el) => queueMicrotask(() => { if (el.isConnected && !el.disabled) focusEdit.current = false; }),
   });
 
   return (
