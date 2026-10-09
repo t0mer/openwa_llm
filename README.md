@@ -78,6 +78,8 @@ cp .env.example .env
 | `ADMIN_PASSWORD`               | Admin UI login password. The admin UI is disabled unless both this and `ADMIN_SESSION_SECRET` are set | –                                          |
 | `ADMIN_SESSION_SECRET`         | Secret (>= 32 random chars) that signs the admin session cookie; generate with `openssl rand -hex 32`. Changing it logs everyone out | – |
 | `ADMIN_COOKIE_SECURE`          | Mark the admin session cookie `Secure`; set to `true` when served over HTTPS       | `false`                                                      |
+| `TIMEZONE`                     | IANA time zone in which group summary schedules are evaluated (invalid values stop startup) | `Asia/Jerusalem`                    |
+| `SCHEDULER_ENABLED`            | Run the in-app scheduler that sends scheduled group summaries; set `false` to disable it | `true`                                  |
 
 </div>
 
@@ -155,6 +157,7 @@ A web admin UI (served at `/admin`) lets you manage the bot without touching the
   - **Summary language** is `Auto`, `HE`, `EN` or `RU`. `Auto` follows the language of the chat. `HE`, `EN` and `RU` force that language for scheduled and admin-triggered summaries. On-demand summaries (a user asking the bot in the group) follow the language of the request.
 - **Contacts**: view and edit sender names.
 - **Opt-outs**: view, add and remove opted-out contacts.
+- **Schedules**: per-group recurring summaries (see [Scheduled summaries](#scheduled-summaries)).
 - **Messages**: read-only message browser with search and filters.
 - **Bot actions**: run group summaries or load the knowledge base on demand. After a summary run, a per-group result list shows which groups were sent, skipped (for example "9 of 15 messages needed") or failed, and why.
 
@@ -174,6 +177,32 @@ ADMIN_SESSION_SECRET=$(openssl rand -hex 32)
 - HTTPS is strongly recommended: terminate TLS at a reverse proxy and set `ADMIN_COOKIE_SECURE=true`.
 - The admin API lives under `/api/v1/admin` (login-protected; see Swagger at `/docs`).
 
+#### Scheduled summaries
+
+Each group can have its own summary schedules, so summaries no longer need an external cron job. Open **Groups**, click **Schedules** in a group's row (the column also shows how many schedules the group has) and add as many schedules as you like (up to 20 per group):
+
+- A schedule is a set of weekdays plus a time of day, entered in 12-hour form with AM/PM (12 AM is midnight, 12 PM is noon). Each schedule can be enabled or disabled without deleting it, and the dialog shows its last run: when, the outcome (sent, skipped or failed) and the message count.
+- Times use the server time zone from `TIMEZONE` (default `Asia/Jerusalem`), shown at the top of the dialog. A time that does not exist on a daylight-saving change runs once at the first valid minute.
+- Only groups with **Respond** on (managed) run. A schedule of an unmanaged group is kept but does nothing.
+- A run needs at least 15 new messages since the group's last summary. Otherwise it is skipped and recorded as skipped ("Not enough new messages"); the next summary then covers everything since the last one that was actually sent.
+- The scheduler checks once a minute. After downtime a missed run is still sent up to 60 minutes late; older missed runs are skipped.
+- A run is claimed in the database before it starts, so a restart or a second tick does not repeat it.
+- The scheduler runs inside the web server process. Run a single web server process; with `SCHEDULER_ENABLED=false` nothing is scheduled.
+- Scheduled runs, admin "Bot actions" and the legacy endpoint share a per-group lock inside one process, so they do not run at the same time for one group.
+
+> **Warning:** if an external cron job still calls `/summarize_and_send_to_groups` and a group also has schedules, that group's summary can be posted twice. Remove the cron job (or the schedules) when you switch.
+
+The API (login-protected, under `/api/v1/admin/groups/{jid}/schedules`):
+
+| Method   | Path                                                 | Purpose                                                            |
+| -------- | ---------------------------------------------------- | ------------------------------------------------------------------ |
+| `GET`    | `/api/v1/admin/groups/{jid}/schedules`               | List schedules and the configured `timezone`                        |
+| `POST`   | `/api/v1/admin/groups/{jid}/schedules`               | Create one (`409` after 20 per group)                              |
+| `PATCH`  | `/api/v1/admin/groups/{jid}/schedules/{schedule_id}` | Change weekdays, time or `enabled`                                  |
+| `DELETE` | `/api/v1/admin/groups/{jid}/schedules/{schedule_id}` | Delete one                                                         |
+
+Fields: `weekdays` (non-empty list of integers, 0 = Sunday to 6 = Saturday), the time as either `hour` (0-23) or `hour12` (1-12) with `meridiem` (`AM`/`PM`) but not both, `minute` (0-59) and `enabled`. Example: `{"weekdays": [0, 2, 4], "hour12": 9, "minute": 0, "meridiem": "AM"}`.
+
 #### Notes
 
 - **Group names:** the WhatsApp name, topic and owner are refreshed from WhatsApp and are read-only. The "display name" is your own alias and survives syncs.
@@ -190,6 +219,12 @@ ADMIN_SESSION_SECRET=$(openssl rand -hex 32)
 #### Groups
 ![Groups](assets/screenshots/admin-groups-light.png)
 ![Groups (dark)](assets/screenshots/admin-groups-dark.png)
+
+#### Schedules
+The Schedules dialog of a group, in light and dark:
+
+![Schedules dialog](assets/screenshots/admin-schedules-light.png)
+![Schedules dialog (dark)](assets/screenshots/admin-schedules-dark.png)
 
 Editing a group (display name, summary language and community keys):
 
@@ -224,6 +259,8 @@ Summary results per group after a run:
 #### Mobile
 <p>
 <img src="assets/screenshots/admin-mobile-groups-light.png" alt="Groups on mobile" width="220">
+<img src="assets/screenshots/admin-mobile-schedules-light.png" alt="Schedules dialog on mobile" width="220">
+<img src="assets/screenshots/admin-mobile-schedules-dark.png" alt="Schedules dialog on mobile (dark)" width="220">
 <img src="assets/screenshots/admin-mobile-menu-light.png" alt="Mobile navigation menu" width="220">
 <img src="assets/screenshots/admin-mobile-messages-light.png" alt="Messages on mobile" width="220">
 <img src="assets/screenshots/admin-mobile-actions-light.png" alt="Bot actions on mobile" width="220">
