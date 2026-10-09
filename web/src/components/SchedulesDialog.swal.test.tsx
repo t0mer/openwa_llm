@@ -5,6 +5,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SchedulesDialog from "./SchedulesDialog";
+import { toast } from "../alerts";
 import { api } from "../api";
 import type { Schedule } from "../types";
 
@@ -50,6 +51,8 @@ describe("SchedulesDialog with a real SweetAlert confirm", () => {
   it("keeps focus in the confirm instead of pulling it back into the dialog", async () => {
     await openConfirm();
     await waitFor(() => expect(popup()!.contains(document.activeElement)).toBe(true));
+    // the confirm lives outside the inert app root and the dialog's portal
+    expect(popup()!.closest("[inert]")).toBeNull();
     await flush();
     expect(popup()!.contains(document.activeElement)).toBe(true);
     // moving focus between the confirm's buttons is not undone by the dialog's focus trap
@@ -80,5 +83,18 @@ describe("SchedulesDialog with a real SweetAlert confirm", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("group", { name: "Schedule at 9:30 AM" })).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole("button", { name: "Add schedule" })).toHaveFocus());
+  });
+
+  it("a click inside a real SweetAlert toast is not an outside click", async () => {
+    const onClose = vi.fn();
+    render(<SchedulesDialog group={{ group_jid: "1@g.us", label: "Friends", managed: true }} onClose={onClose} onChanged={vi.fn()} />);
+    await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+    toast.success("Saved");
+    await waitFor(() => expect(document.querySelector(".swal2-toast .swal2-close")).not.toBeNull());
+    expect(document.querySelector(".swal2-toast")!.closest("[inert]")).toBeNull();
+    await user.pointer({ keys: "[MouseLeft]", target: document.querySelector<HTMLElement>(".swal2-toast .swal2-close")! });
+    await flush();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });

@@ -36,6 +36,17 @@ function open(items: Schedule[], group = grp) {
 
 const user = userEvent.setup({ pointerEventsCheck: 0 }); // Radix sets pointer-events:none on <body>
 const overlay = () => document.querySelector<HTMLElement>("[data-dialog-overlay]")!;
+/** [header X, footer Close]: both close the dialog. */
+const closeButtons = () => screen.getAllByRole("button", { name: "Close" });
+/**
+ * Row Save/Delete stay focusable when unavailable (aria-disabled, clicks ignored) so a focused
+ * button that becomes unavailable while saving does not drop focus to <body>.
+ */
+const expectOff = (b: HTMLElement) => {
+  expect(b).toHaveAttribute("aria-disabled", "true");
+  expect(b).not.toHaveAttribute("disabled");
+};
+const expectOn = (b: HTMLElement) => expect(b).not.toHaveAttribute("aria-disabled", "true");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -129,7 +140,7 @@ describe("SchedulesDialog", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Friends")));
     expect(onChanged).toHaveBeenCalledTimes(1);
     // now a saved row: patching is possible and Save is disabled until something changes
-    expect(screen.getByRole("button", { name: "Save schedule at 9:30 AM" })).toBeDisabled();
+    expectOff(screen.getByRole("button", { name: "Save schedule at 9:30 AM" }));
   });
 
   it("patches only the changed fields", async () => {
@@ -171,7 +182,7 @@ describe("SchedulesDialog", () => {
     await userEvent.click(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
     expect(within(row).getByRole("switch", { name: "Enabled" })).not.toBeChecked();
-    expect(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" })).toBeEnabled();
+    expectOn(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" }));
   });
 
   it("disables the row controls and blocks closing while saving", async () => {
@@ -181,12 +192,16 @@ describe("SchedulesDialog", () => {
     const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
     await userEvent.click(within(row).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" }));
-    expect(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" })).toBeDisabled();
+    const saveBtn = within(row).getByRole("button", { name: "Save schedule at 9:30 AM" });
+    expectOff(saveBtn);
+    // the clicked Save keeps focus (a disabled button would drop it to <body>)
+    expect(saveBtn).toHaveFocus();
+    await userEvent.click(saveBtn);
+    expect(api.patchSchedule).toHaveBeenCalledTimes(1);
     expect(within(row).getByLabelText("Hour")).toBeDisabled();
     expect(within(row).getByRole("checkbox", { name: "Mon" })).toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Delete schedule at 9:30 AM" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Done" })).toBeDisabled();
+    expectOff(within(row).getByRole("button", { name: "Delete schedule at 9:30 AM" }));
+    for (const b of closeButtons()) expect(b).toBeDisabled();
     await userEvent.keyboard("{Escape}");
     await user.pointer({ keys: "[MouseLeft]", target: overlay() });
     expect(onClose).not.toHaveBeenCalled();
@@ -255,8 +270,8 @@ describe("SchedulesDialog", () => {
     const sun = await within(dialog).findByRole("checkbox", { name: "Sun" });
     await waitFor(() => expect(sun).toHaveFocus());
     expect(sibling).toHaveAttribute("aria-hidden", "true");
-    const first = within(dialog).getByRole("button", { name: "Close" });
-    const last = within(dialog).getByRole("button", { name: "Done" });
+    expect(sibling).toHaveAttribute("inert");
+    const [first, last] = closeButtons();
     last.focus();
     await userEvent.tab();
     expect(first).toHaveFocus();
@@ -268,6 +283,7 @@ describe("SchedulesDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
     cleanup();
     expect(sibling).not.toHaveAttribute("aria-hidden");
+    expect(sibling).not.toHaveAttribute("inert");
     sibling.remove();
   });
 
@@ -321,9 +337,10 @@ describe("SchedulesDialog", () => {
     const add = within(dialog).getByRole("button", { name: "Add schedule" });
     add.focus();
     await userEvent.tab();
-    // Close and Done are disabled while saving, so Add is the only enabled control: Tab must stay inside.
+    // Both Close buttons are disabled while saving, Add is the last focusable control: Tab wraps
+    // to the first focusable one (the saving row's Delete, still focusable) and stays inside.
     expect(dialog.contains(document.activeElement)).toBe(true);
-    expect(document.activeElement).toBe(add);
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Delete schedule at 9:30 AM" }));
   });
 
   it("drops the row, toasts info and notifies the parent when the schedule is gone (404 on PATCH)", async () => {
@@ -462,9 +479,15 @@ describe("SchedulesDialog", () => {
     expect(within(a).getByRole("checkbox", { name: "Sun" })).toBeDisabled();
     const add = screen.getByRole("button", { name: "Add schedule" });
     add.focus();
-    await userEvent.tab(); // last enabled -> first enabled
+    // the saving row's disabled checkboxes/selects are skipped; its Delete stays focusable
+    await userEvent.tab(); // last focusable -> first focusable
+    expect(within(a).getByRole("button", { name: "Delete schedule at 9:30 AM" })).toHaveFocus();
+    await userEvent.tab(); // the disabled controls of row a are skipped
+    expect(within(a).getByRole("button", { name: "Save schedule at 9:30 AM" })).toHaveFocus();
+    await userEvent.tab();
     expect(within(b).getByRole("checkbox", { name: "Sun" })).toHaveFocus();
-    await userEvent.tab({ shift: true }); // first enabled -> last enabled
+    within(a).getByRole("button", { name: "Delete schedule at 9:30 AM" }).focus();
+    await userEvent.tab({ shift: true }); // first focusable -> last focusable
     expect(add).toHaveFocus();
   });
 
@@ -533,17 +556,63 @@ describe("SchedulesDialog", () => {
     expect(row).toHaveClass("flex-col", "rounded-lg", "border");
   });
 
-  it("a click inside a SweetAlert toast is not an outside click", async () => {
-    const { onClose } = open([sched()]);
-    await screen.findByRole("dialog");
-    const swal = document.createElement("div");
-    swal.className = "swal2-container swal2-top-end";
-    swal.innerHTML = '<div class="swal2-popup swal2-toast"><button class="swal2-close">x</button></div>';
-    document.body.appendChild(swal);
-    await user.pointer({ keys: "[MouseLeft]", target: swal.querySelector("button")! });
-    expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    swal.remove();
+  describe("closing with unsaved changes", () => {
+    const dirty = async () => {
+      const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+      await userEvent.click(within(row).getByRole("switch", { name: "Enabled" }));
+    };
+    const ways: [string, () => Promise<void>][] = [
+      ["the footer Close", async () => { await user.click(closeButtons()[1]); }],
+      ["the header X", async () => { await user.click(closeButtons()[0]); }],
+      ["Escape", async () => { await user.keyboard("{Escape}"); }],
+      ["an overlay click", async () => { await user.pointer({ keys: "[MouseLeft]", target: overlay() }); }],
+    ];
+
+    it.each(ways)("%s asks before discarding an edited row and closes on confirm", async (_n, act) => {
+      const { onClose } = open([sched()]);
+      await dirty();
+      await act();
+      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(confirm).mock.calls[0][0]).toMatchObject({ title: "Discard unsaved changes?", confirmText: "Discard", danger: true });
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    });
+
+    it.each(ways)("%s keeps the dialog and the draft when discarding is declined", async (_n, act) => {
+      vi.mocked(confirm).mockResolvedValue(false);
+      const { onClose } = open([sched()]);
+      await dirty();
+      await act();
+      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole("switch", { name: "Enabled" })).not.toBeChecked();
+    });
+
+    it("asks for an unsaved new row too", async () => {
+      const { onClose } = open([]);
+      await userEvent.click(await screen.findByRole("button", { name: "Add schedule" }));
+      await user.click(closeButtons()[1]);
+      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    });
+
+    it.each(ways)("%s closes immediately when nothing is unsaved", async (_n, act) => {
+      const { onClose } = open([sched()]);
+      await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+      await act();
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+      expect(confirm).not.toHaveBeenCalled();
+    });
+  });
+
+  it("leaves no inert attribute behind after StrictMode mounting and unmounting", async () => {
+    vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [] });
+    const { unmount } = render(<StrictMode><SchedulesDialog group={grp} onClose={vi.fn()} onChanged={vi.fn()} /></StrictMode>);
+    await screen.findByText("No schedules yet.");
+    expect(document.querySelectorAll("[inert]").length).toBeGreaterThan(0);
+    expect(screen.getByRole("dialog").closest("[inert]")).toBeNull();
+    unmount();
+    expect(document.querySelectorAll("[inert]")).toHaveLength(0);
   });
 
   it("shows the server time zone line", async () => {
@@ -578,7 +647,7 @@ describe("Groups integration", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save new schedule" }));
     await waitFor(() => expect(vi.mocked(api.listGroups).mock.calls.length).toBeGreaterThan(before));
     expect(document.body).toHaveAttribute("data-scroll-locked");
-    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+    await userEvent.click(closeButtons()[1]);
     await waitFor(() => expect(count()).toHaveTextContent("1"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(document.body).not.toHaveAttribute("data-scroll-locked");

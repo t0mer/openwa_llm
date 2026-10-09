@@ -152,9 +152,28 @@ export default function SchedulesDialog({ group, onClose, onChanged, returnFocus
   const busy = rows.some((r) => r.saving);
   const busyRef = useRef(busy);
   busyRef.current = busy;
-  const close = () => {
-    if (!busyRef.current && !confirming.current) onClose();
-  };
+  const unsaved = rows.some((r) => !r.base || isDirty(r));
+
+  /** Every way of closing ends here: blocked while saving, and asks before dropping unsaved rows. */
+  async function close() {
+    if (busyRef.current || confirming.current) return;
+    if (unsaved) {
+      confirming.current = true;
+      let ok = false;
+      try {
+        ok = await confirm({
+          title: "Discard unsaved changes?",
+          text: "Schedules that were added or edited but not saved will be lost.",
+          confirmText: "Discard",
+          danger: true,
+        });
+      } finally {
+        confirming.current = false;
+      }
+      if (!ok) return;
+    }
+    onClose();
+  }
 
   const live = useRef(true);
   useEffect(() => {
@@ -306,7 +325,7 @@ export default function SchedulesDialog({ group, onClose, onChanged, returnFocus
   const names = rowNames(rows);
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
+    <Dialog open onOpenChange={(open) => { if (!open) void close(); }}>
       <DialogContent
         wide
         title={<>Schedules: <bdi>{group.label}</bdi></>}
@@ -382,11 +401,12 @@ export default function SchedulesDialog({ group, onClose, onChanged, returnFocus
                     )}
                   </div>
                   {row.weekdays.length === 0 && row.attempted && <InlineError>Select at least one day.</InlineError>}
+                  {/* aria-disabled, not disabled: a clicked Save/Delete keeps focus while saving */}
                   <div className="flex flex-wrap justify-end gap-2">
-                    <Button variant={b ? "danger-outline" : "outline"} size="sm" className="min-h-11 md:min-h-9" onClick={() => void remove(row)} disabled={row.saving} aria-label={`${b ? "Delete" : "Remove"} ${name}`}>
+                    <Button variant={b ? "danger-outline" : "outline"} size="sm" className="min-h-11 md:min-h-9" onClick={() => void remove(row)} aria-disabled={row.saving || undefined} aria-label={`${b ? "Delete" : "Remove"} ${name}`}>
                       {b ? "Delete" : "Remove"}
                     </Button>
-                    <Button variant="primary" size="sm" className="min-h-11 md:min-h-9" onClick={() => void save(row)} disabled={row.saving || !dirty} aria-label={`Save ${name}`}>
+                    <Button variant="primary" size="sm" className="min-h-11 md:min-h-9" onClick={() => void save(row)} aria-disabled={row.saving || !dirty || undefined} aria-label={`Save ${name}`}>
                       Save
                     </Button>
                   </div>
@@ -399,8 +419,8 @@ export default function SchedulesDialog({ group, onClose, onChanged, returnFocus
               Add schedule
             </Button>
             {rows.length >= MAX_SCHEDULES && <span className="text-sm text-muted-foreground">Limit of {MAX_SCHEDULES} schedules reached.</span>}
-            <Button variant="primary" size="lg" className="ms-auto md:min-h-10 md:text-sm" onClick={close} disabled={busy}>
-              Done
+            <Button variant="primary" size="lg" className="ms-auto md:min-h-10 md:text-sm" onClick={() => void close()} disabled={busy}>
+              Close
             </Button>
           </div>
         </div>
