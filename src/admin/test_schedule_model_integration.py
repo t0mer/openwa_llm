@@ -32,10 +32,66 @@ async def test_round_trip_with_weekdays_array_and_defaults(db_sessionmaker):
         assert row.last_message_count is None
 
 
-async def test_ids_are_unique_per_schedule(db_sessionmaker):
-    a = GroupSummarySchedule(group_jid="1@g.us", weekdays=[1], hour=1, minute=1)
-    b = GroupSummarySchedule(group_jid="1@g.us", weekdays=[1], hour=1, minute=1)
-    assert a.id != b.id
+async def test_ids_are_distinct_per_schedule(db_sessionmaker):
+    async with db_sessionmaker() as session:
+        session.add(Group(group_jid="1@g.us"))
+        await session.flush()
+        for _ in range(2):
+            session.add(
+                GroupSummarySchedule(group_jid="1@g.us", weekdays=[1], hour=1, minute=1)
+            )
+        await session.commit()
+    async with db_sessionmaker() as session:
+        rows = (await session.exec(select(GroupSummarySchedule))).all()
+        assert len(rows) == 2 and rows[0].id != rows[1].id
+
+
+@pytest.mark.parametrize(
+    "weekdays,hour,minute",
+    [
+        ([0, 6], 0, 0),
+        ([1, 2, 3], 23, 59),
+        ([4], 12, 30),
+    ],
+)
+async def test_valid_ranges_insert(db_sessionmaker, weekdays, hour, minute):
+    async with db_sessionmaker() as session:
+        session.add(Group(group_jid="1@g.us"))
+        await session.flush()
+        session.add(
+            GroupSummarySchedule(
+                group_jid="1@g.us", weekdays=weekdays, hour=hour, minute=minute
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.parametrize(
+    "weekdays,hour,minute",
+    [
+        ([1], 24, 0),
+        ([1], -5, 0),
+        ([1], 0, 60),
+        ([1], 0, -1),
+        ([], 8, 0),
+        ([7], 8, 0),
+        ([-1], 8, 0),
+        ([1, 9], 8, 0),
+    ],
+)
+async def test_out_of_range_values_are_rejected_by_db(
+    db_sessionmaker, weekdays, hour, minute
+):
+    async with db_sessionmaker() as session:
+        session.add(Group(group_jid="1@g.us"))
+        await session.flush()
+        session.add(
+            GroupSummarySchedule(
+                group_jid="1@g.us", weekdays=weekdays, hour=hour, minute=minute
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.commit()
 
 
 async def test_last_run_fields_round_trip(db_sessionmaker):

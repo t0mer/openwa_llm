@@ -34,6 +34,20 @@ def upgrade() -> None:
         sa.Column("last_message_count", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["group_jid"], ["group.group_jid"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.CheckConstraint(
+            "hour BETWEEN 0 AND 23", name="ck_group_summary_schedule_hour"
+        ),
+        sa.CheckConstraint(
+            "minute BETWEEN 0 AND 59", name="ck_group_summary_schedule_minute"
+        ),
+        sa.CheckConstraint(
+            "cardinality(weekdays) > 0",
+            name="ck_group_summary_schedule_weekdays_not_empty",
+        ),
+        sa.CheckConstraint(
+            "weekdays <@ ARRAY[0,1,2,3,4,5,6]",
+            name="ck_group_summary_schedule_weekdays_range",
+        ),
     )
     op.create_index(
         op.f("ix_group_summary_schedule_group_jid"),
