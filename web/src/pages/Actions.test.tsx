@@ -113,7 +113,22 @@ describe("Actions page", () => {
     render(<Actions />);
     expect(await screen.findByRole("alert")).toHaveTextContent("server down");
     expect(toast.error).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "Run summaries now" })).not.toBeInTheDocument();
+  });
+
+  it("still shows both cards with an Unknown state and usable Run buttons when the first load fails", async () => {
+    vi.mocked(api.getActions).mockRejectedValue(new ApiError(500, "server down"));
+    vi.mocked(api.runAction).mockResolvedValue(undefined as never);
+    render(<Actions />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("server down");
+    for (const title of ["Group summaries", "Knowledge base"]) {
+      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    }
+    expect(screen.getAllByText("Unknown")).toHaveLength(2);
+    const run = screen.getByRole("button", { name: "Run summaries now" });
+    expect(run).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Load knowledge base topics" })).toBeEnabled();
+    await userEvent.click(run);
+    await waitFor(() => expect(api.runAction).toHaveBeenCalledWith("summarize"));
   });
 
   it("toasts, without an inline error, when a poll fails while statuses are shown", async () => {

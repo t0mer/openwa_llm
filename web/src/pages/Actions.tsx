@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, CircleAlert, CircleCheck, CircleDot, Loader, Send } from "lucide-react";
+import { BookOpen, CircleAlert, CircleCheck, CircleDot, CircleHelp, Loader, Send } from "lucide-react";
 import { api } from "../api";
 import { confirm, errorDialog, showSummaryResults, toast } from "../alerts";
 import { Badge, type Tone } from "../components/ui/badge";
@@ -117,20 +117,22 @@ export default function Actions() {
     <div className="flex flex-col gap-5">
       <PageHeader title="Bot actions" description="Jobs run in the background on the server. Status is kept in memory and resets when the server restarts." />
       {inlineError && <InlineError>{inlineError}</InlineError>}
-      {loading && !data ? (
+      {loading && !data && !error ? (
         <div role="status" className="grid gap-4 md:grid-cols-2">
           <span className="sr-only">Loading…</span>
           <Skeleton className="h-56" />
           <Skeleton className="h-56" />
         </div>
-      ) : !data ? null : (
+      ) : (
+        // Without a status (first load failed) the cards still show, as "Unknown", and Run stays
+        // usable: the server rejects a start that conflicts with a running job.
         <div className="grid items-start gap-4 md:grid-cols-2">
           {CARDS.map((card) => {
             const status = data?.[card.name];
             return (
               <Section key={card.name} title={card.title} description={card.description}>
                 <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
-                  <div>{status && <StateBadge state={status.state} />}</div>
+                  <div>{status ? <StateBadge state={status.state} /> : <Badge tone="neutral" icon={CircleHelp}>Unknown</Badge>}</div>
                   <div>Started: {when(status?.started_at ?? null)}</div>
                   <div>Finished: {when(status?.finished_at ?? null)}</div>
                 </div>
