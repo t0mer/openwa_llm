@@ -18,6 +18,7 @@ export interface Group {
   last_summary_sync: string;
   last_ingest: string;
   message_count: number;
+  schedule_count: number;
 }
 
 export interface GroupPatch {
@@ -91,3 +92,36 @@ export interface ActionStatus {
 }
 
 export type Actions = Record<ActionName, ActionStatus>;
+
+export type Meridiem = "AM" | "PM";
+export type ScheduleStatus = "sent" | "skipped" | "failed";
+
+/** Weekdays are 0 = Sunday .. 6 = Saturday. */
+export interface Schedule {
+  id: string;
+  weekdays: number[];
+  hour: number;
+  minute: number;
+  hour12: number;
+  meridiem: Meridiem;
+  enabled: boolean;
+  last_run_at: string | null;
+  last_status: ScheduleStatus | null;
+  last_reason: string | null;
+  last_message_count: number | null;
+}
+
+export interface ScheduleList {
+  timezone: string;
+  items: Schedule[];
+}
+
+export interface ScheduleCreate {
+  weekdays: number[];
+  hour12: number;
+  meridiem: Meridiem;
+  minute: number;
+  enabled: boolean;
+}
+
+export type SchedulePatch = Partial<ScheduleCreate>;

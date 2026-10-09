@@ -17,7 +17,7 @@ const base: Group = {
   group_jid: "1@g.us", group_name: "WA name", display_name: null, group_topic: "topic",
   owner_jid: "9725@s.whatsapp.net", managed: false, notify_on_spam: false, summary_language: null,
   community_keys: [], last_summary_sync: "2026-01-02T03:04:05", last_ingest: "2026-01-02T03:04:05",
-  message_count: 12,
+  message_count: 12, schedule_count: 0,
 };
 
 function setup(groups: Group[]) {
@@ -259,5 +259,15 @@ describe("Groups page", () => {
       await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
       await waitFor(() => expect(screen.getByRole("combobox", { name: /summary language for wa name/i })).toHaveValue(""));
     });
+  });
+
+  it("shows the schedule count and a Schedules button naming the group", async () => {
+    setup([{ ...base, display_name: "My alias", schedule_count: 3 }]);
+    expect(await screen.findByRole("columnheader", { name: "Schedules" })).toBeInTheDocument();
+    const cell = document.querySelector('td[data-label="Schedules"]')!;
+    expect(cell.children).toHaveLength(1);
+    expect(cell.children[0]).toHaveClass("cell-value");
+    expect(cell).toHaveTextContent("3");
+    expect(within(cell as HTMLElement).getByRole("button", { name: "Schedules for My alias" })).toHaveTextContent("Schedules");
   });
 });
