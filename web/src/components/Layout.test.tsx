@@ -63,4 +63,24 @@ describe("Layout", () => {
     await userEvent.click(screen.getByRole("button", { name: /theme: system/i }));
     expect(screen.getByRole("button", { name: /theme: light/i })).toBeInTheDocument();
   });
+
+  it("closes the menu on an outside click", async () => {
+    setup();
+    const btn = screen.getByRole("button", { name: "Menu" });
+    await userEvent.click(btn);
+    await userEvent.click(screen.getByText("page"));
+    expect(btn).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("ignores Escape while a SweetAlert popup is open", async () => {
+    setup();
+    const btn = screen.getByRole("button", { name: "Menu" });
+    await userEvent.click(btn);
+    const pop = document.createElement("div");
+    pop.className = "swal2-popup";
+    document.body.append(pop);
+    await userEvent.keyboard("{Escape}");
+    expect(btn).toHaveAttribute("aria-expanded", "true");
+    pop.remove();
+  });
 });

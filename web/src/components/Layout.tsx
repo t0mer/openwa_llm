@@ -30,6 +30,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(getTheme());
   const [open, setOpen] = useState(false);
   const burger = useRef<HTMLButtonElement>(null);
+  const header = useRef<HTMLElement>(null);
   const location = useLocation();
 
   useEffect(() => setOpen(false), [location.pathname]);
@@ -37,13 +38,22 @@ export default function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !document.querySelector(".swal2-popup")) {
         setOpen(false);
         burger.current?.focus();
       }
     }
+    function onDown(e: MouseEvent | TouchEvent) {
+      if (header.current && !header.current.contains(e.target as Node)) setOpen(false);
+    }
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
   }, [open]);
 
   function cycleTheme() {
@@ -55,7 +65,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="app">
       <a className="skip-link" href="#main">Skip to content</a>
-      <header className="navbar">
+      <header ref={header} className="navbar">
         <div className="navbar-inner">
           <strong className="brand">WhatsApp Bot Admin</strong>
           <button
