@@ -40,9 +40,17 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[], intervalMs =
   return { data, error, loading, reload };
 }
 
-/** Surface a load error as a toast once per distinct message. */
+const TOAST_WINDOW_MS = 60_000;
+const lastToasted = new Map<string, number>();
+
+/** Surface a load error as a toast, at most once per message per minute (polls can flap). */
 export function useErrorToast(error: string | null) {
   useEffect(() => {
-    if (error) toast.error(error);
+    if (!error) return;
+    const now = Date.now();
+    const last = lastToasted.get(error);
+    if (last !== undefined && now - last < TOAST_WINDOW_MS) return;
+    lastToasted.set(error, now);
+    toast.error(error);
   }, [error]);
 }
