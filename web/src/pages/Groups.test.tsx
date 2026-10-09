@@ -158,4 +158,17 @@ describe("Groups page", () => {
     setup([]);
     expect(await screen.findByText("No groups match.")).toBeInTheDocument();
   });
+
+  it("edit dialog is modal, focuses the name field, closes on Escape and backdrop click", async () => {
+    setup([base]);
+    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(within(dialog).getByLabelText("Display name")).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /edit 1@g\.us/i }));
+    await userEvent.pointer({ keys: "[MouseLeft]", target: screen.getByRole("dialog").parentElement! });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });

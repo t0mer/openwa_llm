@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { confirm, toast } from "../alerts";
 import TagInput from "../components/TagInput";
@@ -154,6 +154,21 @@ export default function Groups() {
 function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; error: string | null; saving: boolean; onCancel: () => void; onSave: (patch: GroupPatch) => Promise<void> }) {
   const [displayName, setDisplayName] = useState(group.display_name ?? "");
   const [keys, setKeys] = useState<string[]>(group.community_keys);
+  const nameInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    nameInput.current?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      opener?.focus?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -165,15 +180,15 @@ function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; e
   }
 
   return (
-    <div className="modal-backdrop">
-      <form className="modal" role="dialog" aria-label="Edit group" onSubmit={submit}>
+    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <form className="modal" role="dialog" aria-modal="true" aria-label="Edit group" onSubmit={submit}>
         <h2>{group.group_name || group.group_jid}</h2>
         <p className="muted">WhatsApp name, topic and owner come from WhatsApp and cannot be edited here.</p>
         {group.group_topic && <p className="muted">Topic: {group.group_topic}</p>}
         <p className="muted">Owner: {group.owner_jid ?? "unknown"}</p>
         <label>
           Display name
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={255} />
+          <input ref={nameInput} value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={255} />
         </label>
         <div>
           <strong>Community keys</strong>
