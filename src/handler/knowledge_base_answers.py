@@ -15,6 +15,7 @@ from voyageai.client_async import AsyncClient
 
 from models import Message
 from whatsapp import WhatsAppGateway
+from whatsapp.identity import get_bot_identity
 from whatsapp.jid import parse_jid
 from utils.chat_text import chat2text
 from utils.opt_out import get_opt_out_map
@@ -59,8 +60,13 @@ class KnowledgeBaseAnswers(BaseHandler):
         all_jids.add(message.sender_jid)
         opt_out_map = await get_opt_out_map(self.session, list(all_jids))
 
+        bot = await get_bot_identity(self.whatsapp)
         rephrased_result = await self.rephrasing_agent(
-            (await self.whatsapp.get_my_jid()).user, message, history, opt_out_map
+            bot.phone.user,
+            message,
+            history,
+            opt_out_map,
+            my_lid=bot.lid and bot.lid.user,
         )
         # Get query embedding
         embedded_question = (
@@ -132,6 +138,7 @@ class KnowledgeBaseAnswers(BaseHandler):
         sender: str,
         history: List[Message],
         opt_out_map: dict[str, str],
+        my_lid: str | None = None,
     ) -> AgentRunResult[str]:
         agent = Agent(
             model=self.settings.model_name,
@@ -165,10 +172,13 @@ class KnowledgeBaseAnswers(BaseHandler):
         message: Message,
         history: List[Message],
         opt_out_map: dict[str, str],
+        my_lid: str | None = None,
     ) -> AgentRunResult[str]:
         rephrased_agent = Agent(
             model=self.settings.model_name,
-            system_prompt=prompt_manager.render("rephrase.j2", my_jid=my_jid),
+            system_prompt=prompt_manager.render(
+                "rephrase.j2", my_jid=my_jid, my_lid=my_lid
+            ),
         )
 
         # We obviously need to translate the question and turn the question vebality to a title / summary text to make it closer to the questions in the rag

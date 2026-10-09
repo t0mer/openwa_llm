@@ -15,6 +15,7 @@ def mock_whatsapp():
     client.send_text = AsyncMock(return_value="mock_msg_id")
 
     client.get_my_jid = AsyncMock(return_value=JID(user="bot", server="s.whatsapp.net"))
+    client.get_my_lid = AsyncMock(return_value=None)
     return client
 
 
