@@ -64,6 +64,8 @@ def test_schedule_migration_upgrade_downgrade_upgrade(fresh_db_uri):
 
             def work(sync_conn):
                 insp = inspect(sync_conn)
+                if not insp.has_table(TABLE):
+                    return (False, [], [], set())
                 return (
                     insp.has_table(TABLE),
                     insp.get_foreign_keys(TABLE),
