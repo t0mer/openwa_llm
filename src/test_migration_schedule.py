@@ -48,7 +48,8 @@ def fresh_db_uri():
 
 
 def _config(uri: str) -> Config:
-    config = Config(str(ROOT / "alembic.ini"))
+    # no ini file: env.py would call logging.fileConfig and disable app loggers
+    config = Config()
     config.set_main_option("script_location", str(ROOT / "migrations"))
     config.set_main_option("sqlalchemy.url", uri.replace("%", "%%"))
     return config
