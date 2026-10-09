@@ -1,8 +1,10 @@
 import * as MenuPrimitive from "@radix-ui/react-dropdown-menu";
+import { Check } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 export const DropdownMenu = MenuPrimitive.Root;
 export const DropdownMenuTrigger = MenuPrimitive.Trigger;
+export const DropdownMenuRadioGroup = MenuPrimitive.RadioGroup;
 export const DropdownMenuLabel = MenuPrimitive.Label;
 export const DropdownMenuSeparator = ({ className }: { className?: string }) => (
   <MenuPrimitive.Separator className={cn("my-1 h-px bg-border", className)} />
@@ -30,5 +32,22 @@ export function DropdownMenuItem({ className, ...props }: MenuPrimitive.Dropdown
       )}
       {...props}
     />
+  );
+}
+
+export function DropdownMenuRadioItem({ className, children, ...props }: MenuPrimitive.DropdownMenuRadioItemProps) {
+  return (
+    <MenuPrimitive.RadioItem
+      className={cn(
+        "flex min-h-10 cursor-pointer select-none items-center gap-2 rounded-sm px-3 text-sm outline-none data-[highlighted]:bg-surface-2 [&_svg]:size-4",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+      <MenuPrimitive.ItemIndicator className="ms-auto">
+        <Check aria-hidden="true" />
+      </MenuPrimitive.ItemIndicator>
+    </MenuPrimitive.RadioItem>
   );
 }
