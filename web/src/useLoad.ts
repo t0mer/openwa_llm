@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "./api";
+import { toast } from "./alerts";
 
 export function useLoad<T>(load: () => Promise<T>, deps: unknown[], intervalMs = 60_000) {
   const [data, setData] = useState<T | null>(null);
@@ -37,4 +38,11 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[], intervalMs =
   }, [reload, intervalMs, depsKey]);
 
   return { data, error, loading, reload };
+}
+
+/** Surface a load error as a toast once per distinct message. */
+export function useErrorToast(error: string | null) {
+  useEffect(() => {
+    if (error) toast.error(error);
+  }, [error]);
 }

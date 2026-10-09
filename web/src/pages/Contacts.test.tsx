@@ -9,6 +9,9 @@ vi.mock("../api", async (orig) => {
   return { ...actual, api: { listContacts: vi.fn(), patchContact: vi.fn() } };
 });
 
+vi.mock("../alerts");
+import { toast } from "../alerts";
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.listContacts).mockResolvedValue({
@@ -87,7 +90,8 @@ describe("Contacts page", () => {
   it("shows the load error separately from action errors", async () => {
     vi.mocked(api.listContacts).mockRejectedValue(new ApiError(500, "load failed"));
     render(<Contacts />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("load failed");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("load failed"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("resets the offset when the filter changes", async () => {

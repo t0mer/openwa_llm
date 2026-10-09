@@ -10,6 +10,9 @@ vi.mock("../api", async (orig) => {
   return { ...actual, api: { listMessages: vi.fn(), listGroups: vi.fn() } };
 });
 
+vi.mock("../alerts");
+import { toast } from "../alerts";
+
 const msg = (id: string, text: string): MessageItem => ({
   message_id: id, timestamp: "2026-03-01T10:00:00Z", text, sender_jid: "1@s.whatsapp.net",
   sender_name: "Dana", group_jid: "1@g.us", chat_jid: "1@g.us", reply_to_id: null,
@@ -100,12 +103,11 @@ describe("Messages page", () => {
     render(<Messages />);
     await screen.findByText("second");
     await userEvent.click(screen.getByRole("button", { name: "Load older" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
     expect(screen.getByText("second")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Load older" }));
     expect(await screen.findByText("first")).toBeInTheDocument();
     expect(api.listMessages).toHaveBeenLastCalledWith(expect.objectContaining({ before: "CUR" }));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("shows the server's 422 for an out-of-range date and keeps the rows", async () => {
@@ -116,7 +118,7 @@ describe("Messages page", () => {
     await screen.findByText("hello");
     await userEvent.type(screen.getByLabelText("From date"), "1900-01-01");
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("from out of range");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("from out of range"));
     expect(screen.getByText("hello")).toBeInTheDocument();
     expect(api.listMessages).toHaveBeenLastCalledWith(
       expect.objectContaining({ from: new Date("1900-01-01T00:00:00").toISOString(), before: undefined }),
@@ -130,7 +132,7 @@ describe("Messages page", () => {
     await userEvent.type(screen.getByLabelText("From date"), "2026-03-10");
     await userEvent.type(screen.getByLabelText("To date"), "2026-03-01");
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("To date must not be before From date.");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("To date must not be before From date."));
     expect(api.listMessages).toHaveBeenCalledTimes(1);
   });
 

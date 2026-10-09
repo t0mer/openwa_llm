@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
+import { toast } from "../alerts";
 import type { Group, MessageItem } from "../types";
 
 interface Filters {
@@ -32,7 +33,6 @@ export default function Messages() {
   }, []);
 
   const seq = useRef(0);
-  const [rangeError, setRangeError] = useState<string | null>(null);
 
   const fetchPage = useCallback(async (f: Filters, before?: string) => {
     const id = ++seq.current;
@@ -63,16 +63,19 @@ export default function Messages() {
   }, []);
 
   useEffect(() => {
+    if (error) toast.error(error);
+  }, [error]);
+
+  useEffect(() => {
     void fetchPage(filters);
   }, [filters, fetchPage]);
 
   function apply(e: FormEvent) {
     e.preventDefault();
     if (draft.from && draft.to && draft.to < draft.from) {
-      setRangeError("To date must not be before From date.");
+      toast.error("To date must not be before From date.");
       return;
     }
-    setRangeError(null);
     setFilters({ ...draft });
   }
 
@@ -93,8 +96,6 @@ export default function Messages() {
         <input aria-label="To date" type="date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} />
         <button type="submit" className="primary">Apply</button>
       </form>
-      {rangeError && <p role="alert" className="error">{rangeError}</p>}
-      {error && <p role="alert" className="error">{error}</p>}
       <table className="responsive" aria-label="Messages">
         <thead><tr><th scope="col">Time</th><th scope="col">Sender</th><th scope="col">Message</th><th scope="col">Reactions</th></tr></thead>
         <tbody>

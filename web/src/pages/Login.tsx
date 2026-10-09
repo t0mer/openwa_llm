@@ -10,7 +10,7 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
 
   if (status === "authenticated") return <Navigate to="/groups" replace />;
-  if (status === "disabled") return <p className="notice">The admin UI is disabled on this server.</p>;
+  if (status === "disabled") return <p className="notice" role="status">The admin UI is disabled on this server.</p>;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -39,7 +39,7 @@ export default function Login() {
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus required autoComplete="current-password" />
       </label>
       <button type="submit" disabled={busy}>Log in</button>
-      {error && <p role="alert" className="error">{error}</p>}
+      {error && <p role="alert" className="inline-error">{error}</p>}
     </form>
   );
 }

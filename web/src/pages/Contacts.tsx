@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
-import { useLoad } from "../useLoad";
+import { toast } from "../alerts";
+import { useErrorToast, useLoad } from "../useLoad";
 
 const PAGE = 50;
 
@@ -24,6 +25,7 @@ export default function Contacts() {
       }),
     [query, filter, offset],
   );
+  useErrorToast(error);
 
   useEffect(() => {
     setEditJid(null);
@@ -60,6 +62,7 @@ export default function Contacts() {
     try {
       await api.patchContact(jid, name.trim() || null);
       setEditJid(null);
+      toast.success("Contact updated");
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -81,7 +84,6 @@ export default function Contacts() {
         </select>
         <span className="muted">{total} contacts</span>
       </form>
-      {error && <p role="alert" className="error">{error}</p>}
       {loading && !data ? (
         <p className="notice" role="status">Loading…</p>
       ) : (
@@ -94,7 +96,7 @@ export default function Contacts() {
                   {editJid === c.jid ? (
                     <>
                       <input aria-label={`Name for ${c.jid}`} value={name} onChange={(e) => setName(e.target.value)} maxLength={255} disabled={saving} />
-                      {actionError && <p role="alert" className="error">{actionError}</p>}
+                      {actionError && <p role="alert" className="inline-error">{actionError}</p>}
                     </>
                   ) : (
                     c.push_name ?? <span className="muted">—</span>

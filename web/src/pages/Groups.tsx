@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { api } from "../api";
+import { confirm, toast } from "../alerts";
 import TagInput from "../components/TagInput";
 import type { Group, GroupPatch, GroupSort } from "../types";
-import { useLoad } from "../useLoad";
+import { useErrorToast, useLoad } from "../useLoad";
 
 const PAGE = 50;
 
@@ -17,7 +18,7 @@ export default function Groups() {
   const [sort, setSort] = useState<GroupSort>("name");
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<Group | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [savingJid, setSavingJid] = useState<string | null>(null);
 
   const { data, error, loading, reload } = useLoad(
@@ -31,16 +32,23 @@ export default function Groups() {
       }),
     [query, managed, sort, offset],
   );
+  useErrorToast(error);
 
-  async function save(group: Group, patch: GroupPatch): Promise<boolean> {
-    setActionError(null);
+  const label = (g: Group) => g.display_name || g.group_name || g.group_jid;
+
+  /** Save a patch. Failures show inline in the edit dialog, otherwise as a toast. */
+  async function save(group: Group, patch: GroupPatch, inline = false): Promise<boolean> {
+    setDialogError(null);
     setSavingJid(group.group_jid);
     try {
       await api.patchGroup(group.group_jid, patch);
+      toast.success(`Saved ${label(group)}`);
       await reload();
       return true;
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      if (inline) setDialogError(message);
+      else toast.error(message);
       await reload();
       return false;
     } finally {
@@ -48,13 +56,14 @@ export default function Groups() {
     }
   }
 
-  function toggleManaged(group: Group) {
+  async function toggleManaged(group: Group) {
     if (!group.managed) {
       const since = fmt(group.last_summary_sync);
-      const ok = window.confirm(
-        `Enable the bot in "${group.display_name || group.group_name || group.group_jid}"?\n\n` +
-          `It will reply to mentions immediately, and the next summary will cover every message since ${since}.`,
-      );
+      const ok = await confirm({
+        title: `Enable the bot in "${label(group)}"?`,
+        text: `It will reply to mentions immediately, and the next summary will cover every message since ${since}.`,
+        confirmText: "Enable bot",
+      });
       if (!ok) return;
     }
     void save(group, { managed: !group.managed });
@@ -88,8 +97,6 @@ export default function Groups() {
         </select>
         <span className="muted">{total} groups</span>
       </form>
-      {error && <p role="alert" className="error">{error}</p>}
-      {actionError && !editing && <p role="alert" className="error">{actionError}</p>}
       {loading && !data ? (
         <p className="notice" role="status">Loading…</p>
       ) : (
@@ -101,14 +108,14 @@ export default function Groups() {
             {(data?.items ?? []).map((g) => (
               <tr key={g.group_jid}>
                 <td data-label="Group" className="cell-primary">
-                  <strong>{g.display_name || g.group_name || g.group_jid}</strong>
+                  <strong>{label(g)}</strong>
                   <div className="muted">
                     {g.display_name && g.group_name ? `WhatsApp: ${g.group_name} · ` : ""}{g.group_jid}
                   </div>
                   {g.group_topic && <div className="muted">{g.group_topic}</div>}
                 </td>
                 <td data-label="Respond">
-                  <input type="checkbox" className="switch" checked={g.managed} onChange={() => toggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
+                  <input type="checkbox" className="switch" checked={g.managed} onChange={() => void toggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
                 </td>
                 <td data-label="Spam notice">
                   <input type="checkbox" className="switch" checked={g.notify_on_spam} onChange={() => void save(g, { notify_on_spam: !g.notify_on_spam })} aria-label={`Spam notice in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
@@ -132,11 +139,11 @@ export default function Groups() {
       {editing && (
         <EditGroup
           group={editing}
-          error={actionError}
+          error={dialogError}
           saving={savingJid === editing.group_jid}
-          onCancel={() => { setActionError(null); setEditing(null); }}
+          onCancel={() => { setDialogError(null); setEditing(null); }}
           onSave={async (patch) => {
-            if (await save(editing, patch)) setEditing(null);
+            if (await save(editing, patch, true)) setEditing(null);
           }}
         />
       )}
@@ -173,7 +180,7 @@ function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; e
           <p className="muted">Groups that share a key also receive each other&apos;s summaries and knowledge.</p>
           <TagInput value={keys} onChange={setKeys} label="Community keys" />
         </div>
-        {error && <p role="alert" className="error">{error}</p>}
+        {error && <p role="alert" className="inline-error">{error}</p>}
         <div className="toolbar">
           <button type="submit" className="primary" disabled={saving}>Save</button>
           <button type="button" onClick={onCancel}>Cancel</button>

@@ -9,6 +9,9 @@ vi.mock("../api", async (orig) => {
   return { ...actual, api: { listOptOuts: vi.fn(), addOptOut: vi.fn(), removeOptOut: vi.fn() } };
 });
 
+vi.mock("../alerts");
+import { confirm, toast } from "../alerts";
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.listOptOuts).mockResolvedValue([
@@ -16,7 +19,7 @@ beforeEach(() => {
   ]);
   vi.mocked(api.addOptOut).mockResolvedValue({ jid: "9@s.whatsapp.net", push_name: null, created_at: "2026-01-01T00:00:00Z" });
   vi.mocked(api.removeOptOut).mockResolvedValue(undefined);
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(confirm).mockResolvedValue(true);
 });
 
 describe("OptOuts page", () => {
@@ -39,7 +42,7 @@ describe("OptOuts page", () => {
     render(<OptOuts />);
     await userEvent.type(await screen.findByLabelText("Phone number or JID"), "abc");
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("not a phone number");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("not a phone number"));
   });
 
   it("removes an opt-out after confirmation only", async () => {
@@ -47,7 +50,7 @@ describe("OptOuts page", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" }));
     await waitFor(() => expect(api.removeOptOut).toHaveBeenCalledWith("1@s.whatsapp.net"));
     vi.mocked(api.removeOptOut).mockClear();
-    vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.mocked(confirm).mockResolvedValue(false);
     await userEvent.click(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" }));
     expect(api.removeOptOut).not.toHaveBeenCalled();
   });
@@ -59,22 +62,19 @@ describe("OptOuts page", () => {
     await userEvent.type(input, "abc");
     const before = vi.mocked(api.listOptOuts).mock.calls.length;
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("not a phone number");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("not a phone number"));
     expect(input).toHaveValue("abc");
     expect(api.addOptOut).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(vi.mocked(api.listOptOuts).mock.calls.length).toBe(before + 1));
   });
 
-  it("clears the previous action error when a new add starts", async () => {
-    vi.mocked(api.addOptOut).mockRejectedValueOnce(new ApiError(422, "bad one"));
+  it("toasts success after adding and removing", async () => {
     render(<OptOuts />);
-    const input = await screen.findByLabelText("Phone number or JID");
-    await userEvent.type(input, "abc");
+    await userEvent.type(await screen.findByLabelText("Phone number or JID"), "972501234567");
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("bad one");
-    await userEvent.click(screen.getByRole("button", { name: "Add" }));
-    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
-    expect(api.addOptOut).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    await userEvent.click(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2));
   });
 
   it("disables Add while a request is in flight", async () => {
@@ -93,7 +93,7 @@ describe("OptOuts page", () => {
     vi.mocked(api.removeOptOut).mockRejectedValueOnce(new ApiError(500, "cannot remove"));
     render(<OptOuts />);
     await userEvent.click(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("cannot remove");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("cannot remove"));
     expect(vi.mocked(api.listOptOuts).mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -135,6 +135,6 @@ describe("OptOuts page", () => {
   it("names the JID in the confirmation message", async () => {
     render(<OptOuts />);
     await userEvent.click(await screen.findByRole("button", { name: "Remove 1@s.whatsapp.net" }));
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("1@s.whatsapp.net"));
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("1@s.whatsapp.net"), danger: true }));
   });
 });
