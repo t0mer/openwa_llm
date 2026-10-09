@@ -10,12 +10,15 @@ vi.mock("../api", async (orig) => {
   return { ...actual, api: { getActions: vi.fn(), runAction: vi.fn() } };
 });
 
+vi.mock("../alerts");
+import { confirm, errorDialog, toast } from "../alerts";
+
 const idle = { state: "idle", started_at: null, finished_at: null, error: null } as const;
 const statuses = (over: Partial<ActionsT> = {}): ActionsT => ({ summarize: idle, load_kb: idle, ...over });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(confirm).mockResolvedValue(true);
   vi.mocked(api.getActions).mockResolvedValue(statuses());
   vi.mocked(api.runAction).mockResolvedValue({ job_id: "j1" });
 });
@@ -24,7 +27,8 @@ describe("Actions page", () => {
   it("runs the summary job after confirmation and refreshes the status", async () => {
     render(<Actions />);
     await userEvent.click(await screen.findByRole("button", { name: "Run summaries now" }));
-    expect(window.confirm).toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: "Group summaries", text: expect.stringContaining("Generate and send summaries") }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
     await waitFor(() => expect(api.runAction).toHaveBeenCalledWith("summarize"));
     expect(api.runAction).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(api.getActions).toHaveBeenCalledTimes(2));
@@ -45,7 +49,7 @@ describe("Actions page", () => {
     await userEvent.click(btn);
     await waitFor(() => expect(btn).toBeDisabled());
     await userEvent.click(btn);
-    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledTimes(1);
     expect(api.runAction).toHaveBeenCalledTimes(1);
     release({ job_id: "j1" });
     await waitFor(() => expect(btn).toBeEnabled());
@@ -65,10 +69,10 @@ describe("Actions page", () => {
   });
 
   it("does nothing when the confirmation is declined", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.mocked(confirm).mockResolvedValue(false);
     render(<Actions />);
     await userEvent.click(await screen.findByRole("button", { name: "Run summaries now" }));
-    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledTimes(1);
     expect(api.runAction).not.toHaveBeenCalled();
   });
 
@@ -89,18 +93,24 @@ describe("Actions page", () => {
     render(<Actions />);
     expect(await screen.findByText("RuntimeError: boom")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Run summaries now" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("summarize is already running");
+    await waitFor(() => expect(errorDialog).toHaveBeenCalledWith(expect.any(String), "summarize is already running"));
+    expect(screen.getByRole("alert")).toHaveTextContent("RuntimeError: boom");
     expect(api.runAction).toHaveBeenCalledTimes(1);
     expect(api.runAction).toHaveBeenCalledWith("summarize");
     await waitFor(() => expect(api.getActions).toHaveBeenCalledTimes(2));
   });
 
-  it("clears the previous action error when a new action starts", async () => {
+  it("reports a failed start in an error dialog and no success toast", async () => {
     vi.mocked(api.runAction).mockRejectedValueOnce(new ApiError(500, "first failure"));
     render(<Actions />);
     await userEvent.click(await screen.findByRole("button", { name: "Run summaries now" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("first failure");
-    await userEvent.click(screen.getByRole("button", { name: "Run summaries now" }));
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    await waitFor(() => expect(errorDialog).toHaveBeenCalledWith(expect.any(String), "first failure"));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("shows load errors as a toast", async () => {
+    vi.mocked(api.getActions).mockRejectedValue(new ApiError(500, "server down"));
+    render(<Actions />);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("server down"));
   });
 });
