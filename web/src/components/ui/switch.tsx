@@ -10,7 +10,7 @@ export function Switch({ className, ...props }: SwitchPrimitive.SwitchProps) {
       )}
       {...props}
     >
-      <SwitchPrimitive.Thumb className="block size-4 translate-x-1 rounded-full bg-foreground/70 transition-transform data-[state=checked]:translate-x-6 data-[state=checked]:bg-primary-foreground rtl:-translate-x-1 rtl:data-[state=checked]:-translate-x-6" />
+      <SwitchPrimitive.Thumb className="block size-4 translate-x-1 rounded-full bg-foreground/70 transition-transform data-[state=checked]:translate-x-[22px] data-[state=checked]:bg-primary-foreground rtl:-translate-x-1 rtl:data-[state=checked]:-translate-x-[22px]" />
     </SwitchPrimitive.Root>
   );
 }

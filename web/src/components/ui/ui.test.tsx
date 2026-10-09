@@ -99,14 +99,42 @@ describe("Badge", () => {
 });
 
 describe("Field, Input, Select, Textarea", () => {
-  it("labels the control and shows the hint", () => {
+  it("labels the control with the label text only; the hint is a description, not part of the name", () => {
     render(
       <Field label="Name" hint="Shown to members">
         <Input />
       </Field>,
     );
-    expect(screen.getByLabelText(/Name/)).toHaveClass("min-h-11", "w-full", "rounded-md", "border-border-strong", "bg-surface");
+    const input = screen.getByLabelText("Name");
+    expect(input).toHaveClass("min-h-11", "w-full", "rounded-md", "border-border-strong", "bg-surface");
+    expect(screen.getByRole("textbox", { name: "Name" })).toBe(input);
+    expect(input).toHaveAccessibleDescription("Shown to members");
     expect(screen.getByText("Shown to members")).toHaveClass("text-xs", "text-muted-foreground");
+  });
+  it("a Select's option text does not leak into its accessible name", () => {
+    render(
+      <Field label="Language">
+        <Select defaultValue="en">
+          <option value="en">English</option>
+          <option value="he">Hebrew</option>
+        </Select>
+      </Field>,
+    );
+    expect(screen.getByLabelText("Language")).toBe(screen.getByRole("combobox", { name: "Language" }));
+  });
+  it("two fields get distinct ids and keep a caller-supplied aria-describedby", () => {
+    render(
+      <>
+        <Field label="A" hint="ha">
+          <Input aria-describedby="extra" />
+        </Field>
+        <Field label="B">
+          <Input />
+        </Field>
+      </>,
+    );
+    expect(screen.getByLabelText("A").id).not.toBe(screen.getByLabelText("B").id);
+    expect(screen.getByLabelText("A").getAttribute("aria-describedby")).toMatch(/^extra .+-hint$/);
   });
   it("Select is a native select with a chevron at the end side", () => {
     const { container } = render(
@@ -290,5 +318,94 @@ describe("small pieces", () => {
     );
     expect(screen.getByRole("heading", { level: 2, name: "Danger" })).toHaveClass("text-lg", "font-semibold");
     expect(screen.getByText("body").closest("section")).toHaveClass("rounded-lg", "border", "bg-surface", "p-4", "sm:p-5");
+  });
+});
+
+describe("Switch thumb geometry", () => {
+  it("has equal 4px gaps in a 44px track: translate 4px off, 22px on, mirrored in RTL", () => {
+    render(<Switch aria-label="x" />);
+    const thumb = screen.getByRole("switch").firstElementChild!;
+    // inner track = 44 - 2*1px border = 42px; thumb 16px: 4px + 16px + 22px = 42px - 4px gap on the right
+    expect(thumb).toHaveClass("size-4", "translate-x-1", "data-[state=checked]:translate-x-[22px]");
+    expect(thumb).toHaveClass("rtl:-translate-x-1", "rtl:data-[state=checked]:-translate-x-[22px]");
+    expect(thumb.className).not.toMatch(/translate-x-6/);
+  });
+});
+
+describe("Button asChild disabled", () => {
+  it("makes an anchor inert and non-focusable without forwarding type or disabled", async () => {
+    const onClick = vi.fn();
+    render(
+      <Button asChild disabled onClick={onClick}>
+        <a href="/x">Go</a>
+      </Button>,
+    );
+    const a = screen.getByText("Go");
+    expect(a).toHaveAttribute("aria-disabled", "true");
+    expect(a).toHaveAttribute("tabindex", "-1");
+    expect(a).toHaveClass("pointer-events-none");
+    expect(a).not.toHaveAttribute("type");
+    expect(a).not.toHaveAttribute("disabled");
+    a.click();
+    expect(onClick).not.toHaveBeenCalled();
+  });
+  it("an enabled anchor child still receives onClick", async () => {
+    const onClick = vi.fn((e: { preventDefault: () => void }) => e.preventDefault());
+    render(
+      <Button asChild onClick={onClick}>
+        <a href="/x">Go</a>
+      </Button>,
+    );
+    await userEvent.click(screen.getByRole("link"));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DialogContent closeDisabled", () => {
+  function Harness({ disabled, extra }: { disabled: boolean; extra?: () => void }) {
+    const [open, setOpen] = useState(true);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>outside</button>
+        <Dialog
+          open={open}
+          onOpenChange={(v) => {
+            onOpenChange(v);
+            setOpen(v);
+          }}
+        >
+          <DialogContent title="T" closeDisabled={disabled} onEscapeKeyDown={extra}>
+            body
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
+  const onOpenChange = vi.fn();
+  const user = userEvent.setup({ pointerEventsCheck: 0 }); // Radix sets pointer-events:none on <body>
+  const outsidePointerDown = () =>
+    user.pointer({ target: document.querySelector("[class*='backdrop-blur']")!, keys: "[MouseLeft]" });
+
+  it("blocks Escape and outside pointer-down while closeDisabled; caller handler still runs", async () => {
+    onOpenChange.mockClear();
+    const extra = vi.fn();
+    render(<Harness disabled extra={extra} />);
+    await userEvent.keyboard("{Escape}");
+    await outsidePointerDown();
+    expect(extra).toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+  it("closes on Escape and outside pointer-down when not disabled", async () => {
+    onOpenChange.mockClear();
+    render(<Harness disabled={false} />);
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    onOpenChange.mockClear();
+    await user.click(screen.getByRole("button", { name: "outside" }));
+    await screen.findByRole("dialog");
+    await outsidePointerDown();
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 });
