@@ -296,7 +296,7 @@ describe("small pieces", () => {
     );
     const chip = screen.getByRole("button", { name: "Managed" });
     expect(chip).toHaveAttribute("aria-pressed", "false");
-    expect(chip).toHaveClass("min-h-9", "rounded-full", "border", "px-3.5", "text-sm", "font-medium");
+    expect(chip).toHaveClass("min-h-11", "md:min-h-9", "rounded-full", "border", "px-3.5", "text-sm", "font-medium");
     await userEvent.click(chip);
     expect(onClick).toHaveBeenCalled();
     rerender(<FilterChip active>Managed</FilterChip>);

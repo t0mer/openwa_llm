@@ -141,13 +141,13 @@ function GroupCard(p: RowProps) {
         </div>
         <Pair label="Community keys"><Keys g={g} /></Pair>
         <Pair label="Messages"><span className="tabular">{g.message_count}</span></Pair>
+        <Pair label="Schedules"><span className="schedule-count tabular">{g.schedule_count}</span></Pair>
         <div className="col-span-2 flex flex-col gap-1.5">
           <dt className="text-xs font-medium text-muted-foreground">Last summary</dt>
           <dd className="m-0 text-sm">{fmt(g.last_summary_sync)}</dd>
         </div>
       </dl>
       <div className="flex items-center gap-2">
-        <span className="schedule-count tabular text-sm">{g.schedule_count}</span>
         <Button size="lg" className="flex-1" onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
         <Button size="lg" className="flex-1" onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button>
       </div>
@@ -267,7 +267,7 @@ export default function Groups() {
             </Select>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">{total} groups</p>
+        <p aria-live="polite" className="text-sm text-muted-foreground">{total} groups</p>
       </form>
       {error && <InlineError>{error}</InlineError>}
       {loading && !data ? (
@@ -291,7 +291,7 @@ export default function Groups() {
           </table>
         </div>
       ) : (
-        <ul aria-label="Groups" className="m-0 list-none divide-y overflow-hidden rounded-lg border bg-surface p-0">
+        <ul role="list" aria-label="Groups" className="m-0 list-none divide-y overflow-hidden rounded-lg border bg-surface p-0">
           {items.map((g) => <GroupCard key={g.group_jid} {...rowProps(g)} />)}
         </ul>
       )}
