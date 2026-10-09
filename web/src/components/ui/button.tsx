@@ -1,6 +1,6 @@
 import { Slot } from "@radix-ui/react-slot";
 import { type VariantProps } from "class-variance-authority";
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, MouseEvent } from "react";
 import { cn } from "../../lib/cn";
 import { buttonVariants } from "./button-variants";
 
@@ -8,12 +8,22 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, Va
   asChild?: boolean;
 }
 
-export function Button({ className, variant, size, asChild, type, ...props }: ButtonProps) {
-  const Comp = asChild ? Slot : "button";
+/**
+ * With `asChild` the child (e.g. an <a>) is rendered instead of a <button>, so `type` is never
+ * forwarded, and `disabled` (which links ignore) becomes aria-disabled + tabIndex -1 +
+ * pointer-events-none, with clicks suppressed.
+ */
+export function Button({ className, variant, size, asChild, type, disabled, onClick, ...props }: ButtonProps) {
+  const classes = cn(buttonVariants({ variant, size }), className);
+  if (!asChild) return <button className={classes} type={type ?? "button"} disabled={disabled} onClick={onClick} {...props} />;
   return (
-    <Comp
-      className={cn(buttonVariants({ variant, size }), className)}
-      {...(asChild ? {} : { type: type ?? "button" })}
+    <Slot
+      className={cn(classes, disabled && "pointer-events-none opacity-50")}
+      {...(disabled ? { "aria-disabled": true, tabIndex: -1 } : {})}
+      onClick={(e: MouseEvent<HTMLButtonElement>) => {
+        if (disabled) e.preventDefault();
+        else onClick?.(e);
+      }}
       {...props}
     />
   );
