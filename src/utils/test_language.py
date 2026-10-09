@@ -33,3 +33,37 @@ def test_niqqud():
 
 def test_rtl_marks():
     assert is_hebrew("‏מה נשמע‏")
+
+
+def test_hebrew_question_naming_an_english_term():
+    assert is_hebrew("מה זה Kubernetes?")
+
+
+def test_tie_goes_to_hebrew():
+    assert is_hebrew("איך מתקינים Docker על Ubuntu?")
+
+
+def test_english_question_with_one_hebrew_word():
+    assert not is_hebrew("Can you explain קוברנטס please")
+
+
+def test_non_numeric_tag_is_stripped():
+    assert is_hebrew("@TomerKlein מה")
+    assert not is_hebrew("@TomerKlein @123")
+
+
+def test_punctuation_only():
+    assert not is_hebrew("?")
+
+
+def test_other_scripts_are_not_hebrew():
+    assert not is_hebrew("مرحبا بالعالم")
+    assert not is_hebrew("привет мир")
+
+
+def test_niqqud_word_ties_with_latin():
+    assert is_hebrew("שָׁלוֹם hello")
+
+
+def test_marks_alone_are_not_a_hebrew_word():
+    assert not is_hebrew("ְֱ hello")
