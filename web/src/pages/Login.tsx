@@ -38,7 +38,7 @@ export default function Login() {
         Password
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus required autoComplete="current-password" />
       </label>
-      <button type="submit" disabled={busy}>Log in</button>
+      <button type="submit" className="primary" disabled={busy}>Log in</button>
       {error && <p role="alert" className="inline-error">{error}</p>}
     </form>
   );
