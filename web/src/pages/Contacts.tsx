@@ -99,10 +99,10 @@ export default function Contacts() {
                       {actionError && <p role="alert" className="inline-error">{actionError}</p>}
                     </>
                   ) : (
-                    c.push_name ?? <span className="muted">—</span>
+                    c.push_name ? <bdi>{c.push_name}</bdi> : <span className="muted">—</span>
                   )}
                 </div></td>
-                <td data-label="JID" className="muted"><div className="cell-value">{c.jid}</div></td>
+                <td data-label="JID" className="muted"><div className="cell-value"><bdi className="jid">{c.jid}</bdi></div></td>
                 <td data-label="Status"><div className="cell-value">{c.opted_out ? <span className="badge warn">Opted out</span> : <span className="badge">Tagged</span>}</div></td>
                 <td className="cell-actions">
                   {editJid === c.jid ? (

@@ -108,11 +108,11 @@ export default function Groups() {
             {(data?.items ?? []).map((g) => (
               <tr key={g.group_jid}>
                 <td data-label="Group" className="cell-primary"><div className="cell-value">
-                  <strong>{label(g)}</strong>
+                  <strong><bdi>{label(g)}</bdi></strong>
                   <div className="muted">
-                    {g.display_name && g.group_name ? `WhatsApp: ${g.group_name} · ` : ""}{g.group_jid}
+                    {g.display_name && g.group_name && <>WhatsApp: <bdi>{g.group_name}</bdi> · </>}<bdi className="jid">{g.group_jid}</bdi>
                   </div>
-                  {g.group_topic && <div className="muted">{g.group_topic}</div>}
+                  {g.group_topic && <div className="muted"><bdi>{g.group_topic}</bdi></div>}
                 </div></td>
                 <td data-label="Respond"><div className="cell-value">
                   <input type="checkbox" className="switch" checked={g.managed} onChange={() => void toggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
@@ -218,7 +218,7 @@ function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; e
   return (
     <div ref={backdrop} className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) cancel(); }}>
       <form className="modal" role="dialog" aria-modal="true" aria-label="Edit group" onSubmit={submit} onKeyDown={trapTab}>
-        <h2>{group.group_name || group.group_jid}</h2>
+        <h2><bdi>{group.group_name || group.group_jid}</bdi></h2>
         <p className="muted">WhatsApp name, topic and owner come from WhatsApp and cannot be edited here.</p>
         {group.group_topic && <p className="muted">Topic: {group.group_topic}</p>}
         <p className="muted">Owner: {group.owner_jid ?? "unknown"}</p>
