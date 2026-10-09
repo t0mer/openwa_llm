@@ -90,3 +90,59 @@ async def test_patch_persists_only_sent_fields(admin_client, db_sessionmaker):
             "/api/v1/admin/groups/missing@g.us", json={"managed": True}
         )
     ).status_code == 404
+
+
+async def test_summary_language_set_clear_and_normalise(admin_client, db_sessionmaker):
+    await seed(db_sessionmaker)
+    url = "/api/v1/admin/groups/1@g.us"
+    for sent, stored in (("he", "he"), ("EN", "en"), (" Ru ", "ru")):
+        resp = await admin_client.patch(url, json={"summary_language": sent})
+        assert resp.status_code == 200
+        assert resp.json()["summary_language"] == stored
+        async with db_sessionmaker() as session:
+            assert (await session.get(Group, "1@g.us")).summary_language == stored
+    for clear in (None, "", "auto", "AUTO"):
+        await admin_client.patch(url, json={"summary_language": "he"})
+        resp = await admin_client.patch(url, json={"summary_language": clear})
+        assert resp.status_code == 200 and resp.json()["summary_language"] is None
+        async with db_sessionmaker() as session:
+            assert (await session.get(Group, "1@g.us")).summary_language is None
+
+
+async def test_summary_language_invalid_is_422(admin_client, db_sessionmaker):
+    await seed(db_sessionmaker)
+    url = "/api/v1/admin/groups/1@g.us"
+    await admin_client.patch(url, json={"summary_language": "he"})
+    for bad in ("fr", "hebrew", "e", 5, ["he"]):
+        resp = await admin_client.patch(url, json={"summary_language": bad})
+        assert resp.status_code == 422, bad
+    async with db_sessionmaker() as session:
+        assert (await session.get(Group, "1@g.us")).summary_language == "he"
+
+
+async def test_summary_language_untouched_unless_sent(admin_client, db_sessionmaker):
+    await seed(db_sessionmaker)
+    url = "/api/v1/admin/groups/1@g.us"
+    await admin_client.patch(url, json={"summary_language": "ru"})
+    resp = await admin_client.patch(url, json={"display_name": "Alias"})
+    assert resp.json()["summary_language"] == "ru"
+    resp = await admin_client.patch(url, json={"summary_language": "en"})
+    body = resp.json()
+    assert body["display_name"] == "Alias" and body["managed"] is True
+    assert body["group_name"] == "Alpha team"
+
+
+async def test_summary_language_in_list_and_get(admin_client, db_sessionmaker):
+    await seed(db_sessionmaker)
+    await admin_client.patch(
+        "/api/v1/admin/groups/2@g.us", json={"summary_language": "he"}
+    )
+    body = (await admin_client.get("/api/v1/admin/groups")).json()
+    langs = {g["group_jid"]: g["summary_language"] for g in body["items"]}
+    assert langs == {"1@g.us": None, "2@g.us": "he", "3@g.us": None}
+    # sort/filter unaffected
+    assert [g["group_jid"] for g in body["items"]] == ["3@g.us", "1@g.us", "2@g.us"]
+    managed = (await admin_client.get("/api/v1/admin/groups?managed=true")).json()
+    assert [g["group_jid"] for g in managed["items"]] == ["1@g.us"]
+    one = (await admin_client.get("/api/v1/admin/groups/2@g.us")).json()
+    assert one["summary_language"] == "he"

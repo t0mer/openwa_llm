@@ -151,7 +151,8 @@ Earlier versions used [go-whatsapp-web-multidevice](https://github.com/aldinokem
 
 A web admin UI (served at `/admin`) lets you manage the bot without touching the database:
 
-- **Groups**: turn the bot on/off for a group ("managed"), toggle the spam notice, edit community keys and set a display name.
+- **Groups**: turn the bot on/off for a group ("managed"), toggle the spam notice, edit community keys, set a display name and choose the per-group **Summary language**.
+  - **Summary language** is `Auto`, `HE`, `EN` or `RU`. `Auto` follows the language of the chat. `HE`, `EN` and `RU` force that language for scheduled and admin-triggered summaries. On-demand summaries (a user asking the bot in the group) follow the language of the request.
 - **Contacts**: view and edit sender names.
 - **Opt-outs**: view, add and remove opted-out contacts.
 - **Messages**: read-only message browser with search and filters.
@@ -190,7 +191,7 @@ ADMIN_SESSION_SECRET=$(openssl rand -hex 32)
 ![Groups](assets/screenshots/admin-groups-light.png)
 ![Groups (dark)](assets/screenshots/admin-groups-dark.png)
 
-Editing a group (display name and community keys):
+Editing a group (display name, summary language and community keys):
 
 ![Edit group](assets/screenshots/admin-groups-edit-light.png)
 

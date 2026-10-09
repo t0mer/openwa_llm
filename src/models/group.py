@@ -28,6 +28,7 @@ class BaseGroup(SQLModel):
     group_name: Optional[str] = Field(default=None, max_length=255)
     display_name: Optional[str] = Field(default=None, max_length=255)
     group_topic: Optional[str] = Field(default=None)
+    summary_language: Optional[str] = Field(default=None, max_length=2)
     owner_jid: Optional[str] = Field(
         max_length=255, foreign_key="sender.jid", nullable=True, default=None
     )

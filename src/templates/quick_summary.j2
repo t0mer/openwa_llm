@@ -1,6 +1,11 @@
 Write a quick summary of what happened in the chat group since the last summary.
 
+{% set language_names = {"he": "Hebrew", "en": "English", "ru": "Russian"} -%}
+{% if summary_language is defined and summary_language in language_names -%}
+- Write the entire summary in {{ language_names[summary_language] }}, regardless of the language of the chat messages. You MUST write in {{ language_names[summary_language] }} only!
+{% else -%}
 - Write in the same language as the chat group. You MUST use the same language as the chat group!
+{% endif -%}
 - Start by stating this is a quick summary of what happened in "{{ group_name }}" group recently.
 - Use a casual conversational writing style.
 - Keep it short and sweet.

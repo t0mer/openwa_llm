@@ -13,3 +13,12 @@ def test_alembic_has_a_single_head_that_includes_display_name_migration():
     assert len(script.get_heads()) == 1
     revisions = {rev.revision for rev in script.walk_revisions()}
     assert "c3d4e5f6a7b8" in revisions
+
+
+def test_summary_language_migration_follows_display_name_and_is_head():
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(ROOT / "migrations"))
+    script = ScriptDirectory.from_config(config)
+    assert script.get_heads() == ["d4e5f6a7b8c9"]
+    revision = script.get_revision("d4e5f6a7b8c9")
+    assert revision is not None and revision.down_revision == "c3d4e5f6a7b8"

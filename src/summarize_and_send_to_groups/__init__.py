@@ -49,12 +49,20 @@ class GroupSummaryResult:
     reraise=True,
 )
 async def summarize(
-    session: AsyncSession, settings: Settings, group_name: str, messages: list[Message]
+    session: AsyncSession,
+    settings: Settings,
+    group_name: str,
+    messages: list[Message],
+    summary_language: str | None = None,
 ) -> AgentRunResult[str]:
     agent = Agent(
         model=settings.model_name,
         # TODO: move to jinja?
-        system_prompt=prompt_manager.render("quick_summary.j2", group_name=group_name),
+        system_prompt=prompt_manager.render(
+            "quick_summary.j2",
+            group_name=group_name,
+            summary_language=summary_language,
+        ),
         output_type=str,
     )
 
@@ -92,7 +100,11 @@ async def summarize_and_send_to_group(
 
     try:
         result = await summarize(
-            session, settings, group.group_name or "group", messages
+            session,
+            settings,
+            group.group_name or "group",
+            messages,
+            summary_language=group.summary_language,
         )
     except Exception as e:
         logging.error("Error summarizing group %s: %s", group.group_name, e)

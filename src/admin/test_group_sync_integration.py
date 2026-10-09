@@ -16,6 +16,7 @@ async def test_sync_keeps_admin_owned_columns(db_sessionmaker):
                 group_name="Old name",
                 group_topic="Old topic",
                 display_name="My alias",
+                summary_language="ru",
                 managed=True,
                 notify_on_spam=True,
                 community_keys=["a", "b"],
@@ -46,6 +47,7 @@ async def test_sync_keeps_admin_owned_columns(db_sessionmaker):
         assert (group.group_name, group.group_topic) == ("New name", "New topic")
         assert group.owner_jid == "972501234567@s.whatsapp.net"
         assert group.display_name == "My alias"
+        assert group.summary_language == "ru"
         assert group.managed is True and group.notify_on_spam is True
         assert group.community_keys == ["a", "b"]
         assert group.last_summary_sync == stamp
