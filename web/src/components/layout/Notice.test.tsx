@@ -24,5 +24,7 @@ describe("state notices have landmarks", () => {
     const text = await screen.findByText(/disabled on this server/i);
     expect(screen.getByRole("main")).toContainElement(text);
     expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
+    // announced the same way as on the Login page
+    expect(text).toHaveAttribute("role", "status");
   });
 });

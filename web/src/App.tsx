@@ -12,7 +12,7 @@ import OptOuts from "./pages/OptOuts";
 function Protected() {
   const { status } = useAuth();
   if (status === "loading") return <Notice live>Loading…</Notice>;
-  if (status === "disabled") return <Notice>The admin UI is disabled on this server.</Notice>;
+  if (status === "disabled") return <Notice live>The admin UI is disabled on this server.</Notice>;
   if (status !== "authenticated") return <Navigate to="/login" replace />;
   return <AppShell />;
 }

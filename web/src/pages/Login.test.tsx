@@ -65,6 +65,6 @@ describe("Login", () => {
   it("shows the disabled notice", () => {
     status = "disabled";
     setup();
-    expect(screen.getByText(/disabled on this server/i)).toBeInTheDocument();
+    expect(screen.getByText(/disabled on this server/i)).toHaveAttribute("role", "status");
   });
 });
