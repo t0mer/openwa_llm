@@ -18,6 +18,7 @@ from tenacity import (
 
 from config import Settings
 from models import Group, Message
+from scheduling.locks import group_lock
 from services.prompt_manager import prompt_manager
 from utils.chat_text import chat2text
 from utils.mentions import extract_mentions
@@ -147,6 +148,19 @@ async def summarize_and_send_to_group(
     return outcome
 
 
+async def _summarize_group_locked(
+    settings: Settings, session: AsyncSession, whatsapp: WhatsAppGateway, group: Group
+) -> GroupSummaryResult:
+    """Summarize one group while holding its shared lock (scheduler, admin, API)."""
+    lock = group_lock(group.group_jid)
+    waited = lock.locked()
+    async with lock:
+        if waited:
+            # Another run finished meanwhile and moved last_summary_sync.
+            await session.refresh(group)
+        return await summarize_and_send_to_group(settings, session, whatsapp, group)
+
+
 async def summarize_and_send_to_groups(
     settings: Settings, session: AsyncSession, whatsapp: WhatsAppGateway
 ) -> list[GroupSummaryResult]:
@@ -154,8 +168,7 @@ async def summarize_and_send_to_groups(
         (await session.exec(select(Group).where(Group.managed == True))).all()  # noqa: E712 https://stackoverflow.com/a/18998106
     )
     tasks = [
-        summarize_and_send_to_group(settings, session, whatsapp, group)
-        for group in groups
+        _summarize_group_locked(settings, session, whatsapp, group) for group in groups
     ]
     outcomes = await asyncio.gather(*tasks, return_exceptions=True)
     results: list[GroupSummaryResult] = []
