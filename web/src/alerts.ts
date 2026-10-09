@@ -1,6 +1,13 @@
 import Swal from "sweetalert2";
+import { describeResult } from "./results";
 import type { GroupActionResult } from "./types";
 
+/*
+ * SECURITY RULE: SweetAlert2 renders `title`, `html` and `footer` as HTML. Group names, JIDs,
+ * push names, error strings and job results are attacker-controllable (any group member can pick
+ * a name like `<img src=x onerror=...>`). Never pass interpolated data through those options.
+ * Use `titleText` / `text` (textContent) and build any rich content with DOM nodes + textContent.
+ */
 const classes = {
   container: "swal-container",
   popup: "swal-popup",
@@ -14,7 +21,6 @@ const classes = {
 const baseOptions = {
   buttonsStyling: false,
   customClass: classes,
-  returnFocus: true,
 } as const;
 
 export interface ConfirmOptions {
@@ -30,7 +36,7 @@ export async function confirm({ title, text, confirmText = "Confirm", danger = f
     ...baseOptions,
     customClass: { ...classes, confirmButton: danger ? "btn danger-solid" : "btn primary" },
     icon: "warning",
-    title,
+    titleText: title,
     text,
     showCancelButton: true,
     confirmButtonText: confirmText,
@@ -53,7 +59,7 @@ const toaster = Swal.mixin({
 });
 
 function show(icon: "success" | "error" | "info", message: string) {
-  void toaster.fire({ icon, title: message, timer: icon === "error" ? 8000 : 4000 });
+  void toaster.fire({ icon, titleText: message, timer: icon === "error" ? 8000 : 4000 });
 }
 
 export const toast = {
@@ -64,41 +70,40 @@ export const toast = {
 
 /** Modal error dialog for failures the user must acknowledge. */
 export async function errorDialog(title: string, message: string): Promise<void> {
-  await Swal.fire({ ...baseOptions, icon: "error", title, text: message, confirmButtonText: "Close" });
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-
-/** Human readable explanation for one per-group result. */
-export function describeResult(r: GroupActionResult): string {
-  if (r.status === "sent") return "Summary sent";
-  if (r.reason === "not_enough_messages" && r.message_count != null && r.required != null) {
-    return `Skipped: ${r.message_count} of ${r.required} messages needed`;
-  }
-  const label = r.status === "failed" ? "Failed" : "Skipped";
-  return r.reason ? `${label}: ${r.reason.replace(/_/g, " ")}` : label;
+  await Swal.fire({ ...baseOptions, icon: "error", titleText: title, text: message, confirmButtonText: "Close" });
 }
 
 /** Show per-group outcome of a summarize run. */
 export async function showSummaryResults(results: GroupActionResult[], message?: string | null): Promise<void> {
   const counts = { sent: 0, skipped: 0, failed: 0 };
   for (const r of results) counts[r.status]++;
-  const rows = results
-    .map(
-      (r) =>
-        `<li class="swal-result swal-result-${r.status}"><span class="badge ${r.status === "sent" ? "ok" : r.status === "failed" ? "bad" : "warn"}">${esc(r.status)}</span> <strong>${esc(r.group_name)}</strong><div class="muted">${esc(describeResult(r))}</div></li>`,
-    )
-    .join("");
-  const head = results.length
-    ? `<p>${counts.sent} sent, ${counts.skipped} skipped, ${counts.failed} failed.</p>`
-    : `<p>${esc(message || "No groups were processed.")}</p>`;
+  const root = document.createElement("div");
+  const head = document.createElement("p");
+  head.textContent = results.length
+    ? `${counts.sent} sent, ${counts.skipped} skipped, ${counts.failed} failed.`
+    : message || "No groups were processed.";
+  const list = document.createElement("ul");
+  list.className = "swal-results";
+  for (const r of results) {
+    const li = document.createElement("li");
+    li.className = `swal-result swal-result-${r.status}`;
+    const badge = document.createElement("span");
+    badge.className = `badge ${r.status === "sent" ? "ok" : r.status === "failed" ? "bad" : "warn"}`;
+    badge.textContent = r.status;
+    const name = document.createElement("strong");
+    name.textContent = r.group_name;
+    const detail = document.createElement("div");
+    detail.className = "muted";
+    detail.textContent = describeResult(r);
+    li.append(badge, " ", name, detail);
+    list.append(li);
+  }
+  root.append(head, list);
   await Swal.fire({
     ...baseOptions,
     icon: counts.failed ? "error" : counts.skipped || !results.length ? "warning" : "success",
-    title: "Summary results",
-    html: `${head}<ul class="swal-results">${rows}</ul>`,
+    titleText: "Summary results",
+    html: root,
     confirmButtonText: "Close",
   });
 }
