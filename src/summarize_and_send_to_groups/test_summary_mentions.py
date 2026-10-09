@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import summarize_and_send_to_groups as mod
@@ -24,7 +25,7 @@ class FakeSession:
 
 async def test_summary_sends_mentions_to_group_and_community(monkeypatch):
     messages = [SimpleNamespace(sender_jid=LID if i % 2 else OPTED) for i in range(16)]
-    output = f"Summary: @227912345678901 vs 111 222 and @111222333444 @999999999"
+    output = "Summary: @227912345678901 vs 111 222 and @111222333444 @999999999"
     monkeypatch.setattr(mod, "get_bot_identity", AsyncMock(return_value=BOT))
     monkeypatch.setattr(mod, "messages_to_summarize_stmt", lambda *a: None)
     monkeypatch.setattr(
@@ -43,7 +44,10 @@ async def test_summary_sends_mentions_to_group_and_community(monkeypatch):
     whatsapp = SimpleNamespace(send_text=AsyncMock(return_value="id"))
 
     await mod.summarize_and_send_to_group(
-        SimpleNamespace(), FakeSession(messages), whatsapp, group
+        cast(Any, SimpleNamespace()),
+        FakeSession(messages),
+        cast(Any, whatsapp),
+        cast(Any, group),
     )
 
     assert whatsapp.send_text.await_args_list[0].args == ("main@g.us", output)

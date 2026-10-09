@@ -32,6 +32,11 @@ async def test_send_message_passes_mentions_only_when_present():
     whatsapp.send_text.assert_awaited_with("chat@g.us", "hi @1", None, mentions=[ASKER])
 
 
+def _kwargs(send):
+    assert send.await_args is not None
+    return send.await_args.kwargs
+
+
 async def _run_kb(output: str, opt_out: dict[str, str]):
     session = AsyncMock()
     session.exec.return_value = SimpleNamespace(all=lambda: [])
@@ -68,11 +73,11 @@ async def _run_kb(output: str, opt_out: dict[str, str]):
 
 async def test_kb_reply_mentions_asker_when_tagged():
     send = await _run_kb("Hey @227912345678901, here you go", {})
-    assert send.await_args.kwargs["mentions"] == [ASKER]
+    assert _kwargs(send)["mentions"] == [ASKER]
 
 
 async def test_kb_reply_no_mention_when_not_tagged_or_opted_out():
     send = await _run_kb("no tags", {})
-    assert send.await_args.kwargs["mentions"] == []
+    assert _kwargs(send)["mentions"] == []
     send = await _run_kb("Hey @227912345678901", {"227912345678901": "Dan"})
-    assert send.await_args.kwargs["mentions"] == []
+    assert _kwargs(send)["mentions"] == []
