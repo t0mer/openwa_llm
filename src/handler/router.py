@@ -13,6 +13,7 @@ from handler.knowledge_base_answers import KnowledgeBaseAnswers
 from models import Message
 from whatsapp.jid import parse_jid
 from utils.chat_text import chat2text
+from utils.mentions import safe_extract_mentions
 from utils.opt_out import get_opt_out_map
 from whatsapp import WhatsAppGateway
 from config import Settings
@@ -113,6 +114,12 @@ class Router(BaseHandler):
             message.chat_jid,
             response.output,
             # in_reply_to=message.message_id,
+            mentions=safe_extract_mentions(
+                response.output,
+                {m.sender_jid for m in messages} | {message.sender_jid},
+                opt_out_map,
+                f"chat {message.chat_jid}",
+            ),
         )
 
     async def about(self, message):

@@ -286,8 +286,8 @@ def format_search_results_for_prompt(
                     sender = (
                         msg.sender_jid.split("@")[0] if msg.sender_jid else "Unknown"
                     )
-                    if opt_out_map:
-                        sender = opt_out_map.get(sender, f"@{sender}")
+                    if msg.sender_jid:
+                        sender = (opt_out_map or {}).get(sender, f"@{sender}")
                     message_texts.append(f"- {sender}: {msg.text[:200]}...")
 
             if message_texts:

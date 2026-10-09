@@ -58,3 +58,21 @@ def test_left_boundary():
         "‏‎@972501234567",
     ):
         assert extract_mentions(text, jids) == [PHONE], text
+
+
+def test_safe_extract_mentions_returns_mentions():
+    from utils.mentions import safe_extract_mentions
+
+    assert safe_extract_mentions("hi @972501234567", [PHONE], {}, "ctx") == [PHONE]
+
+
+def test_safe_extract_mentions_falls_back_and_warns(monkeypatch, caplog):
+    import utils.mentions as mod
+
+    def boom(*a, **k):
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(mod, "extract_mentions", boom)
+    with caplog.at_level("WARNING"):
+        assert mod.safe_extract_mentions("@1", [PHONE], {}, "grp") == []
+    assert "grp" in caplog.text

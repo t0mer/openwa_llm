@@ -142,3 +142,17 @@ async def test_keyword_search_multi_language(mock_session: AsyncSession):
 
     assert len(results) > 0
     assert results[0][0].message_id == message.message_id
+
+
+def test_format_results_tags_topic_senders_without_opt_out_map():
+    from types import SimpleNamespace
+
+    from search.hybrid_search import format_search_results_for_prompt
+
+    result = SimpleNamespace(
+        topic=SimpleNamespace(subject="S", summary="Sum"),
+        messages=[SimpleNamespace(sender_jid="972501234567@s.whatsapp.net", text="hi")],
+    )
+    for opt in (None, {}):
+        out = format_search_results_for_prompt([result], opt)  # type: ignore[list-item]
+        assert "- @972501234567: hi" in out

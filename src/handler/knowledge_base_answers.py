@@ -18,7 +18,7 @@ from whatsapp import WhatsAppGateway
 from whatsapp.identity import get_bot_identity
 from whatsapp.jid import parse_jid
 from utils.chat_text import chat2text
-from utils.mentions import extract_mentions
+from utils.mentions import safe_extract_mentions
 from utils.opt_out import get_opt_out_map
 from utils.voyage_embed_text import voyage_embed_text
 from .base_handler import BaseHandler
@@ -96,6 +96,12 @@ class KnowledgeBaseAnswers(BaseHandler):
             messages_per_topic=5,
         )
 
+        # Everyone whose text reaches the LLM may be tagged (unless opted out)
+        sender_jids = all_jids | {
+            m.sender_jid for r in search_results for m in r.messages
+        }
+        opt_out_map = await get_opt_out_map(self.session, list(sender_jids))
+
         # Format results for the generation agent
         formatted_topics = format_search_results_for_prompt(search_results, opt_out_map)
 
@@ -124,8 +130,11 @@ class KnowledgeBaseAnswers(BaseHandler):
             message.chat_jid,
             generation_result.output,
             # in_reply_to=message.message_id,
-            mentions=extract_mentions(
-                generation_result.output, [message.sender_jid], opt_out_map
+            mentions=safe_extract_mentions(
+                generation_result.output,
+                sender_jids,
+                opt_out_map,
+                f"chat {message.chat_jid}",
             ),
         )
 

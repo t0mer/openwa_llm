@@ -81,3 +81,72 @@ async def test_kb_reply_no_mention_when_not_tagged_or_opted_out():
     assert _kwargs(send)["mentions"] == []
     send = await _run_kb("Hey @227912345678901", {"227912345678901": "Dan"})
     assert _kwargs(send)["mentions"] == []
+
+
+OTHER = "972501234567@s.whatsapp.net"
+
+
+async def test_kb_reply_mentions_history_and_topic_senders():
+    topic_jid = "111222333444@s.whatsapp.net"
+    quiet_jid = "555666777888@s.whatsapp.net"
+    session = AsyncMock()
+    hist = Message(
+        message_id="h",
+        text="x",
+        chat_jid="chat@g.us",
+        sender_jid=OTHER,
+        timestamp=Mock(),
+    )
+    session.exec.return_value = SimpleNamespace(all=lambda: [hist])
+    kb = KnowledgeBaseAnswers(session, AsyncMock(), AsyncMock(), Mock())
+    kb.send_message = AsyncMock()
+    kb.rephrasing_agent = AsyncMock(return_value=SimpleNamespace(output="r"))
+    kb.generation_agent = AsyncMock(
+        return_value=SimpleNamespace(
+            output="@972501234567 @111222333444 @555666777888 @227912345678901"
+        )
+    )
+    calls: list[set[str]] = []
+
+    async def fake_opt_out(_session, jids):
+        calls.append(set(jids))
+        # the topic sender opted out; only visible if the lookup covers them
+        return {"111222333444": "Bob"} if topic_jid in jids else {}
+
+    topic_msgs = [
+        SimpleNamespace(sender_jid=topic_jid, text="t"),
+        SimpleNamespace(sender_jid=quiet_jid, text="t"),
+    ]
+    msg = _message()
+    msg.group = None
+    with (
+        patch("handler.knowledge_base_answers.get_opt_out_map", fake_opt_out),
+        patch(
+            "handler.knowledge_base_answers.get_bot_identity",
+            AsyncMock(
+                return_value=SimpleNamespace(phone=SimpleNamespace(user="b"), lid=None)
+            ),
+        ),
+        patch(
+            "handler.knowledge_base_answers.voyage_embed_text",
+            AsyncMock(return_value=[[0.0]]),
+        ),
+        patch(
+            "search.hybrid_search.hybrid_search",
+            AsyncMock(
+                return_value=[SimpleNamespace(messages=topic_msgs, vector_distance=0.1)]
+            ),
+        ),
+        patch(
+            "search.hybrid_search.format_search_results_for_prompt",
+            Mock(return_value=""),
+        ),
+    ):
+        await kb(msg)
+    assert {topic_jid, quiet_jid, OTHER, ASKER} <= calls[-1]
+    # opted-out topic sender is never mentioned; the others are
+    assert _kwargs(kb.send_message)["mentions"] == [
+        OTHER,
+        quiet_jid,
+        ASKER,
+    ]
