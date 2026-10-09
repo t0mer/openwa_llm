@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -349,6 +350,108 @@ describe("SchedulesDialog", () => {
     expect(await screen.findByRole("group", { name: "Schedule at 9:30 AM" })).toBeInTheDocument();
     expect(api.listSchedules).toHaveBeenCalledTimes(2);
     expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads the list under React.StrictMode", async () => {
+    vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [sched()] });
+    render(<StrictMode><SchedulesDialog group={grp} onClose={vi.fn()} onChanged={vi.fn()} /></StrictMode>);
+    expect(await screen.findByRole("group", { name: "Schedule at 9:30 AM" })).toBeInTheDocument();
+    expect(screen.getAllByRole("group", { name: /Schedule at/ })).toHaveLength(1);
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+  });
+
+  const three = () => [
+    sched({ id: "a", hour: 9, hour12: 9 }),
+    sched({ id: "b", hour: 10, hour12: 10 }),
+    sched({ id: "c", hour: 11, hour12: 11 }),
+  ];
+
+  it("a 409 reload keeps dirty drafts of other rows and does not remount clean rows", async () => {
+    open(three());
+    vi.mocked(api.patchSchedule).mockRejectedValue(new ApiError(409, "conflict"));
+    const a = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+    const b = screen.getByRole("group", { name: "Schedule at 10:30 AM" });
+    const c = screen.getByRole("group", { name: "Schedule at 11:30 AM" });
+    await userEvent.click(within(a).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(b).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(b).getByRole("button", { name: "Save schedule at 10:30 AM" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("conflict"));
+    await waitFor(() => expect(api.listSchedules).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(within(b).getByRole("checkbox", { name: "Enabled" })).toBeEnabled());
+    expect(screen.getByRole("group", { name: "Schedule at 9:30 AM" })).toBe(a);
+    expect(within(a).getByRole("checkbox", { name: "Enabled" })).not.toBeChecked();
+    expect(screen.getByRole("group", { name: "Schedule at 11:30 AM" })).toBe(c);
+  });
+
+  it("a 409 reload leaves an in-flight save alone and applies its later response", async () => {
+    open(three());
+    let release!: (s: Schedule) => void;
+    vi.mocked(api.patchSchedule).mockImplementation(async (_j, id) => {
+      if (id === "a") return new Promise<Schedule>((r) => { release = r; });
+      throw new ApiError(409, "conflict");
+    });
+    const a = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+    const b = screen.getByRole("group", { name: "Schedule at 10:30 AM" });
+    await userEvent.click(within(a).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(a).getByRole("button", { name: "Save schedule at 9:30 AM" }));
+    await userEvent.click(within(b).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(b).getByRole("button", { name: "Save schedule at 10:30 AM" }));
+    await waitFor(() => expect(api.listSchedules).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.getByRole("group", { name: "Schedule at 9:30 AM" })).toBe(a);
+    expect(within(a).getByLabelText("Hour")).toBeDisabled();
+    vi.mocked(toast.success).mockClear();
+    release(sched({ id: "a", hour: 9, hour12: 9, enabled: false }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(within(a).getByLabelText("Hour")).toBeEnabled();
+    expect(within(a).getByRole("checkbox", { name: "Enabled" })).not.toBeChecked();
+  });
+
+  it("does not duplicate a row whose create is in flight when a reload already contains it", async () => {
+    open([]);
+    let release!: (s: Schedule) => void;
+    vi.mocked(api.createSchedule)
+      .mockImplementationOnce(() => new Promise<Schedule>((r) => { release = r; }))
+      .mockRejectedValueOnce(new ApiError(409, "conflict"));
+    await userEvent.click(await screen.findByRole("button", { name: "Add schedule" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add schedule" }));
+    const [first, second] = screen.getAllByRole("group", { name: /New schedule/ });
+    await userEvent.click(within(first).getByRole("checkbox", { name: "Sun" }));
+    await userEvent.click(within(second).getByRole("checkbox", { name: "Mon" }));
+    await userEvent.click(within(first).getByRole("button", { name: /^Save/ }));
+    vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [sched({ id: "n1" })] });
+    await userEvent.click(within(second).getByRole("button", { name: /^Save/ }));
+    await waitFor(() => expect(api.listSchedules).toHaveBeenCalledTimes(2));
+    release(sched({ id: "n1" }));
+    await waitFor(() => expect(screen.getAllByRole("group", { name: /schedule/i })).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole("group", { name: "Schedule at 9:30 AM" })).toHaveLength(1));
+    expect(screen.getByRole("group", { name: "New schedule" })).toBeInTheDocument();
+  });
+
+  it("moves focus to the next row after a 404 drop", async () => {
+    open([sched({ id: "a" }), sched({ id: "b", hour: 10, hour12: 10 })]);
+    vi.mocked(api.patchSchedule).mockRejectedValue(new ApiError(404, "gone"));
+    const a = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+    await userEvent.click(within(a).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(a).getByRole("button", { name: "Save schedule at 9:30 AM" }));
+    const b = await screen.findByRole("group", { name: "Schedule at 10:30 AM" });
+    await waitFor(() => expect(within(b).getByRole("checkbox", { name: "Sun" })).toHaveFocus());
+  });
+
+  it("Tab and Shift+Tab wrap between enabled controls when the first DOM control is disabled by a saving row", async () => {
+    open([sched({ id: "a" }), sched({ id: "b", hour: 10, hour12: 10 })]);
+    vi.mocked(api.patchSchedule).mockReturnValue(new Promise(() => {}));
+    const a = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+    const b = screen.getByRole("group", { name: "Schedule at 10:30 AM" });
+    await userEvent.click(within(a).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(a).getByRole("button", { name: "Save schedule at 9:30 AM" }));
+    expect(within(a).getByRole("checkbox", { name: "Sun" })).toBeDisabled();
+    const add = screen.getByRole("button", { name: "Add schedule" });
+    add.focus();
+    await userEvent.tab(); // last enabled -> first enabled
+    expect(within(b).getByRole("checkbox", { name: "Sun" })).toHaveFocus();
+    await userEvent.tab({ shift: true }); // first enabled -> last enabled
+    expect(add).toHaveFocus();
   });
 
   it("names rows by saved time, with a number only to tell identical times apart", async () => {

@@ -70,6 +70,27 @@ function summary(row: Row): string {
   return `${days} at ${row.hour12}:${pad(row.minute)} ${row.meridiem}`;
 }
 
+const isDirty = (r: Row) => !!r.base && Object.keys(changes(r) ?? {}).length > 0;
+
+/**
+ * Merge a fresh server list into the local rows by schedule id. Rows being saved or holding
+ * unsaved edits are left alone, clean rows are refreshed in place (same key, no remount), unknown
+ * server items are appended, and unsaved new rows stay last.
+ */
+function mergeServer(rs: Row[], items: Schedule[], nextKey: () => string): Row[] {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const localIds = new Set(rs.filter((r) => r.base).map((r) => r.base!.id));
+  const saved: Row[] = [];
+  for (const r of rs) {
+    if (!r.base) continue;
+    const item = byId.get(r.base.id);
+    if (r.saving || isDirty(r)) saved.push(r);
+    else if (item) saved.push(fromSchedule(item, r.key));
+  }
+  for (const item of items) if (!localIds.has(item.id)) saved.push(fromSchedule(item, nextKey()));
+  return [...saved, ...rs.filter((r) => !r.base)];
+}
+
 const timeText = (h12: number, minute: number, mer: Meridiem) => `${h12}:${pad(minute)} ${mer}`;
 
 /** Accessible names: saved rows by their saved time, unsaved ones as "new schedule"; a number only breaks ties. */
@@ -123,7 +144,10 @@ export default function SchedulesDialog({ group, onClose, onChanged }: Props) {
   closeRef.current = close;
 
   const live = useRef(true);
-  useEffect(() => () => { live.current = false; }, []);
+  useEffect(() => {
+    live.current = true;
+    return () => { live.current = false; };
+  }, []);
 
   /** Fetch the list. Saved rows are replaced by server state; unsaved rows are kept. */
   async function loadList(initial: boolean) {
@@ -131,7 +155,7 @@ export default function SchedulesDialog({ group, onClose, onChanged }: Props) {
       const res = await api.listSchedules(group.group_jid);
       if (!live.current) return;
       setTimezone(res.timezone);
-      setRows((rs) => [...res.items.map((s) => fromSchedule(s, nextKey())), ...rs.filter((r) => !r.base)]);
+      setRows((rs) => mergeServer(rs, res.items, nextKey));
       setLoadError(null);
     } catch (e) {
       if (!live.current) return;
@@ -239,7 +263,11 @@ export default function SchedulesDialog({ group, onClose, onChanged }: Props) {
           weekdays: row.weekdays, hour12: row.hour12, meridiem: row.meridiem, minute: row.minute, enabled: row.enabled,
         });
       }
-      setRows((rs) => rs.map((r) => (r.key === row.key ? fromSchedule(saved, r.key) : r)));
+      setRows((rs) =>
+        rs
+          .filter((r) => r.key === row.key || r.base?.id !== saved.id) // collapse a copy a reload already added
+          .map((r) => (r.key === row.key ? fromSchedule(saved, r.key) : r)),
+      );
       toast.success(`Saved schedule for ${group.label}`);
       if (!row.base) onChanged();
     } catch (e) {
@@ -252,6 +280,7 @@ export default function SchedulesDialog({ group, onClose, onChanged }: Props) {
     const status = e instanceof ApiError ? e.status : null;
     const message = e instanceof Error ? e.message : String(e);
     if (status === 404 && row.base) {
+      focusAfterRemoval(row);
       setRows((rs) => rs.filter((r) => r.key !== row.key));
       toast.info("This schedule no longer exists");
       onChanged();
