@@ -10,7 +10,7 @@ import OptOuts from "./pages/OptOuts";
 
 function Protected() {
   const { status } = useAuth();
-  if (status === "loading") return <p className="notice">Loading…</p>;
+  if (status === "loading") return <p className="notice" role="status">Loading…</p>;
   if (status === "disabled") return <p className="notice">The admin UI is disabled on this server.</p>;
   if (status !== "authenticated") return <Navigate to="/login" replace />;
   return (

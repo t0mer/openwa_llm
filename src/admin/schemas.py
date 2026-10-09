@@ -155,11 +155,27 @@ class MessagePage(BaseModel):
     next_cursor: str | None
 
 
+class GroupActionResult(BaseModel):
+    group_name: str
+    group_jid: str
+    status: Literal["sent", "skipped", "failed"]
+    reason: str | None = None
+    message_count: int | None = None
+    required: int | None = None
+
+
+class ActionSummary(BaseModel):
+    managed_groups: int
+    message: str | None = None
+
+
 class ActionStatus(BaseModel):
     state: Literal["idle", "running", "succeeded", "failed"]
     started_at: datetime | None = None
     finished_at: datetime | None = None
     error: str | None = None
+    summary: ActionSummary | None = None
+    results: list[GroupActionResult] = []
 
 
 class ActionStarted(BaseModel):

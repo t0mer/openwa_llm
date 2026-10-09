@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
+import { toast } from "../alerts";
 import type { Group, MessageItem } from "../types";
 
 interface Filters {
@@ -32,7 +33,6 @@ export default function Messages() {
   }, []);
 
   const seq = useRef(0);
-  const [rangeError, setRangeError] = useState<string | null>(null);
 
   const fetchPage = useCallback(async (f: Filters, before?: string) => {
     const id = ++seq.current;
@@ -63,16 +63,19 @@ export default function Messages() {
   }, []);
 
   useEffect(() => {
+    if (error) toast.error(error);
+  }, [error]);
+
+  useEffect(() => {
     void fetchPage(filters);
   }, [filters, fetchPage]);
 
   function apply(e: FormEvent) {
     e.preventDefault();
     if (draft.from && draft.to && draft.to < draft.from) {
-      setRangeError("To date must not be before From date.");
+      toast.error("To date must not be before From date.");
       return;
     }
-    setRangeError(null);
     setFilters({ ...draft });
   }
 
@@ -81,7 +84,7 @@ export default function Messages() {
       <h1>Messages</h1>
       <p className="muted">Read-only view, newest first.</p>
       <form className="toolbar" onSubmit={apply}>
-        <input aria-label="Search text" placeholder="Search text" value={draft.q} onChange={(e) => setDraft({ ...draft, q: e.target.value })} />
+        <input aria-label="Search text" className="grow" placeholder="Search text" value={draft.q} onChange={(e) => setDraft({ ...draft, q: e.target.value })} />
         <select aria-label="Group" value={draft.group_jid} onChange={(e) => setDraft({ ...draft, group_jid: e.target.value })}>
           <option value="">All groups</option>
           {groups.map((g) => (
@@ -93,25 +96,23 @@ export default function Messages() {
         <input aria-label="To date" type="date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} />
         <button type="submit" className="primary">Apply</button>
       </form>
-      {rangeError && <p role="alert" className="error">{rangeError}</p>}
-      {error && <p role="alert" className="error">{error}</p>}
-      <table>
-        <thead><tr><th>Time</th><th>Sender</th><th>Message</th><th>Reactions</th></tr></thead>
+      <table className="responsive" aria-label="Messages">
+        <thead><tr><th scope="col">Time</th><th scope="col">Sender</th><th scope="col">Message</th><th scope="col">Reactions</th></tr></thead>
         <tbody>
           {items.map((m) => (
             <tr key={m.message_id}>
-              <td className="muted">{new Date(m.timestamp).toLocaleString()}</td>
-              <td>{m.sender_name ?? m.sender_jid}<div className="muted">{m.sender_jid}</div></td>
-              <td className="msg-text">
-                {m.reply_to_id && <span className="badge">reply</span>} {m.has_media && <span className="badge">media</span>} {m.text}
-              </td>
-              <td>{m.reaction_count || ""}</td>
+              <td data-label="Time" className="muted"><div className="cell-value">{new Date(m.timestamp).toLocaleString()}</div></td>
+              <td data-label="Sender"><div className="cell-value"><bdi>{m.sender_name ?? m.sender_jid}</bdi><div className="muted"><bdi className="jid">{m.sender_jid}</bdi></div></div></td>
+              <td data-label="Message" className="msg-text"><div className="cell-value">
+                {m.reply_to_id && <span className="badge">reply</span>} {m.has_media && <span className="badge">media</span>} <span dir="auto">{m.text}</span>
+              </div></td>
+              <td data-label="Reactions"><div className="cell-value">{m.reaction_count || ""}</div></td>
             </tr>
           ))}
         </tbody>
       </table>
-      {!loading && items.length === 0 && !error && <p className="notice">No messages match.</p>}
-      {loading && <p className="notice">Loading…</p>}
+      {!loading && items.length === 0 && !error && <p className="empty" role="status">No messages match.</p>}
+      {loading && <p className="notice" role="status">Loading…</p>}
       {cursor && (
         <div className="toolbar">
           <button type="button" disabled={loading} onClick={() => void fetchPage(filters, cursor)}>Load older</button>

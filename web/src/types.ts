@@ -62,11 +62,28 @@ export interface MessagePage {
 
 export type ActionName = "summarize" | "load_kb";
 
+export interface GroupActionResult {
+  group_name: string;
+  group_jid: string;
+  status: "sent" | "skipped" | "failed";
+  reason: string | null;
+  message_count: number | null;
+  required: number | null;
+}
+
+export interface ActionSummary {
+  managed_groups: number;
+  message: string | null;
+}
+
 export interface ActionStatus {
   state: "idle" | "running" | "succeeded" | "failed";
   started_at: string | null;
   finished_at: string | null;
   error: string | null;
+  /** Present for the summarize action on servers that report per-group results. */
+  summary?: ActionSummary | null;
+  results?: GroupActionResult[];
 }
 
 export type Actions = Record<ActionName, ActionStatus>;

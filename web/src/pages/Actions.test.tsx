@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Actions from "./Actions";
@@ -10,12 +10,15 @@ vi.mock("../api", async (orig) => {
   return { ...actual, api: { getActions: vi.fn(), runAction: vi.fn() } };
 });
 
+vi.mock("../alerts");
+import { confirm, errorDialog, showSummaryResults, toast } from "../alerts";
+
 const idle = { state: "idle", started_at: null, finished_at: null, error: null } as const;
 const statuses = (over: Partial<ActionsT> = {}): ActionsT => ({ summarize: idle, load_kb: idle, ...over });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(confirm).mockResolvedValue(true);
   vi.mocked(api.getActions).mockResolvedValue(statuses());
   vi.mocked(api.runAction).mockResolvedValue({ job_id: "j1" });
 });
@@ -24,7 +27,8 @@ describe("Actions page", () => {
   it("runs the summary job after confirmation and refreshes the status", async () => {
     render(<Actions />);
     await userEvent.click(await screen.findByRole("button", { name: "Run summaries now" }));
-    expect(window.confirm).toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: "Group summaries", text: expect.stringContaining("Generate and send summaries") }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
     await waitFor(() => expect(api.runAction).toHaveBeenCalledWith("summarize"));
     expect(api.runAction).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(api.getActions).toHaveBeenCalledTimes(2));
@@ -45,7 +49,7 @@ describe("Actions page", () => {
     await userEvent.click(btn);
     await waitFor(() => expect(btn).toBeDisabled());
     await userEvent.click(btn);
-    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledTimes(1);
     expect(api.runAction).toHaveBeenCalledTimes(1);
     release({ job_id: "j1" });
     await waitFor(() => expect(btn).toBeEnabled());
@@ -65,10 +69,10 @@ describe("Actions page", () => {
   });
 
   it("does nothing when the confirmation is declined", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.mocked(confirm).mockResolvedValue(false);
     render(<Actions />);
     await userEvent.click(await screen.findByRole("button", { name: "Run summaries now" }));
-    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledTimes(1);
     expect(api.runAction).not.toHaveBeenCalled();
   });
 
@@ -89,18 +93,85 @@ describe("Actions page", () => {
     render(<Actions />);
     expect(await screen.findByText("RuntimeError: boom")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Run summaries now" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("summarize is already running");
+    await waitFor(() => expect(errorDialog).toHaveBeenCalledWith(expect.any(String), "summarize is already running"));
+    expect(screen.getByRole("alert")).toHaveTextContent("RuntimeError: boom");
     expect(api.runAction).toHaveBeenCalledTimes(1);
     expect(api.runAction).toHaveBeenCalledWith("summarize");
     await waitFor(() => expect(api.getActions).toHaveBeenCalledTimes(2));
   });
 
-  it("clears the previous action error when a new action starts", async () => {
+  it("reports a failed start in an error dialog and no success toast", async () => {
     vi.mocked(api.runAction).mockRejectedValueOnce(new ApiError(500, "first failure"));
     render(<Actions />);
     await userEvent.click(await screen.findByRole("button", { name: "Run summaries now" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("first failure");
-    await userEvent.click(screen.getByRole("button", { name: "Run summaries now" }));
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    await waitFor(() => expect(errorDialog).toHaveBeenCalledWith(expect.any(String), "first failure"));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("shows load errors as a toast", async () => {
+    vi.mocked(api.getActions).mockRejectedValue(new ApiError(500, "server down"));
+    render(<Actions />);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("server down"));
+  });
+
+  const results = [
+    { group_name: "Alpha", group_jid: "1@g.us", status: "sent", reason: null, message_count: 20, required: 15 },
+    { group_name: "Beta", group_jid: "2@g.us", status: "skipped", reason: "not_enough_messages", message_count: 9, required: 15 },
+  ] as const;
+  const done = {
+    state: "succeeded", started_at: "2026-01-01T00:00:00Z", finished_at: "2026-01-01T00:01:00Z", error: null,
+    summary: { managed_groups: 2, message: null }, results: [...results],
+  } as const;
+
+  it("renders the last per-group results on the page without a popup", async () => {
+    vi.mocked(api.getActions).mockResolvedValue(statuses({ summarize: { ...done, results: [...results] } }));
+    render(<Actions />);
+    const list = await screen.findByRole("list", { name: "Summary results per group" });
+    expect(within(list).getByText("Alpha")).toBeInTheDocument();
+    expect(within(list).getByText("Skipped: 9 of 15 messages needed")).toBeInTheDocument();
+    expect(screen.getByText(/2 managed group/)).toBeInTheDocument();
+    expect(showSummaryResults).not.toHaveBeenCalled();
+  });
+
+  it("shows the results dialog when a running summary finishes", async () => {
+    const running = { ...idle, state: "running", started_at: "2026-01-01T00:00:00Z" } as const;
+    vi.mocked(api.getActions).mockResolvedValueOnce(statuses({ summarize: running })).mockResolvedValue(statuses({ summarize: { ...done, results: [...results] } }));
+    vi.useFakeTimers();
+    try {
+      render(<Actions />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(showSummaryResults).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(showSummaryResults).toHaveBeenCalledTimes(1);
+      expect(showSummaryResults).toHaveBeenCalledWith(results, null);
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(showSummaryResults).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports when no groups are managed", async () => {
+    const none = { ...done, results: [], summary: { managed_groups: 0, message: "No managed groups" } };
+    vi.mocked(api.getActions).mockResolvedValue(statuses({ summarize: { ...idle, state: "running" } }));
+    vi.mocked(api.getActions).mockResolvedValueOnce(statuses({ summarize: { ...idle, state: "running" } })).mockResolvedValue(statuses({ summarize: none }));
+    vi.useFakeTimers();
+    try {
+      render(<Actions />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(showSummaryResults).toHaveBeenCalledWith([], "No managed groups");
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(screen.getByText(/No managed groups/)).toBeInTheDocument();
+  });
+
+  it("copes with a server that sends no results fields", async () => {
+    vi.mocked(api.getActions).mockResolvedValue(statuses({ summarize: { ...idle, state: "succeeded", finished_at: "2026-01-01T00:01:00Z" } }));
+    render(<Actions />);
+    expect(await screen.findByText("Group summaries")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Summary results per group" })).toBeNull();
+    expect(showSummaryResults).not.toHaveBeenCalled();
   });
 });

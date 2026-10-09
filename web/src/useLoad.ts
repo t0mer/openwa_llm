@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "./api";
+import { toast } from "./alerts";
 
 export function useLoad<T>(load: () => Promise<T>, deps: unknown[], intervalMs = 60_000) {
   const [data, setData] = useState<T | null>(null);
@@ -37,4 +38,23 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[], intervalMs =
   }, [reload, intervalMs, depsKey]);
 
   return { data, error, loading, reload };
+}
+
+const TOAST_WINDOW_MS = 60_000;
+const lastToasted = new Map<string, number>();
+
+/** Number of remembered messages (exposed for tests). */
+export const toastDedupeSize = () => lastToasted.size;
+
+/** Surface a load error as a toast, at most once per message per minute (polls can flap). */
+export function useErrorToast(error: string | null) {
+  useEffect(() => {
+    if (!error) return;
+    const now = Date.now();
+    const last = lastToasted.get(error);
+    if (last !== undefined && now - last < TOAST_WINDOW_MS) return;
+    for (const [msg, at] of lastToasted) if (now - at >= TOAST_WINDOW_MS) lastToasted.delete(msg);
+    lastToasted.set(error, now);
+    toast.error(error);
+  }, [error]);
 }

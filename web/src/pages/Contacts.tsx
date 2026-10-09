@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
-import { useLoad } from "../useLoad";
+import { toast } from "../alerts";
+import { useErrorToast, useLoad } from "../useLoad";
 
 const PAGE = 50;
 
@@ -24,6 +25,7 @@ export default function Contacts() {
       }),
     [query, filter, offset],
   );
+  useErrorToast(error);
 
   useEffect(() => {
     setEditJid(null);
@@ -60,6 +62,7 @@ export default function Contacts() {
     try {
       await api.patchContact(jid, name.trim() || null);
       setEditJid(null);
+      toast.success("Contact updated");
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -72,7 +75,7 @@ export default function Contacts() {
     <section>
       <h1>Contacts</h1>
       <form className="toolbar" onSubmit={onSearch}>
-        <input placeholder="Search name or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search contacts" />
+        <input className="grow" placeholder="Search name or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search contacts" />
         <button type="submit">Search</button>
         <select value={filter} onChange={(e) => { setOffset(0); setFilter(e.target.value as typeof filter); }} aria-label="Filter">
           <option value="all">All contacts</option>
@@ -81,28 +84,27 @@ export default function Contacts() {
         </select>
         <span className="muted">{total} contacts</span>
       </form>
-      {error && <p role="alert" className="error">{error}</p>}
       {loading && !data ? (
-        <p className="notice">Loading…</p>
+        <p className="notice" role="status">Loading…</p>
       ) : (
-        <table>
-          <thead><tr><th>Name</th><th>JID</th><th>Status</th><th /></tr></thead>
+        <table className="responsive" aria-label="Contacts">
+          <thead><tr><th scope="col">Name</th><th scope="col">JID</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {(data?.items ?? []).map((c) => (
               <tr key={c.jid}>
-                <td>
+                <td data-label="Name" className="cell-primary"><div className="cell-value">
                   {editJid === c.jid ? (
                     <>
                       <input aria-label={`Name for ${c.jid}`} value={name} onChange={(e) => setName(e.target.value)} maxLength={255} disabled={saving} />
-                      {actionError && <p role="alert" className="error">{actionError}</p>}
+                      {actionError && <p role="alert" className="inline-error">{actionError}</p>}
                     </>
                   ) : (
-                    c.push_name ?? <span className="muted">—</span>
+                    c.push_name ? <bdi>{c.push_name}</bdi> : <span className="muted">—</span>
                   )}
-                </td>
-                <td className="muted">{c.jid}</td>
-                <td>{c.opted_out ? <span className="badge warn">Opted out</span> : <span className="badge">Tagged</span>}</td>
-                <td>
+                </div></td>
+                <td data-label="JID" className="muted"><div className="cell-value"><bdi className="jid">{c.jid}</bdi></div></td>
+                <td data-label="Status"><div className="cell-value">{c.opted_out ? <span className="badge warn">Opted out</span> : <span className="badge">Tagged</span>}</div></td>
+                <td className="cell-actions">
                   {editJid === c.jid ? (
                     <>
                       <button type="button" className="primary" disabled={saving} onClick={() => void save(c.jid)}>Save</button>{" "}
@@ -114,7 +116,7 @@ export default function Contacts() {
                 </td>
               </tr>
             ))}
-            {data && data.items.length === 0 && <tr><td colSpan={4} className="muted">No contacts match.</td></tr>}
+            {data && data.items.length === 0 && <tr><td colSpan={4} className="muted empty-row">No contacts match.</td></tr>}
           </tbody>
         </table>
       )}

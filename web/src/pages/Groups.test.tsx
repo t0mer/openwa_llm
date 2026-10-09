@@ -10,6 +10,9 @@ vi.mock("../api", async (orig) => {
   return { ...actual, api: { listGroups: vi.fn(), patchGroup: vi.fn() } };
 });
 
+vi.mock("../alerts");
+import { confirm, toast } from "../alerts";
+
 const base: Group = {
   group_jid: "1@g.us", group_name: "WA name", display_name: null, group_topic: "topic",
   owner_jid: "9725@s.whatsapp.net", managed: false, notify_on_spam: false,
@@ -25,7 +28,7 @@ function setup(groups: Group[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(confirm).mockResolvedValue(true);
 });
 
 describe("Groups page", () => {
@@ -38,15 +41,15 @@ describe("Groups page", () => {
   it("asks for confirmation before enabling managed and shows last_summary_sync", async () => {
     setup([base]);
     await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
-    expect(window.confirm).toHaveBeenCalledTimes(1);
-    const msg = vi.mocked(window.confirm).mock.calls[0][0];
-    expect(msg).toContain("WA name");
-    expect(msg).toContain(new Date(base.last_summary_sync).toLocaleString());
+    expect(confirm).toHaveBeenCalledTimes(1);
+    const opts = vi.mocked(confirm).mock.calls[0][0] as { title: string; text: string };
+    expect(opts.title).toContain("WA name");
+    expect(opts.text).toContain(new Date(base.last_summary_sync).toLocaleString());
     await waitFor(() => expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { managed: true }));
   });
 
   it("does not enable managed when the confirmation is declined", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.mocked(confirm).mockResolvedValue(false);
     setup([base]);
     await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
     expect(api.patchGroup).not.toHaveBeenCalled();
@@ -57,7 +60,7 @@ describe("Groups page", () => {
     setup([{ ...base, managed: true }]);
     await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
     await userEvent.click(screen.getByRole("checkbox", { name: /spam.*1@g\.us/i }));
-    expect(window.confirm).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
     expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { managed: false });
     expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { notify_on_spam: true });
   });
@@ -74,21 +77,28 @@ describe("Groups page", () => {
     );
   });
 
-  it("shows an error banner and keeps the old value when saving fails", async () => {
+  it("toasts success after a save", async () => {
+    setup([{ ...base, managed: true }]);
+    await userEvent.click(await screen.findByRole("checkbox", { name: /spam.*1@g\.us/i }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("WA name")));
+  });
+
+  it("toasts the error and keeps the old value when saving fails", async () => {
     setup([base]);
     vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("boom"));
     await userEvent.click(await screen.findByRole("checkbox", { name: /spam.*1@g\.us/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /spam.*1@g\.us/i })).not.toBeChecked();
   });
 
-  it("failed list save shows the alert, reloads, and reflects server state", async () => {
+  it("failed list save toasts, reloads, and reflects server state", async () => {
     setup([base]);
     vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("nope"));
     const box = await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i });
     const before = vi.mocked(api.listGroups).mock.calls.length;
     await userEvent.click(box);
-    expect(await screen.findByRole("alert")).toHaveTextContent("nope");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("nope"));
     await waitFor(() => expect(vi.mocked(api.listGroups).mock.calls.length).toBeGreaterThan(before));
     expect(screen.getByRole("checkbox", { name: /respond.*1@g\.us/i })).not.toBeChecked();
   });
@@ -102,6 +112,7 @@ describe("Groups page", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("422 bad");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
     expect(within(dialog).getByLabelText("Display name")).toHaveValue("Friends");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -146,5 +157,49 @@ describe("Groups page", () => {
   it("shows an empty state", async () => {
     setup([]);
     expect(await screen.findByText("No groups match.")).toBeInTheDocument();
+  });
+
+  it("edit dialog is modal, focuses the name field, closes on Escape and backdrop click", async () => {
+    setup([base]);
+    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(within(dialog).getByLabelText("Display name")).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /edit 1@g\.us/i }));
+    await userEvent.pointer({ keys: "[MouseLeft]", target: screen.getByRole("dialog").parentElement! });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("traps Tab inside the edit dialog and makes the page inert", async () => {
+    setup([base]);
+    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    const cancelBtn = within(dialog).getByRole("button", { name: "Cancel" });
+    const name = within(dialog).getByLabelText("Display name");
+    expect(name).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(cancelBtn).toHaveFocus();
+    await userEvent.tab();
+    expect(name).toHaveFocus();
+    expect(document.querySelector("section > .toolbar")).toHaveAttribute("inert");
+    await userEvent.click(cancelBtn);
+    expect(document.querySelector("section > .toolbar")).not.toHaveAttribute("inert");
+  });
+
+  it("ignores Escape and backdrop clicks while saving", async () => {
+    setup([base]);
+    let release!: () => void;
+    vi.mocked(api.patchGroup).mockReturnValueOnce(new Promise((r) => { release = () => r(base); }));
+    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Display name"), "X");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await userEvent.keyboard("{Escape}");
+    await userEvent.pointer({ keys: "[MouseLeft]", target: dialog.parentElement! });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });
