@@ -49,7 +49,15 @@ async def test_summary_passes_mentions_of_non_opted_out_senders():
     assert _kwargs(send)["mentions"] == [OTHER, ASKER]
 
 
-async def test_summary_mentions_failure_sends_without_mentions():
-    with patch("handler.router.safe_extract_mentions", return_value=[]):
+async def test_summary_mentions_failure_sends_without_mentions(caplog):
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    with (
+        patch("utils.mentions.extract_mentions", boom),
+        caplog.at_level("WARNING"),
+    ):
         send = await _run("@972501234567", {})
+    send.assert_awaited_once()
     assert _kwargs(send)["mentions"] == []
+    assert "Could not compute mentions" in caplog.text
