@@ -26,12 +26,16 @@ router = APIRouter(tags=["admin-schedules"])
 async def _lock_group(session: AsyncSession, group_jid: str) -> str:
     """Resolve the group (404 if unknown) and lock its row.
 
-    The row lock serialises concurrent creates for one group so the
+    FOR NO KEY UPDATE (key_share) so message inserts, which take FOR KEY
+    SHARE on the group row via their foreign key, are not blocked. The row
+    lock serialises concurrent creates for one group so the
     per-group limit cannot be overshot by racing requests.
     """
     jid = normalize_jid(group_jid)
     found = await session.execute(
-        select(Group.group_jid).where(Group.group_jid == jid).with_for_update()
+        select(Group.group_jid)
+        .where(Group.group_jid == jid)
+        .with_for_update(key_share=True)
     )
     if found.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="group not found")
@@ -92,8 +96,7 @@ async def create_schedule(
             detail=f"at most {MAX_SCHEDULES_PER_GROUP} schedules per group",
         )
     hour = body.resolved_hour()
-    if hour is None or body.minute is None:  # unreachable: schema enforces both
-        raise HTTPException(status_code=422, detail="time is required")
+    assert hour is not None and body.minute is not None  # enforced by ScheduleCreate
     schedule = GroupSummarySchedule(
         group_jid=jid,
         weekdays=list(body.weekdays),
@@ -120,7 +123,7 @@ async def patch_schedule(
     sent = patch.model_fields_set
     if "weekdays" in sent and patch.weekdays is not None:
         schedule.weekdays = list(patch.weekdays)
-    hour = patch.resolved_hour()
+    hour = patch.resolve_hour(schedule.hour)
     if hour is not None:
         schedule.hour = hour
     if "minute" in sent and patch.minute is not None:

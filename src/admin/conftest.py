@@ -22,7 +22,7 @@ def settings():
 
 
 @pytest_asyncio.fixture
-async def admin_client(db_sessionmaker):
+async def admin_app(db_sessionmaker):
     app = FastAPI()
     app.include_router(build_admin_router())
 
@@ -37,7 +37,12 @@ async def admin_client(db_sessionmaker):
 
     app.dependency_overrides[get_db_async_session] = _session
     app.dependency_overrides[get_settings] = settings
-    transport = httpx.ASGITransport(app=app)
+    return app
+
+
+@pytest_asyncio.fixture
+async def admin_client(admin_app):
+    transport = httpx.ASGITransport(app=admin_app)
     async with httpx.AsyncClient(
         transport=transport,
         base_url="http://test",

@@ -1,6 +1,12 @@
+import asyncio
+from datetime import datetime, timezone
+
+import httpx
 import pytest
 
-from models import Group, GroupSummarySchedule
+from admin.auth import CSRF_HEADER, CSRF_VALUE, SESSION_COOKIE, create_session_token
+from admin.conftest import SECRET
+from models import Group, GroupSummarySchedule, Message, Sender
 
 BASE = "/api/v1/admin/groups/1@g.us/schedules"
 
@@ -12,7 +18,7 @@ async def seed(db_sessionmaker):
         await session.commit()
 
 
-async def stored(db_sessionmaker, group_jid="1@g.us"):
+async def stored_rows(db_sessionmaker, group_jid="1@g.us"):
     from sqlmodel import select
 
     async with db_sessionmaker() as session:
@@ -59,7 +65,7 @@ async def test_create_round_trip(
     assert out["weekdays"] == [0, 6]
     assert out["enabled"] is True
     assert out["last_run_at"] is None and out["last_status"] is None
-    rows = await stored(db_sessionmaker)
+    rows = await stored_rows(db_sessionmaker)
     assert [(r.hour, r.minute, r.weekdays) for r in rows] == [(hour, minute, [0, 6])]
     listed = (await admin_client.get(BASE)).json()["items"]
     assert [i["id"] for i in listed] == [out["id"]]
@@ -87,7 +93,7 @@ async def test_create_invalid_is_422_without_row(admin_client, db_sessionmaker, 
     await seed(db_sessionmaker)
     resp = await admin_client.post(BASE, json=body)
     assert resp.status_code == 422
-    assert await stored(db_sessionmaker) == []
+    assert await stored_rows(db_sessionmaker) == []
 
 
 async def test_limit_20_then_409(admin_client, db_sessionmaker):
@@ -99,7 +105,7 @@ async def test_limit_20_then_409(admin_client, db_sessionmaker):
         assert resp.status_code == 201
     resp = await admin_client.post(BASE, json={"weekdays": [1], "hour": 1, "minute": 1})
     assert resp.status_code == 409
-    assert len(await stored(db_sessionmaker)) == 20
+    assert len(await stored_rows(db_sessionmaker)) == 20
     # another group is unaffected
     other = await admin_client.post(
         "/api/v1/admin/groups/2@g.us/schedules",
@@ -139,7 +145,7 @@ async def test_schedule_of_other_group_is_not_reachable(admin_client, db_session
         await admin_client.patch(f"{BASE}/{created['id']}", json={"enabled": False})
     ).status_code == 404
     assert (await admin_client.delete(f"{BASE}/{created['id']}")).status_code == 204
-    assert len(await stored(db_sessionmaker, "2@g.us")) == 1  # not deleted
+    assert len(await stored_rows(db_sessionmaker, "2@g.us")) == 1  # not deleted
 
 
 async def test_patch_only_sent_fields(admin_client, db_sessionmaker):
@@ -166,10 +172,58 @@ async def test_patch_only_sent_fields(admin_client, db_sessionmaker):
     assert r.json()["weekdays"] == [3, 5] and r.json()["hour"] == 0
     r = await admin_client.patch(url, json={})
     assert r.status_code == 200 and r.json()["weekdays"] == [3, 5]
-    rows = await stored(db_sessionmaker)
+    rows = await stored_rows(db_sessionmaker)
     assert [(x.weekdays, x.hour, x.minute, x.enabled) for x in rows] == [
         ([3, 5], 0, 45, False)
     ]
+
+
+@pytest.mark.parametrize(
+    "stored,body,hour",
+    [
+        (9, {"meridiem": "PM"}, 21),
+        (15, {"hour12": 5}, 17),
+        (0, {"meridiem": "PM"}, 12),
+        (12, {"meridiem": "AM"}, 0),
+        (0, {"hour12": 12}, 0),
+        (12, {"hour12": 12}, 12),
+        (23, {"hour12": 12}, 12),
+        (0, {"hour12": 11}, 11),
+        (13, {"meridiem": "PM"}, 13),
+    ],
+)
+async def test_patch_partial_12h_form(
+    admin_client, db_sessionmaker, stored, body, hour
+):
+    await seed(db_sessionmaker)
+    created = (
+        await admin_client.post(
+            BASE, json={"weekdays": [1], "hour": stored, "minute": 30}
+        )
+    ).json()
+    r = await admin_client.patch(f"{BASE}/{created['id']}", json=body)
+    assert r.status_code == 200, r.text
+    assert (r.json()["hour"], r.json()["minute"]) == (hour, 30)
+    assert [x.hour for x in await stored_rows(db_sessionmaker)] == [hour]
+
+
+async def test_patch_partial_12h_mixed_with_24h_is_422(admin_client, db_sessionmaker):
+    await seed(db_sessionmaker)
+    created = (
+        await admin_client.post(BASE, json={"weekdays": [1], "hour": 9, "minute": 30})
+    ).json()
+    url = f"{BASE}/{created['id']}"
+    for bad in (
+        {"hour": 5, "meridiem": "PM"},
+        {"hour": 5, "hour12": 5},
+        {"hour12": 13},
+        {"hour12": 0},
+        {"meridiem": "pm"},
+        {"meridiem": None},
+        {"hour12": None},
+    ):
+        assert (await admin_client.patch(url, json=bad)).status_code == 422, bad
+    assert [x.hour for x in await stored_rows(db_sessionmaker)] == [9]
 
 
 async def test_patch_invalid_leaves_row_untouched(admin_client, db_sessionmaker):
@@ -183,12 +237,11 @@ async def test_patch_invalid_leaves_row_untouched(admin_client, db_sessionmaker)
         {"weekdays": [9]},
         {"hour": 1, "hour12": 1, "meridiem": "AM"},
         {"hour": 13, "meridiem": "PM"},
-        {"hour12": 1},
         {"minute": 99},
         {"enabled": None},
     ):
         assert (await admin_client.patch(url, json=bad)).status_code == 422, bad
-    rows = await stored(db_sessionmaker)
+    rows = await stored_rows(db_sessionmaker)
     assert [(x.weekdays, x.hour, x.minute) for x in rows] == [([1], 9, 30)]
 
 
@@ -200,7 +253,7 @@ async def test_delete_is_idempotent(admin_client, db_sessionmaker):
     url = f"{BASE}/{created['id']}"
     assert (await admin_client.delete(url)).status_code == 204
     assert (await admin_client.delete(url)).status_code == 204
-    assert await stored(db_sessionmaker) == []
+    assert await stored_rows(db_sessionmaker) == []
 
 
 async def test_last_run_fields_exposed(admin_client, db_sessionmaker):
@@ -253,23 +306,67 @@ async def test_schedule_count_on_group_list_get_patch(admin_client, db_sessionma
     assert patched["message_count"] == 0
 
 
-async def test_requires_auth_and_csrf(admin_client, db_sessionmaker):
-    import httpx
+async def test_concurrent_creates_at_19_yield_one_201_one_409(
+    admin_client, db_sessionmaker
+):
+    await seed(db_sessionmaker)
+    async with db_sessionmaker() as session:
+        for i in range(19):
+            session.add(
+                GroupSummarySchedule(group_jid="1@g.us", weekdays=[1], hour=i, minute=0)
+            )
+        await session.commit()
+    body = {"weekdays": [2], "hour": 23, "minute": 59}
+    results = await asyncio.gather(
+        admin_client.post(BASE, json=body), admin_client.post(BASE, json=body)
+    )
+    assert sorted(r.status_code for r in results) == [201, 409]
+    assert len(await stored_rows(db_sessionmaker)) == 20
+
+
+async def test_schedule_lock_does_not_block_message_inserts(admin_app, db_sessionmaker):
+    """The group row lock must be FOR NO KEY UPDATE (not FOR UPDATE)."""
+    from admin.schedules import _lock_group
 
     await seed(db_sessionmaker)
-    anon = httpx.AsyncClient(transport=admin_client._transport, base_url="http://test")
-    try:
-        assert (await anon.get(BASE)).status_code == 401
-    finally:
-        await anon.aclose()
-    no_csrf = httpx.AsyncClient(
-        transport=admin_client._transport,
-        base_url="http://test",
-        cookies=admin_client.cookies,
-    )
-    try:
-        resp = await no_csrf.post(BASE, json={"weekdays": [1], "hour": 1, "minute": 0})
-        assert resp.status_code in (401, 403)
-    finally:
-        await no_csrf.aclose()
-    assert await stored(db_sessionmaker) == []
+    async with db_sessionmaker() as holder:
+        await _lock_group(holder, "1@g.us")
+        async with db_sessionmaker() as other:
+            other.add(Sender(jid="972501@s.whatsapp.net", push_name="Dana"))
+            await other.flush()
+            other.add(
+                Message(
+                    message_id="m1",
+                    chat_jid="1@g.us",
+                    sender_jid="972501@s.whatsapp.net",
+                    group_jid="1@g.us",
+                    text="hi",
+                    timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                )
+            )
+            await asyncio.wait_for(other.commit(), timeout=3)
+        # a second schedule writer is still serialised behind the lock
+        async with db_sessionmaker() as rival:
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(_lock_group(rival, "1@g.us"), timeout=1)
+        await holder.rollback()
+
+
+async def test_requires_auth_and_csrf(admin_app, db_sessionmaker):
+    await seed(db_sessionmaker)
+    transport = httpx.ASGITransport(app=admin_app)
+    cookies = {SESSION_COOKIE: create_session_token(SECRET)}
+    csrf = {CSRF_HEADER: CSRF_VALUE}
+    body = {"weekdays": [1], "hour": 1, "minute": 0}
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        # no session cookie (even with CSRF header): 401
+        assert (await c.get(BASE, headers=csrf)).status_code == 401
+        assert (await c.post(BASE, json=body, headers=csrf)).status_code == 401
+        assert (await c.delete(f"{BASE}/x", headers=csrf)).status_code == 401
+        # session cookie but no CSRF header on a write: 403
+        c.cookies.update(cookies)
+        assert (await c.post(BASE, json=body)).status_code == 403
+        assert (await c.patch(f"{BASE}/x", json={})).status_code == 403
+        assert (await c.delete(f"{BASE}/x")).status_code == 403
+        assert (await c.get(BASE)).status_code == 200  # reads need no CSRF
+    assert await stored_rows(db_sessionmaker) == []

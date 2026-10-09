@@ -88,6 +88,29 @@ def test_patch_only_sent_fields():
     assert SchedulePatch(minute=5).model_fields_set == {"minute"}
     assert SchedulePatch(hour=0).resolved_hour() == 0
     assert SchedulePatch(hour12=12, meridiem="PM").resolved_hour() == 12
+    assert SchedulePatch(hour=0).resolve_hour(15) == 0
+
+
+@pytest.mark.parametrize(
+    "current,body,expected",
+    [
+        (9, {"meridiem": "PM"}, 21),
+        (21, {"meridiem": "AM"}, 9),
+        (15, {"hour12": 5}, 17),
+        (9, {"hour12": 5}, 5),
+        (0, {"meridiem": "PM"}, 12),
+        (12, {"meridiem": "AM"}, 0),
+        (0, {"hour12": 11}, 11),
+        (0, {"hour12": 12}, 0),
+        (12, {"hour12": 12}, 12),
+        (23, {"hour12": 12}, 12),
+        (13, {"meridiem": "PM"}, 13),
+        (11, {"hour12": 12, "meridiem": "PM"}, 12),
+        (5, {"minute": 3}, None),
+    ],
+)
+def test_patch_partial_12h_uses_stored_hour(current, body, expected):
+    assert SchedulePatch(**body).resolve_hour(current) == expected
 
 
 @pytest.mark.parametrize(
@@ -99,8 +122,6 @@ def test_patch_only_sent_fields():
         {"hour": None},
         {"minute": None},
         {"hour": 1, "hour12": 1, "meridiem": "AM"},
-        {"hour12": 1},
-        {"meridiem": "AM"},
         {"hour": 13, "meridiem": "PM"},
         {"hour": 24},
         {"minute": 60},

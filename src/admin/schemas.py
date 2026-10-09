@@ -253,8 +253,6 @@ class _ScheduleTime(BaseModel):
         twelve = bool({"hour12", "meridiem"} & sent)
         if "hour" in sent and twelve:
             raise ValueError("send either hour or hour12 with meridiem, not both")
-        if twelve and not {"hour12", "meridiem"} <= sent:
-            raise ValueError("hour12 and meridiem must be sent together")
 
     def resolved_hour(self) -> int | None:
         """The 24-hour hour, or None when no time form was sent."""
@@ -277,8 +275,8 @@ class ScheduleCreate(_ScheduleTime):
     @model_validator(mode="after")
     def _time(self):
         self._check_time_form()
-        if self.resolved_hour() is None:
-            raise ValueError("send hour or hour12 with meridiem")
+        if self.hour is None and (self.hour12 is None or self.meridiem is None):
+            raise ValueError("send hour, or hour12 together with meridiem")
         if self.minute is None:
             raise ValueError("minute is required")
         return self
@@ -299,6 +297,22 @@ class SchedulePatch(_ScheduleTime):
         if "enabled" in self.model_fields_set and self.enabled is None:
             raise ValueError("enabled cannot be null")
         return self
+
+    def resolve_hour(self, current: int) -> int | None:
+        """New 24-hour hour given the stored one; None when no hour was sent.
+
+        A lone hour12 keeps the stored AM/PM, a lone meridiem keeps the stored
+        12-hour number.
+        """
+        if self.hour is not None:
+            return self.hour
+        if self.hour12 is None and self.meridiem is None:
+            return None
+        stored12, stored_meridiem = hour_to_hour12(current)
+        return hour12_to_hour(
+            self.hour12 if self.hour12 is not None else stored12,
+            self.meridiem if self.meridiem is not None else stored_meridiem,
+        )
 
 
 class ScheduleOut(BaseModel):
