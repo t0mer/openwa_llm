@@ -1,9 +1,10 @@
 import re
 from collections.abc import Collection, Iterable
 
-from whatsapp.jid import parse_jid
+from whatsapp.jid import JIDParseError, parse_jid
 
-_TAG = re.compile(r"@(\d{5,})")
+# Not preceded by an ASCII letter/digit/dot, so emails like bob@12345678.com are skipped.
+_TAG = re.compile(r"(?<![A-Za-z0-9.])@(\d{5,})")
 
 
 def extract_mentions(
@@ -17,9 +18,12 @@ def extract_mentions(
     """
     by_user: dict[str, str] = {}
     for jid in sender_jids:
-        user = parse_jid(jid).user
-        if user not in opted_out:
-            by_user.setdefault(user, jid)
+        try:
+            parsed = parse_jid(jid)
+        except (JIDParseError, IndexError):
+            continue
+        if parsed.user not in opted_out:
+            by_user.setdefault(parsed.user, str(parsed.to_non_ad()))
 
     found: dict[str, None] = {}
     for user in _TAG.findall(text):

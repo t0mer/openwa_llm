@@ -32,3 +32,29 @@ def test_opted_out_never_mentioned():
 
 def test_no_tokens():
     assert extract_mentions("nothing here", [LID]) == []
+
+
+def test_unparseable_sender_jids_skipped():
+    assert extract_mentions("@972501234567", ["garbage", "a:b", PHONE]) == [PHONE]
+
+
+def test_device_suffix_jid_normalised():
+    assert extract_mentions("@972501234567", ["972501234567:4@s.whatsapp.net"]) == [
+        PHONE
+    ]
+
+
+def test_left_boundary():
+    jids = [PHONE]
+    assert extract_mentions("mail bob@972501234567.com", jids) == []
+    assert extract_mentions("x1@972501234567", jids) == []
+    assert extract_mentions("a.@972501234567", jids) == []
+    for text in (
+        "(@972501234567)",
+        "@972501234567",
+        "hi @972501234567",
+        "שלום@972501234567",
+        "‏@972501234567",
+        "‏‎@972501234567",
+    ):
+        assert extract_mentions(text, jids) == [PHONE], text
