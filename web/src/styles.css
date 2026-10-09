@@ -220,3 +220,22 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
 
 /* Keep identifiers (JIDs, numbers) left-to-right inside RTL text. */
 bdi.jid { unicode-bidi: isolate; direction: ltr; }
+
+/* ---------- Schedules dialog ---------- */
+.modal.modal-wide { width: min(860px, 100%); max-height: calc(100vh - 2 * var(--s4)); overflow-y: auto; }
+.schedule-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.schedule-row { display: grid; grid-template-columns: 1fr auto; gap: var(--s2) var(--s4); align-items: center; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.schedule-days { display: flex; flex-wrap: wrap; gap: var(--s2); border: none; margin: 0; padding: 0; min-width: 0; }
+.schedule-days .day { display: inline-flex; align-items: center; gap: 4px; }
+.schedule-time { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.schedule-enabled { display: inline-flex; align-items: center; gap: var(--s2); }
+.schedule-last { grid-column: 1 / -1; font-size: .9rem; overflow-wrap: anywhere; }
+.schedule-row .inline-error { grid-column: 1 / -1; }
+.schedule-actions { grid-column: 1 / -1; display: flex; gap: var(--s2); justify-content: flex-end; }
+@media (max-width: 720px) {
+  .schedule-row { grid-template-columns: 1fr; padding: var(--s3); }
+  .schedule-days .day { min-height: var(--tap); padding-right: var(--s2); }
+  .schedule-time select { flex: 1 1 auto; min-width: 0; }
+  .schedule-actions button { flex: 1 1 auto; }
+  .modal.modal-wide { padding: var(--s3); }
+}

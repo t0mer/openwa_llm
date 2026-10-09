@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { confirm, toast } from "../alerts";
+import SchedulesDialog from "../components/SchedulesDialog";
 import TagInput from "../components/TagInput";
 import type { Group, GroupPatch, GroupSort, SummaryLanguage } from "../types";
 import { useErrorToast, useLoad } from "../useLoad";
@@ -38,6 +39,7 @@ export default function Groups() {
   const [sort, setSort] = useState<GroupSort>("name");
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<Group | null>(null);
+  const [scheduling, setScheduling] = useState<Group | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [savingJid, setSavingJid] = useState<string | null>(null);
 
@@ -122,7 +124,7 @@ export default function Groups() {
       ) : (
         <table className="responsive" aria-label="Groups">
           <thead>
-            <tr><th scope="col">Group</th><th scope="col">Respond</th><th scope="col">Spam notice</th><th scope="col">Summary language</th><th scope="col">Community keys</th><th scope="col">Messages</th><th scope="col">Last summary</th><th scope="col"><span className="sr-only">Actions</span></th></tr>
+            <tr><th scope="col">Group</th><th scope="col">Respond</th><th scope="col">Spam notice</th><th scope="col">Summary language</th><th scope="col">Community keys</th><th scope="col">Messages</th><th scope="col">Last summary</th><th scope="col">Schedules</th><th scope="col"><span className="sr-only">Actions</span></th></tr>
           </thead>
           <tbody>
             {(data?.items ?? []).map((g) => (
@@ -148,11 +150,15 @@ export default function Groups() {
                 <td data-label="Community keys"><div className="cell-value">{g.community_keys.length ? g.community_keys.join(", ") : <span className="muted">—</span>}</div></td>
                 <td data-label="Messages"><div className="cell-value">{g.message_count}</div></td>
                 <td data-label="Last summary"><div className="cell-value">{fmt(g.last_summary_sync)}</div></td>
+                <td data-label="Schedules"><div className="cell-value">
+                  <span className="schedule-count">{g.schedule_count}</span>{" "}
+                  <button type="button" onClick={() => setScheduling(g)} aria-label={`Schedules for ${label(g)}`}>Schedules</button>
+                </div></td>
                 <td className="cell-actions"><button type="button" onClick={() => setEditing(g)} aria-label={`Edit ${g.group_jid}`}>Edit</button></td>
               </tr>
             ))}
             {data && data.items.length === 0 && (
-              <tr><td colSpan={8} className="muted empty-row">No groups match.</td></tr>
+              <tr><td colSpan={9} className="muted empty-row">No groups match.</td></tr>
             )}
           </tbody>
         </table>
@@ -161,6 +167,13 @@ export default function Groups() {
         <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</button>
         <button type="button" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</button>
       </div>
+      {scheduling && (
+        <SchedulesDialog
+          group={{ group_jid: scheduling.group_jid, label: label(scheduling), managed: scheduling.managed }}
+          onClose={() => setScheduling(null)}
+          onChanged={() => void reload()}
+        />
+      )}
       {editing && (
         <EditGroup
           group={editing}

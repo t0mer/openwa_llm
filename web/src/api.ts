@@ -1,6 +1,6 @@
 import type {
   ActionName, Actions, Contact, Group, GroupPatch, GroupSort, MessagePage,
-  OptOutItem, Page,
+  OptOutItem, Page, Schedule, ScheduleCreate, ScheduleList, SchedulePatch,
 } from "./types";
 
 const BASE = "/api/v1/admin";
@@ -61,6 +61,15 @@ export const api = {
     request<Page<Group>>("GET", `/groups${qs(p)}`),
   patchGroup: (jid: string, patch: GroupPatch) =>
     request<Group>("PATCH", `/groups/${encodeURIComponent(jid)}`, patch),
+
+  listSchedules: (jid: string) =>
+    request<ScheduleList>("GET", `/groups/${encodeURIComponent(jid)}/schedules`),
+  createSchedule: (jid: string, body: ScheduleCreate) =>
+    request<Schedule>("POST", `/groups/${encodeURIComponent(jid)}/schedules`, body),
+  patchSchedule: (jid: string, id: string, patch: SchedulePatch) =>
+    request<Schedule>("PATCH", `/groups/${encodeURIComponent(jid)}/schedules/${encodeURIComponent(id)}`, patch),
+  deleteSchedule: (jid: string, id: string) =>
+    request<void>("DELETE", `/groups/${encodeURIComponent(jid)}/schedules/${encodeURIComponent(id)}`),
 
   listContacts: (p: { search?: string; opted_out?: boolean; limit?: number; offset?: number }) =>
     request<Page<Contact>>("GET", `/contacts${qs(p)}`),
