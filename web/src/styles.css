@@ -2,8 +2,9 @@
 :root {
   --bg: #f4f6fa; --surface: #ffffff; --surface-2: #eef1f6; --text: #172033; --muted: #5b667a;
   --border: #dbe1ea; --accent: #3b5bdb; --accent-hover: #3050c4; --accent-text: #ffffff;
-  --accent-soft: #e7ecff; --danger: #c92a2a; --danger-soft: #fdeaea; --ok: #2b8a3e; --ok-soft: #e6f6ea;
-  --warn: #b35c00; --warn-soft: #fff1dc; --focus: #3b5bdb;
+  --accent-soft: #e7ecff; --danger: #b42323; --danger-soft: #fdeaea; --ok: #1e6b2f; --ok-soft: #e6f6ea;
+  --warn: #8a4700; --warn-soft: #fff1dc; --focus: #3b5bdb;
+  --switch-off: #7b8598; --thumb: #ffffff;
   --radius: 10px; --radius-sm: 7px; --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 14px rgba(16, 24, 40, .06);
   --shadow-lg: 0 12px 40px rgba(16, 24, 40, .22);
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
@@ -18,6 +19,7 @@
   --warn: #ffb454; --warn-soft: #3a2b13; --focus: #9bb0ff;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .3);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, .6);
+  --switch-off: #6b7790; --thumb: #e8ecf4;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -28,6 +30,7 @@
     --warn: #ffb454; --warn-soft: #3a2b13; --focus: #9bb0ff;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .3);
     --shadow-lg: 0 12px 40px rgba(0, 0, 0, .6);
+    --switch-off: #6b7790; --thumb: #e8ecf4;
     color-scheme: dark;
   }
 }
@@ -35,7 +38,7 @@
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); overflow-x: hidden; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); }
 h1 { font-size: 1.6rem; line-height: 1.2; margin: var(--s2) 0 var(--s3); letter-spacing: -.01em; }
 h2 { font-size: 1.15rem; margin: 0; }
 p { margin: 0 0 var(--s3); }
@@ -88,9 +91,16 @@ input::placeholder { color: var(--muted); opacity: .8; }
 label { font-weight: 500; }
 
 /* pill toggle switch (native checkbox keeps its role and keyboard behaviour) */
-input[type="checkbox"].switch { appearance: none; -webkit-appearance: none; position: relative; width: 44px; height: 26px; margin: 0; border-radius: 999px; background: var(--border); border: 1px solid var(--border); cursor: pointer; transition: background .15s; vertical-align: middle; flex: none; }
-input[type="checkbox"].switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: transform .15s; }
+input[type="checkbox"].switch { appearance: none; -webkit-appearance: none; position: relative; width: 44px; height: 26px; margin: 0; border-radius: 999px; background: var(--switch-off); border: 1px solid var(--switch-off); cursor: pointer; transition: background .15s; vertical-align: middle; flex: none; }
+input[type="checkbox"].switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--thumb); box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: transform .15s; }
 input[type="checkbox"].switch:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"].switch:checked::after { background: var(--accent-text); }
+@media (forced-colors: active) {
+  input[type="checkbox"].switch { background: Canvas; border: 2px solid ButtonText; forced-color-adjust: none; }
+  input[type="checkbox"].switch::after { background: ButtonText; }
+  input[type="checkbox"].switch:checked { background: Highlight; border-color: Highlight; }
+  input[type="checkbox"].switch:checked::after { background: HighlightText; }
+}
 input[type="checkbox"].switch:checked::after { transform: translateX(18px); }
 input[type="checkbox"].switch:disabled { opacity: .5; cursor: not-allowed; }
 
@@ -129,6 +139,8 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
 
 /* ---------- SweetAlert2 theming (follows the app theme via CSS variables) ---------- */
 .swal2-container { font-family: var(--font); }
+.swal-popup.swal2-popup, .swal2-popup.swal2-toast.swal-popup { --swal2-background: var(--surface); --swal2-color: var(--text); --swal2-border: 1px solid var(--border); --swal2-success: var(--ok); --swal2-success-border: color-mix(in srgb, var(--ok) 30%, transparent); --swal2-error: var(--danger); --swal2-warning: var(--warn); --swal2-info: var(--accent); --swal2-warning-border: var(--warn); }
+.swal-popup .swal2-success-circular-line-left, .swal-popup .swal2-success-circular-line-right, .swal-popup .swal2-success-fix { background-color: var(--surface) !important; }
 .swal-popup.swal2-popup { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); font-size: 15px; max-width: calc(100vw - 24px); }
 .swal-popup .swal2-title { color: var(--text); font-size: 1.2rem; }
 .swal-popup .swal2-html-container, .swal-popup .swal2-html-container p { color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
@@ -146,9 +158,7 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
 .swal-result .muted { font-size: .88rem; }
 
 /* ---------- Responsive ---------- */
-@media (max-width: 719px) {
-  body { font-size: 16px; }
-  .content { padding: var(--s4); }
+@media (max-width: 959px) {
   .navbar-inner { padding: var(--s2) var(--s4); }
   .burger { display: inline-flex; }
   .navbar nav { display: none; position: absolute; top: 100%; left: 0; right: 0; flex-direction: column; align-items: stretch; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-lg); padding: var(--s2) var(--s4) var(--s4); gap: var(--s1); }
@@ -156,6 +166,11 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
   .navbar nav a { min-height: var(--tap); }
   .nav-actions { margin: var(--s2) 0 0; padding-top: var(--s2); border-top: 1px solid var(--border); flex-wrap: wrap; }
   .nav-actions button { flex: 1; min-height: var(--tap); }
+}
+
+@media (max-width: 719px) {
+  body { font-size: 16px; }
+  .content { padding: var(--s4); }
   button, .btn { min-height: var(--tap); }
   input:not([type="checkbox"]), select { min-height: var(--tap); }
   .toolbar > * { flex: 1 1 100%; }
@@ -168,6 +183,7 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
   .swal-popup.swal2-popup { width: calc(100vw - 24px); padding: var(--s4); }
   .swal-popup .swal2-actions { flex-direction: column-reverse; width: 100%; }
   .swal-popup .swal2-actions .btn { width: 100%; margin: 0; }
+}
 }
 
 /* ---------- Responsive tables: stacked cards below 720px (uses data-label, no extra DOM) ---------- */
