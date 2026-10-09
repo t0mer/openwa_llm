@@ -155,7 +155,9 @@ A web admin UI (served at `/admin`) lets you manage the bot without touching the
 - **Contacts**: view and edit sender names.
 - **Opt-outs**: view, add and remove opted-out contacts.
 - **Messages**: read-only message browser with search and filters.
-- **Bot actions**: run group summaries or load the knowledge base on demand.
+- **Bot actions**: run group summaries or load the knowledge base on demand. After a summary run, a per-group result list shows which groups were sent, skipped (for example "9 of 15 messages needed") or failed, and why.
+
+The UI is responsive and mobile friendly: on narrow screens the navigation collapses behind a menu button and tables turn into stacked cards. Confirmations, errors and success messages are shown with SweetAlert2 dialogs and toasts, in light or dark theme following your system setting (or the Theme toggle).
 
 #### Enabling it
 
@@ -192,6 +194,11 @@ Editing a group (display name and community keys):
 
 ![Edit group](assets/screenshots/admin-groups-edit-light.png)
 
+Enabling the bot asks for confirmation (SweetAlert2), in light and dark:
+
+![Enable bot confirmation](assets/screenshots/admin-groups-confirm-light.png)
+![Enable bot confirmation (dark)](assets/screenshots/admin-groups-confirm-dark.png)
+
 #### Contacts
 ![Contacts](assets/screenshots/admin-contacts-light.png)
 ![Contacts (dark)](assets/screenshots/admin-contacts-dark.png)
@@ -207,6 +214,20 @@ Editing a group (display name and community keys):
 #### Bot actions
 ![Bot actions](assets/screenshots/admin-actions-light.png)
 ![Bot actions (dark)](assets/screenshots/admin-actions-dark.png)
+
+Summary results per group after a run:
+
+![Summary results](assets/screenshots/admin-actions-results-light.png)
+![Summary results (dark)](assets/screenshots/admin-actions-results-dark.png)
+
+#### Mobile
+<p>
+<img src="assets/screenshots/admin-mobile-groups-light.png" alt="Groups on mobile" width="220">
+<img src="assets/screenshots/admin-mobile-menu-light.png" alt="Mobile navigation menu" width="220">
+<img src="assets/screenshots/admin-mobile-messages-light.png" alt="Messages on mobile" width="220">
+<img src="assets/screenshots/admin-mobile-actions-light.png" alt="Bot actions on mobile" width="220">
+<img src="assets/screenshots/admin-mobile-groups-dark.png" alt="Groups on mobile (dark)" width="220">
+</p>
 
 ### 6. API usage
 
