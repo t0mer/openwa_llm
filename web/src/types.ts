@@ -3,6 +3,8 @@ export interface Page<T> {
   total: number;
 }
 
+export type SummaryLanguage = "he" | "en" | "ru";
+
 export interface Group {
   group_jid: string;
   group_name: string | null;
@@ -11,6 +13,7 @@ export interface Group {
   owner_jid: string | null;
   managed: boolean;
   notify_on_spam: boolean;
+  summary_language: SummaryLanguage | null;
   community_keys: string[];
   last_summary_sync: string;
   last_ingest: string;
@@ -22,6 +25,7 @@ export interface GroupPatch {
   notify_on_spam?: boolean;
   community_keys?: string[];
   display_name?: string | null;
+  summary_language?: SummaryLanguage | null;
 }
 
 export type GroupSort =

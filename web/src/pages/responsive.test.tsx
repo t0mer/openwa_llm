@@ -12,7 +12,7 @@ vi.mock("../api", async (orig) => {
   return { ...actual, api: { listGroups: vi.fn(), listContacts: vi.fn(), listOptOuts: vi.fn(), listMessages: vi.fn() } };
 });
 
-const group = { group_jid: "1@g.us", group_name: "A", display_name: null, group_topic: "t", owner_jid: null, managed: true, notify_on_spam: false, community_keys: ["k"], last_summary_sync: "2026-01-01T00:00:00", last_ingest: "2026-01-01T00:00:00", message_count: 1 };
+const group = { group_jid: "1@g.us", group_name: "A", display_name: null, group_topic: "t", owner_jid: null, managed: true, notify_on_spam: false, summary_language: null, community_keys: ["k"], last_summary_sync: "2026-01-01T00:00:00", last_ingest: "2026-01-01T00:00:00", message_count: 1 };
 
 beforeEach(() => {
   vi.mocked(api.listGroups).mockResolvedValue({ items: [group], total: 1 });

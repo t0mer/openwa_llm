@@ -2,10 +2,30 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { confirm, toast } from "../alerts";
 import TagInput from "../components/TagInput";
-import type { Group, GroupPatch, GroupSort } from "../types";
+import type { Group, GroupPatch, GroupSort, SummaryLanguage } from "../types";
 import { useErrorToast, useLoad } from "../useLoad";
 
 const PAGE = 50;
+
+const LANGUAGES: { value: SummaryLanguage; label: string }[] = [
+  { value: "he", label: "HE" },
+  { value: "en", label: "EN" },
+  { value: "ru", label: "RU" },
+];
+
+/** Select value ("" = Auto) to API value. */
+function toLanguage(value: string): SummaryLanguage | null {
+  return LANGUAGES.find((l) => l.value === value)?.value ?? null;
+}
+
+function LanguageOptions() {
+  return (
+    <>
+      <option value="">Auto</option>
+      {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+    </>
+  );
+}
 
 function fmt(ts: string): string {
   return new Date(ts).toLocaleString();
@@ -102,7 +122,7 @@ export default function Groups() {
       ) : (
         <table className="responsive" aria-label="Groups">
           <thead>
-            <tr><th scope="col">Group</th><th scope="col">Respond</th><th scope="col">Spam notice</th><th scope="col">Community keys</th><th scope="col">Messages</th><th scope="col">Last summary</th><th scope="col"><span className="sr-only">Actions</span></th></tr>
+            <tr><th scope="col">Group</th><th scope="col">Respond</th><th scope="col">Spam notice</th><th scope="col">Summary language</th><th scope="col">Community keys</th><th scope="col">Messages</th><th scope="col">Last summary</th><th scope="col"><span className="sr-only">Actions</span></th></tr>
           </thead>
           <tbody>
             {(data?.items ?? []).map((g) => (
@@ -120,6 +140,11 @@ export default function Groups() {
                 <td data-label="Spam notice"><div className="cell-value">
                   <input type="checkbox" className="switch" checked={g.notify_on_spam} onChange={() => void save(g, { notify_on_spam: !g.notify_on_spam })} aria-label={`Spam notice in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
                 </div></td>
+                <td data-label="Summary language"><div className="cell-value">
+                  <select value={g.summary_language ?? ""} onChange={(e) => void save(g, { summary_language: toLanguage(e.target.value) })} aria-label={`Summary language for ${label(g)}`} disabled={savingJid === g.group_jid}>
+                    <LanguageOptions />
+                  </select>
+                </div></td>
                 <td data-label="Community keys"><div className="cell-value">{g.community_keys.length ? g.community_keys.join(", ") : <span className="muted">—</span>}</div></td>
                 <td data-label="Messages"><div className="cell-value">{g.message_count}</div></td>
                 <td data-label="Last summary"><div className="cell-value">{fmt(g.last_summary_sync)}</div></td>
@@ -127,7 +152,7 @@ export default function Groups() {
               </tr>
             ))}
             {data && data.items.length === 0 && (
-              <tr><td colSpan={7} className="muted empty-row">No groups match.</td></tr>
+              <tr><td colSpan={8} className="muted empty-row">No groups match.</td></tr>
             )}
           </tbody>
         </table>

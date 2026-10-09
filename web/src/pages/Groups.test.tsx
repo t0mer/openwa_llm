@@ -15,7 +15,7 @@ import { confirm, toast } from "../alerts";
 
 const base: Group = {
   group_jid: "1@g.us", group_name: "WA name", display_name: null, group_topic: "topic",
-  owner_jid: "9725@s.whatsapp.net", managed: false, notify_on_spam: false,
+  owner_jid: "9725@s.whatsapp.net", managed: false, notify_on_spam: false, summary_language: null,
   community_keys: [], last_summary_sync: "2026-01-02T03:04:05", last_ingest: "2026-01-02T03:04:05",
   message_count: 12,
 };
@@ -201,5 +201,48 @@ describe("Groups page", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     release();
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  describe("summary language", () => {
+    const sel = () => screen.findByRole("combobox", { name: /summary language for wa name/i });
+
+    it("shows the current value and Auto for null", async () => {
+      setup([base, { ...base, group_jid: "2@g.us", group_name: "Other", summary_language: "ru" }]);
+      expect(await sel()).toHaveValue("");
+      expect(screen.getByRole("combobox", { name: /summary language for other/i })).toHaveValue("ru");
+      const opts = within(await sel()).getAllByRole("option").map((o) => o.textContent);
+      expect(opts).toEqual(["Auto", "HE", "EN", "RU"]);
+    });
+
+    it("sends only summary_language on change and toasts success", async () => {
+      setup([base]);
+      await userEvent.selectOptions(await sel(), "he");
+      await waitFor(() => expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { summary_language: "he" }));
+      await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    });
+
+    it("sends null when switching back to Auto", async () => {
+      setup([{ ...base, summary_language: "en" }]);
+      await userEvent.selectOptions(await sel(), "");
+      await waitFor(() => expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { summary_language: null }));
+    });
+
+    it("is disabled while saving", async () => {
+      setup([base]);
+      let release!: () => void;
+      vi.mocked(api.patchGroup).mockReturnValueOnce(new Promise((r) => { release = () => r(base); }));
+      await userEvent.selectOptions(await sel(), "en");
+      expect(await sel()).toBeDisabled();
+      release();
+      await waitFor(() => expect(screen.getByRole("combobox", { name: /summary language for wa name/i })).toBeEnabled());
+    });
+
+    it("toasts the error and reverts the select on failure", async () => {
+      setup([base]);
+      vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("boom"));
+      await userEvent.selectOptions(await sel(), "ru");
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
+      await waitFor(() => expect(screen.getByRole("combobox", { name: /summary language for wa name/i })).toHaveValue(""));
+    });
   });
 });
