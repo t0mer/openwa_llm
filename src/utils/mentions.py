@@ -1,3 +1,4 @@
+import logging
 import re
 from collections.abc import Collection, Iterable
 
@@ -30,3 +31,22 @@ def extract_mentions(
         if user in by_user:
             found[by_user[user]] = None
     return list(found)
+
+
+def safe_extract_mentions(
+    text: str,
+    sender_jids: Iterable[str],
+    opted_out: Collection[str],
+    context: str,
+) -> list[str]:
+    """`extract_mentions`, but a failure logs a warning and yields no mentions.
+
+    Mentions are best-effort: they must never block sending the text.
+    """
+    try:
+        return extract_mentions(text, sender_jids, opted_out)
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "Could not compute mentions for %s: %s", context, e
+        )
+        return []
