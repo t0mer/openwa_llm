@@ -188,3 +188,8 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
   table.responsive td.empty-row { display: block; text-align: center; }
   table.responsive td input:not([type="checkbox"]) { width: 100%; min-width: 0; }
 }
+
+/* ---------- Bot action results ---------- */
+.results h3 { margin: var(--s2) 0 var(--s1); font-size: .95rem; }
+.results ul { list-style: none; margin: var(--s2) 0 0; padding: 0; display: grid; gap: var(--s2); max-height: 360px; overflow-y: auto; }
+.results li { padding: var(--s2) var(--s3); background: var(--surface-2); border-radius: var(--radius-sm); overflow-wrap: anywhere; }

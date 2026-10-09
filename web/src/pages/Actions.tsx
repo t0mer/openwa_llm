@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { confirm, errorDialog, toast } from "../alerts";
+import { confirm, errorDialog, showSummaryResults, toast } from "../alerts";
+import { describeResult } from "../results";
 import type { ActionName, ActionStatus } from "../types";
 import { useErrorToast, useLoad } from "../useLoad";
 
@@ -27,6 +28,30 @@ function badge(state: ActionStatus["state"]) {
   return <span className={`badge ${cls}`}>{label}</span>;
 }
 
+function renderResults(name: ActionName, status: ActionStatus | undefined) {
+  if (name !== "summarize" || !status) return null;
+  const results = status.results ?? [];
+  const message = status.summary?.message;
+  if (!results.length && !message) return null;
+  return (
+    <div className="results">
+      <h3>Last run</h3>
+      {status.summary && <p className="muted">{status.summary.managed_groups} managed group(s){message ? ` — ${message}` : ""}</p>}
+      {results.length > 0 && (
+        <ul aria-label="Summary results per group">
+          {results.map((r) => (
+            <li key={r.group_jid}>
+              <span className={`badge ${r.status === "sent" ? "ok" : r.status === "failed" ? "bad" : "warn"}`}>{r.status}</span>{" "}
+              <strong>{r.group_name}</strong>
+              <div className="muted">{describeResult(r)}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function when(ts: string | null) {
   return ts ? new Date(ts).toLocaleString() : "—";
 }
@@ -36,6 +61,20 @@ export default function Actions() {
   const startingRef = useRef<ActionName | null>(null);
   const { data, error, loading, reload } = useLoad(() => api.getActions(), [], 5_000);
   useErrorToast(error);
+
+  // Pop the per-group results up when a summarize run finishes while this page is open.
+  const seenFinish = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const st = data?.summarize;
+    if (!st) return;
+    const previous = seenFinish.current;
+    seenFinish.current = st.finished_at;
+    if (previous === undefined || st.finished_at === previous) return;
+    if (st.state !== "succeeded" && st.state !== "failed") return;
+    if (st.results?.length || st.summary?.message) {
+      void showSummaryResults(st.results ?? [], st.summary?.message);
+    }
+  }, [data]);
 
   async function run(name: ActionName, confirmTitle: string, confirmText: string) {
     if (startingRef.current) return;
@@ -72,6 +111,7 @@ export default function Actions() {
                 <div>{status && badge(status.state)}</div>
                 <div className="muted">Started: {when(status?.started_at ?? null)}</div>
                 <div className="muted">Finished: {when(status?.finished_at ?? null)}</div>
+                {renderResults(card.name, status)}
                 {status?.error && <div role="alert" className="inline-error">{status.error}</div>}
                 <div>
                   <button type="button" className="primary" disabled={status?.state === "running" || starting !== null} onClick={() => void run(card.name, card.title, card.confirm)}>
