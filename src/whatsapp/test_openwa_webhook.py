@@ -530,3 +530,13 @@ def test_location_keeps_full_coordinate_precision():
         _text(type="location", latitude=32.0853, longitude=34.781768)
         == "[[Attached Location]] 32.0853,34.781768"
     )
+
+
+def test_location_ignores_body_and_long_bodies_are_capped():
+    thumb = "/9j/4AAQSkZJRg" * 500
+    assert (
+        _text(type="location", latitude=1.5, longitude=2.5, body=thumb)
+        == "[[Attached Location]] 1.5,2.5"
+    )
+    poll = _text(type="poll", body="q" * 1000)
+    assert poll == "[[Attached Poll]] " + "q" * 200

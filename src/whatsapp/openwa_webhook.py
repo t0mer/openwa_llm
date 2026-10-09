@@ -75,12 +75,16 @@ _RICH_KINDS = {
 }
 
 
+_MAX_DETAIL = 200
+
+
 def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
 def _first_str(source: dict[str, Any], *keys: str) -> str | None:
-    return next((v for v in (_str(source.get(k)) for k in keys) if v), None)
+    found = next((v for v in (_str(source.get(k)) for k in keys) if v), None)
+    return found[:_MAX_DETAIL] if found else None
 
 
 def _num(value: Any) -> str | None:
@@ -116,7 +120,7 @@ def _location_detail(data: dict[str, Any]) -> str | None:
     parts = []
     if lat and lng:
         parts.append(f"{lat},{lng}")
-    place = _first_str(loc, "name", "address", "description") or _str(data.get("body"))
+    place = _first_str(loc, "name", "address", "description")
     if place:
         parts.append(place)
     return " ".join(parts) or None
