@@ -141,7 +141,8 @@
      clickable. Toast containers keep SweetAlert's own pointer-events:none (more specific rule). */
   pointer-events: auto;
 }
-.swal2-container.swal2-backdrop-show {
+/* Modal backdrop only: toasts (container .swal2-top-end, see alerts.ts) must not blur or tint the page behind them. */
+.swal2-container.swal2-backdrop-show:not(.swal2-top-end) {
   background: rgb(20 18 43 / 0.6);
   backdrop-filter: blur(2px);
 }

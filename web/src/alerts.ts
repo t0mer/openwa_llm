@@ -114,7 +114,7 @@ export function confirm({ title, text, confirmText = "Confirm", danger = false }
 const toaster = Swal.mixin({
   ...baseOptions,
   toast: true,
-  position: "top-end",
+  position: "top-end", // toast containers are excluded from the backdrop rule in index.css,
   showConfirmButton: false,
   showCloseButton: true,
   timer: 4000,

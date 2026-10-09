@@ -45,6 +45,19 @@ describe("SweetAlert2 theme", () => {
     expect(document.querySelector(".swal2-popup.swal2-toast")).toHaveClass("swal-popup", "swal-toast");
   });
 
+  it("toast containers are excluded from the modal backdrop blur rule, modal containers are not", async () => {
+    const rule = ".swal2-container.swal2-backdrop-show:not(.swal2-top-end)";
+    expect(swalCss).toContain(rule);
+    toast.info("hi");
+    await flush();
+    const toastContainer = document.querySelector(".swal2-container")!;
+    expect(toastContainer.matches(rule)).toBe(false);
+    await modalsIdle(() => Swal.close());
+    void confirm({ title: "Sure?" });
+    await flush();
+    expect(document.querySelector(".swal2-container")!.matches(rule)).toBe(true);
+  });
+
   it("styles popups, toasts, icons, buttons and backdrop only from tokens", () => {
     expect(swalCss.length).toBeGreaterThan(500);
     for (const token of ["--surface", "--foreground", "--border", "--muted-foreground", "--success", "--danger", "--warning", "--primary", "--shadow", "--font-sans", "--radius-lg"])

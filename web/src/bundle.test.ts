@@ -143,5 +143,17 @@ describe("production bundle", () => {
     const decls = rules.flatMap((r) => r.body.split(";").map((d) => d.trim().replace(/\s+/g, "")));
     expect(decls).toContain("pointer-events:auto");
   });
-});
 
+  it("the modal backdrop blur and tint never apply to toast containers", () => {
+    const tree = parse(css);
+    const rules = tree.filter((n) => !n.children && n.head.includes("swal2-backdrop-show") && /backdrop-filter|background/.test(n.body));
+    expect(rules.length).toBeGreaterThan(0);
+    for (const r of rules) {
+      for (const sel of r.head.split(",").map((x) => x.trim())) {
+        // alerts.ts toasts sit in a .swal2-top-end container; the rule must exclude it
+        expect(sel, sel).toContain(":not(.swal2-top-end)");
+      }
+    }
+    expect(rules.some((r) => r.body.includes("backdrop-filter"))).toBe(true);
+  });
+});
