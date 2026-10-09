@@ -1,14 +1,111 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { UserRound } from "lucide-react";
 import { api } from "../api";
 import { toast } from "../alerts";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { EmptyState } from "../components/ui/empty-state";
+import { Input } from "../components/ui/field";
+import { FilterChip } from "../components/ui/filter-chip";
+import { InlineError } from "../components/ui/inline-error";
+import { PageHeader } from "../components/ui/page-header";
+import { Skeleton } from "../components/ui/skeleton";
+import { MD_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
+import type { Contact } from "../types";
 import { useErrorToast, useLoad } from "../useLoad";
 
 const PAGE = 50;
 
+type Filter = "all" | "opted" | "not";
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: "all", label: "All contacts" },
+  { value: "opted", label: "Opted out" },
+  { value: "not", label: "Not opted out" },
+];
+
+/** Everything a row or card needs; the editing state lives in the page so a table/cards swap keeps it. */
+interface RowProps {
+  contact: Contact;
+  editing: boolean;
+  name: string;
+  saving: boolean;
+  actionError: string | null;
+  onName: (v: string) => void;
+  onEdit: (c: Contact) => void;
+  onCancel: () => void;
+  onSave: (jid: string) => void;
+}
+
+function NameCell({ contact: c, editing, name, saving, actionError, onName }: RowProps) {
+  if (editing) {
+    return (
+      <div className="flex min-w-0 flex-col gap-2">
+        <Input aria-label={`Name for ${c.jid}`} value={name} onChange={(e) => onName(e.target.value)} maxLength={255} disabled={saving} />
+        {actionError && <InlineError>{actionError}</InlineError>}
+      </div>
+    );
+  }
+  return c.push_name ? <strong className="font-medium" dir="auto"><bdi>{c.push_name}</bdi></strong> : <span className="text-muted-foreground">—</span>;
+}
+
+function Status({ c }: { c: Contact }) {
+  return c.opted_out ? <Badge tone="warning">Opted out</Badge> : <Badge>Tagged</Badge>;
+}
+
+function Actions({ p, className, size }: { p: RowProps; className?: string; size?: "sm" | "lg" }) {
+  const c = p.contact;
+  return p.editing ? (
+    <>
+      <Button size={size} className={className} variant="primary" disabled={p.saving} onClick={() => p.onSave(c.jid)}>Save</Button>
+      <Button size={size} className={className} disabled={p.saving} onClick={p.onCancel}>Cancel</Button>
+    </>
+  ) : (
+    <Button size={size} className={className} aria-label={`Edit ${c.jid}`} disabled={p.saving} onClick={() => p.onEdit(c)}>Edit</Button>
+  );
+}
+
+function ContactTableRow(p: RowProps) {
+  const c = p.contact;
+  return (
+    <tr className="border-t align-middle hover:bg-surface-2/60">
+      <td className="px-3 py-2"><NameCell {...p} /></td>
+      <td className="break-all px-3 py-2 text-muted-foreground"><bdi className="jid">{c.jid}</bdi></td>
+      <td className="px-3 py-2"><Status c={c} /></td>
+      <td className="px-3 py-2"><div className="flex items-center justify-end gap-2"><Actions p={p} size="sm" /></div></td>
+    </tr>
+  );
+}
+
+function ContactCard(p: RowProps) {
+  const c = p.contact;
+  return (
+    <li className="flex flex-col gap-3 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <NameCell {...p} />
+          <div className="break-all text-xs text-muted-foreground"><bdi className="jid">{c.jid}</bdi></div>
+        </div>
+        <Status c={c} />
+      </div>
+      <div className="flex items-center gap-2"><Actions p={p} size="lg" className="flex-1" /></div>
+    </li>
+  );
+}
+
+function LoadingRows({ desktop }: { desktop: boolean }) {
+  return (
+    <div role="status" className="rounded-lg border bg-surface p-3">
+      <span className="sr-only">Loading…</span>
+      {Array.from({ length: desktop ? 6 : 3 }, (_, i) => <Skeleton key={i} className={desktop ? "my-2 h-9" : "my-2 h-24"} />)}
+    </div>
+  );
+}
+
 export default function Contacts() {
+  const desktop = useMediaQuery(MD_QUERY);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "opted" | "not">("all");
+  const [filter, setFilter] = useState<Filter>("all");
   const [offset, setOffset] = useState(0);
   const [editJid, setEditJid] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -45,10 +142,10 @@ export default function Contacts() {
     setQuery(search.trim());
   }
 
-  function startEdit(jid: string, current: string | null) {
+  function startEdit(c: Contact) {
     setActionError(null);
-    setEditJid(jid);
-    setName(current ?? "");
+    setEditJid(c.jid);
+    setName(c.push_name ?? "");
   }
 
   function cancelEdit() {
@@ -71,59 +168,64 @@ export default function Contacts() {
     await reload();
   }
 
+  const items = data?.items ?? [];
+  const rowProps = (c: Contact): RowProps => ({
+    contact: c,
+    editing: editJid === c.jid,
+    name,
+    saving,
+    actionError,
+    onName: setName,
+    onEdit: startEdit,
+    onCancel: cancelEdit,
+    onSave: (jid) => void save(jid),
+  });
+
   return (
-    <section>
-      <h1>Contacts</h1>
-      <form className="toolbar" onSubmit={onSearch}>
-        <input className="grow" placeholder="Search name or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search contacts" />
-        <button type="submit">Search</button>
-        <select value={filter} onChange={(e) => { setOffset(0); setFilter(e.target.value as typeof filter); }} aria-label="Filter">
-          <option value="all">All contacts</option>
-          <option value="opted">Opted out</option>
-          <option value="not">Not opted out</option>
-        </select>
-        <span className="muted">{total} contacts</span>
+    <div className="flex flex-col gap-5">
+      <PageHeader title="Contacts" description="People the bot has seen. Rename them or check who has opted out of being tagged." />
+      <form role="search" aria-label="Contact filters" className="flex flex-col gap-3" onSubmit={onSearch}>
+        <div className="flex flex-wrap gap-2">
+          <Input className="min-w-0 flex-1 basis-56" placeholder="Search name or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search contacts" />
+          <Button type="submit" variant="primary" size="lg">Search</Button>
+        </div>
+        <div role="group" aria-label="Filter" className="flex flex-wrap gap-2">
+          {FILTERS.map((f) => (
+            <FilterChip key={f.value} active={filter === f.value} onClick={() => { setOffset(0); setFilter(f.value); }}>{f.label}</FilterChip>
+          ))}
+        </div>
+        <p aria-live="polite" className="text-sm text-muted-foreground">{total} contacts</p>
       </form>
-      {loading && !data ? (
-        <p className="notice" role="status">Loading…</p>
-      ) : (
-        <table className="responsive" aria-label="Contacts">
-          <thead><tr><th scope="col">Name</th><th scope="col">JID</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
-          <tbody>
-            {(data?.items ?? []).map((c) => (
-              <tr key={c.jid}>
-                <td data-label="Name" className="cell-primary"><div className="cell-value">
-                  {editJid === c.jid ? (
-                    <>
-                      <input aria-label={`Name for ${c.jid}`} value={name} onChange={(e) => setName(e.target.value)} maxLength={255} disabled={saving} />
-                      {actionError && <p role="alert" className="inline-error">{actionError}</p>}
-                    </>
-                  ) : (
-                    c.push_name ? <bdi>{c.push_name}</bdi> : <span className="muted">—</span>
-                  )}
-                </div></td>
-                <td data-label="JID" className="muted"><div className="cell-value"><bdi className="jid">{c.jid}</bdi></div></td>
-                <td data-label="Status"><div className="cell-value">{c.opted_out ? <span className="badge warn">Opted out</span> : <span className="badge">Tagged</span>}</div></td>
-                <td className="cell-actions">
-                  {editJid === c.jid ? (
-                    <>
-                      <button type="button" className="primary" disabled={saving} onClick={() => void save(c.jid)}>Save</button>{" "}
-                      <button type="button" disabled={saving} onClick={cancelEdit}>Cancel</button>
-                    </>
-                  ) : (
-                    <button type="button" aria-label={`Edit ${c.jid}`} disabled={saving} onClick={() => startEdit(c.jid, c.push_name)}>Edit</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {data && data.items.length === 0 && <tr><td colSpan={4} className="muted empty-row">No contacts match.</td></tr>}
-          </tbody>
-        </table>
-      )}
-      <div className="toolbar">
-        <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</button>
-        <button type="button" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</button>
+      <div className="flex flex-col gap-5">
+        {error && <InlineError>{error}</InlineError>}
+        {loading && !data ? (
+          <LoadingRows desktop={desktop} />
+        ) : data && items.length === 0 ? (
+          <div className="rounded-lg border bg-surface">
+            <EmptyState icon={UserRound} title="No contacts match.">Try a different search or filter.</EmptyState>
+          </div>
+        ) : desktop ? (
+          <div className="overflow-x-auto rounded-lg border bg-surface">
+            <table className="w-full text-start text-sm" aria-label="Contacts">
+              <thead>
+                <tr>
+                  {["Name", "JID", "Status"].map((h) => <th key={h} scope="col" className="px-3 py-2 text-start font-medium text-muted-foreground">{h}</th>)}
+                  <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>{items.map((c) => <ContactTableRow key={c.jid} {...rowProps(c)} />)}</tbody>
+            </table>
+          </div>
+        ) : (
+          <ul role="list" aria-label="Contacts" className="m-0 list-none divide-y overflow-hidden rounded-lg border bg-surface p-0">
+            {items.map((c) => <ContactCard key={c.jid} {...rowProps(c)} />)}
+          </ul>
+        )}
+        <div className="flex items-center gap-2">
+          <Button size="lg" className="md:min-h-9" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</Button>
+          <Button size="lg" className="md:min-h-9" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</Button>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }

@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Contacts from "./Contacts";
+import { mockViewport } from "../hooks/mockViewport";
 import { ApiError, api } from "../api";
 
 vi.mock("../api", async (orig) => {
@@ -14,6 +15,7 @@ import { toast } from "../alerts";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockViewport(1024);
   vi.mocked(api.listContacts).mockResolvedValue({
     items: [
       { jid: "1@s.whatsapp.net", push_name: "Dana", opted_out: true },
@@ -28,7 +30,9 @@ describe("Contacts page", () => {
   it("lists contacts with an opted-out badge", async () => {
     render(<Contacts />);
     expect(await screen.findByText("Dana")).toBeInTheDocument();
-    expect(screen.getByText("Opted out", { selector: ".badge" })).toBeInTheDocument();
+    const row = screen.getByRole("row", { name: /Dana/ });
+    expect(within(row).getByText("Opted out")).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /2@s/ })).getByText("Tagged")).toBeInTheDocument();
   });
 
   it("edits a name and clears it when emptied", async () => {
@@ -49,8 +53,11 @@ describe("Contacts page", () => {
     await screen.findByText("Dana");
     await userEvent.type(screen.getByLabelText("Search contacts"), "dan{Enter}");
     await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ search: "dan", offset: 0 })));
-    await userEvent.selectOptions(screen.getByLabelText("Filter"), "opted");
+    const chip = (n: string) => within(screen.getByRole("group", { name: "Filter" })).getByRole("button", { name: n });
+    expect(chip("All contacts")).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(chip("Opted out"));
     await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ opted_out: true })));
+    expect(chip("Opted out")).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps the editor, typed name and error when saving fails, and reloads", async () => {
@@ -87,11 +94,11 @@ describe("Contacts page", () => {
     expect(await screen.findByText("No contacts match.")).toBeInTheDocument();
   });
 
-  it("shows the load error separately from action errors", async () => {
+  it("toasts a load error and keeps it out of the edit row", async () => {
     vi.mocked(api.listContacts).mockRejectedValue(new ApiError(500, "load failed"));
     render(<Contacts />);
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("load failed"));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Name for/)).not.toBeInTheDocument();
   });
 
   it("resets the offset when the filter changes", async () => {
@@ -103,7 +110,7 @@ describe("Contacts page", () => {
     await screen.findByText("Dana");
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 })));
-    await userEvent.selectOptions(screen.getByLabelText("Filter"), "not");
+    await userEvent.click(screen.getByRole("button", { name: "Not opted out" }));
     await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ opted_out: false, offset: 0 })));
   });
 
@@ -122,7 +129,7 @@ describe("Contacts page", () => {
     render(<Contacts />);
     await userEvent.click(await screen.findByRole("button", { name: "Edit 2@s.whatsapp.net" }));
     expect(screen.getByLabelText("Name for 2@s.whatsapp.net")).toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText("Filter"), "opted");
+    await userEvent.click(screen.getByRole("button", { name: "Opted out" }));
     await waitFor(() => expect(screen.queryByLabelText("Name for 2@s.whatsapp.net")).not.toBeInTheDocument());
   });
 
@@ -148,5 +155,25 @@ describe("Contacts page", () => {
     await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 })));
     await userEvent.type(screen.getByLabelText("Search contacts"), "dan{Enter}");
     await waitFor(() => expect(api.listContacts).toHaveBeenLastCalledWith(expect.objectContaining({ search: "dan", offset: 0 })));
+  });
+});
+
+describe("Contacts states", () => {
+  it("shows skeleton rows with role=status while the first page loads", async () => {
+    vi.mocked(api.listContacts).mockReturnValue(new Promise(() => {}));
+    render(<Contacts />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("announces the count politely", async () => {
+    render(<Contacts />);
+    expect(await screen.findByText("2 contacts")).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("shows a load error inline (role=alert) and as a toast", async () => {
+    vi.mocked(api.listContacts).mockRejectedValue(new ApiError(500, "load failed"));
+    render(<Contacts />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("load failed");
   });
 });
