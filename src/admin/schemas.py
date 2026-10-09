@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Generic, Literal, TypeVar
+from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 T = TypeVar("T")
 
@@ -51,9 +58,12 @@ class GroupOut(BaseModel):
     last_summary_sync: datetime
     last_ingest: datetime
     message_count: int
+    schedule_count: int = 0
 
     @classmethod
-    def from_group(cls, group, message_count: int) -> "GroupOut":
+    def from_group(
+        cls, group, message_count: int, schedule_count: int = 0
+    ) -> "GroupOut":
         return cls(
             group_jid=group.group_jid,
             group_name=group.group_name,
@@ -67,6 +77,7 @@ class GroupOut(BaseModel):
             last_summary_sync=group.last_summary_sync,
             last_ingest=group.last_ingest,
             message_count=int(message_count or 0),
+            schedule_count=int(schedule_count or 0),
         )
 
 
@@ -196,3 +207,145 @@ class ActionStatus(BaseModel):
 
 class ActionStarted(BaseModel):
     job_id: str
+
+
+MAX_SCHEDULES_PER_GROUP = 20
+MAX_WEEKDAYS_INPUT = 64
+
+
+def hour12_to_hour(hour12: int, meridiem: str) -> int:
+    """12 AM -> 0, 12 PM -> 12, 1-11 PM -> 13-23."""
+    return hour12 % 12 + (12 if meridiem == "PM" else 0)
+
+
+def hour_to_hour12(hour: int) -> tuple[int, Literal["AM", "PM"]]:
+    return (hour % 12 or 12), ("AM" if hour < 12 else "PM")
+
+
+WeekdayList = Annotated[list[StrictInt], Field(max_length=MAX_WEEKDAYS_INPUT)]
+
+
+def _clean_weekdays(value):
+    if value is None:
+        raise ValueError("weekdays cannot be null")
+    if not value:
+        raise ValueError("weekdays must not be empty")
+    if any(day < 0 or day > 6 for day in value):
+        raise ValueError("weekdays must be integers 0 (Sunday) to 6 (Saturday)")
+    return sorted(set(value))
+
+
+class _ScheduleTime(BaseModel):
+    """Shared time fields: exactly one of (hour) or (hour12 + meridiem)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hour: StrictInt | None = Field(default=None, ge=0, le=23)
+    hour12: StrictInt | None = Field(default=None, ge=1, le=12)
+    meridiem: Literal["AM", "PM"] | None = None
+    minute: StrictInt | None = Field(default=None, ge=0, le=59)
+
+    def _check_time_form(self) -> None:
+        sent = self.model_fields_set
+        for name in ("hour", "hour12", "meridiem", "minute"):
+            if name in sent and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        twelve = bool({"hour12", "meridiem"} & sent)
+        if "hour" in sent and twelve:
+            raise ValueError("send either hour or hour12 with meridiem, not both")
+
+    def resolved_hour(self) -> int | None:
+        """The 24-hour hour, or None when no time form was sent."""
+        if self.hour is not None:
+            return self.hour
+        if self.hour12 is not None and self.meridiem is not None:
+            return hour12_to_hour(self.hour12, self.meridiem)
+        return None
+
+
+class ScheduleCreate(_ScheduleTime):
+    weekdays: WeekdayList
+    enabled: bool = True
+
+    @field_validator("weekdays", mode="after")
+    @classmethod
+    def _weekdays(cls, value):
+        return _clean_weekdays(value)
+
+    @model_validator(mode="after")
+    def _time(self):
+        self._check_time_form()
+        if self.hour is None and (self.hour12 is None or self.meridiem is None):
+            raise ValueError("send hour, or hour12 together with meridiem")
+        if self.minute is None:
+            raise ValueError("minute is required")
+        return self
+
+
+class SchedulePatch(_ScheduleTime):
+    weekdays: WeekdayList | None = None
+    enabled: bool | None = None
+
+    @field_validator("weekdays", mode="after")
+    @classmethod
+    def _weekdays(cls, value):
+        return _clean_weekdays(value)
+
+    @model_validator(mode="after")
+    def _time(self):
+        self._check_time_form()
+        if "enabled" in self.model_fields_set and self.enabled is None:
+            raise ValueError("enabled cannot be null")
+        return self
+
+    def resolve_hour(self, current: int) -> int | None:
+        """New 24-hour hour given the stored one; None when no hour was sent.
+
+        A lone hour12 keeps the stored AM/PM, a lone meridiem keeps the stored
+        12-hour number.
+        """
+        if self.hour is not None:
+            return self.hour
+        if self.hour12 is None and self.meridiem is None:
+            return None
+        stored12, stored_meridiem = hour_to_hour12(current)
+        return hour12_to_hour(
+            self.hour12 if self.hour12 is not None else stored12,
+            self.meridiem if self.meridiem is not None else stored_meridiem,
+        )
+
+
+class ScheduleOut(BaseModel):
+    id: str
+    weekdays: list[int]
+    hour: int
+    minute: int
+    hour12: int
+    meridiem: Literal["AM", "PM"]
+    enabled: bool
+    last_run_at: datetime | None
+    last_status: str | None
+    last_reason: str | None
+    last_message_count: int | None
+
+    @classmethod
+    def from_schedule(cls, schedule) -> "ScheduleOut":
+        hour12, meridiem = hour_to_hour12(schedule.hour)
+        return cls(
+            id=schedule.id,
+            weekdays=sorted(set(schedule.weekdays)),
+            hour=schedule.hour,
+            minute=schedule.minute,
+            hour12=hour12,
+            meridiem=meridiem,
+            enabled=schedule.enabled,
+            last_run_at=schedule.last_run_at,
+            last_status=schedule.last_status,
+            last_reason=schedule.last_reason,
+            last_message_count=schedule.last_message_count,
+        )
+
+
+class ScheduleList(BaseModel):
+    timezone: str
+    items: list[ScheduleOut]

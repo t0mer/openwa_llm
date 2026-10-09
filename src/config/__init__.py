@@ -1,9 +1,10 @@
 from os import environ
 from typing import Self
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from zoneinfo import available_timezones
 
 from whatsapp.jid import (
     parse_jid,
@@ -60,6 +61,25 @@ class Settings(BaseSettings):
     admin_password: str | None = None
     admin_session_secret: str | None = None  # >= 32 chars
     admin_cookie_secure: bool = False
+
+    # Scheduled summaries
+    timezone: str = Field(
+        default="Asia/Jerusalem", validate_default=True
+    )  # IANA zone schedules are evaluated in
+    scheduler_enabled: bool = True
+
+    @field_validator("timezone", mode="after")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        # Must be a canonical IANA name present in the tz database (this also
+        # rejects '', surrounding whitespace, wrong case, 'posixrules' and a
+        # missing tzdata install); 'localtime' is host-dependent, so refuse it.
+        if v == "localtime" or v not in available_timezones():
+            raise ValueError(
+                f"Invalid TIMEZONE '{v}': expected an IANA name such as "
+                "'Asia/Jerusalem' or 'UTC' (is the tzdata package installed?)"
+            )
+        return v
 
     @field_validator("qa_testers")
     @classmethod

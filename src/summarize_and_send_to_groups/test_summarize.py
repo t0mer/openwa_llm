@@ -142,3 +142,42 @@ async def test_summarize_renders_prompt_with_language(monkeypatch):
         "Write in the same language as the chat group"
         in (agent_cls.call_args.kwargs["system_prompt"])
     )
+
+
+async def test_groups_take_the_shared_group_lock_and_refresh_when_contended(
+    monkeypatch,
+):
+    import asyncio
+
+    from scheduling.locks import group_lock
+
+    g = _group("lock@g.us", "L")
+    session = MagicMock()
+    resp = MagicMock()
+    resp.all.return_value = [g]
+    session.exec = AsyncMock(return_value=resp)
+    session.refresh = AsyncMock()
+    seen: list[bool] = []
+
+    async def fake(settings, session, whatsapp, group):
+        seen.append(group_lock(group.group_jid).locked())
+        return GroupSummaryResult(status="sent", message_count=20)
+
+    monkeypatch.setattr(mod, "summarize_and_send_to_group", fake)
+
+    # uncontended: lock held during the run, no refresh
+    await summarize_and_send_to_groups(object(), session, object())
+    assert seen == [True]
+    session.refresh.assert_not_awaited()
+
+    # contended: waits for the holder, then refreshes the group
+    lock = group_lock("lock@g.us")
+    await lock.acquire()
+    task = asyncio.create_task(
+        summarize_and_send_to_groups(object(), session, object())
+    )
+    await asyncio.sleep(0.05)
+    assert not task.done()
+    lock.release()
+    await task
+    session.refresh.assert_awaited_once_with(g)

@@ -52,19 +52,23 @@ def _result(rows=None, scalar=None):
 def test_list_groups_maps_rows_and_total(ctx):
     client, session = ctx
     g = make_group(community_keys=["a"], display_name="Alias")
-    session.execute.side_effect = [_result(rows=[(g, 7)]), _result(scalar=1)]
+    session.execute.side_effect = [_result(rows=[(g, 7, 3)]), _result(scalar=1)]
     body = client.get("/groups?search=wa&managed=false&sort=-message_count").json()
     assert body["total"] == 1
     item = body["items"][0]
     assert item["group_jid"] == "1203@g.us"
     assert item["group_name"] == "WA name" and item["display_name"] == "Alias"
     assert item["community_keys"] == ["a"] and item["message_count"] == 7
+    assert item["schedule_count"] == 3
     assert item["managed"] is False and item["notify_on_spam"] is False
 
 
 def test_list_groups_none_keys_become_empty_list(ctx):
     client, session = ctx
-    session.execute.side_effect = [_result(rows=[(make_group(), 0)]), _result(scalar=1)]
+    session.execute.side_effect = [
+        _result(rows=[(make_group(), 0, 0)]),
+        _result(scalar=1),
+    ]
     assert client.get("/groups").json()["items"][0]["community_keys"] == []
 
 

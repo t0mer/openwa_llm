@@ -14,6 +14,7 @@ from admin.actions import runner as admin_actions
 from api import load_new_kbtopics_api, status, summarize_and_send_to_group_api, webhook
 import models  # noqa
 from config import get_settings
+from scheduling.runner import start_scheduler
 from whatsapp import OpenWAGateway
 from whatsapp.init_groups import gather_groups
 from whatsapp.webhook_registration import register_webhook_with_retry
@@ -93,6 +94,8 @@ async def lifespan(app: FastAPI):
     app.state.embedding_client = AsyncClient(
         api_key=settings.voyage_api_key, max_retries=settings.voyage_max_retries
     )
+    if (scheduler_task := start_scheduler(app)) is not None:
+        app.state.bg_tasks.append(scheduler_task)
     try:
         yield
     finally:
