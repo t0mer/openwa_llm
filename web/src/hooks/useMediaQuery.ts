@@ -19,3 +19,5 @@ export function useMediaQuery(query: string): boolean {
 export const MD_QUERY = "(min-width: 768px)";
 /** Tailwind's lg breakpoint: the sidebar shows labels from here up, icons only below. */
 export const LG_QUERY = "(min-width: 1024px)";
+/** Tailwind's xl breakpoint: wide data tables start here; below it each row is a card. */
+export const XL_QUERY = "(min-width: 1280px)";

@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useMediaQuery } from "./useMediaQuery";
+import { mockViewport } from "./mockViewport";
+import { LG_QUERY, MD_QUERY, useMediaQuery, XL_QUERY } from "./useMediaQuery";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -28,5 +29,20 @@ describe("useMediaQuery", () => {
     expect(removeSpy).not.toHaveBeenCalled();
     unmount();
     expect(removeSpy).toHaveBeenCalledWith("change", listener);
+  });
+});
+
+describe("breakpoint queries", () => {
+  it.each([
+    [767, [false, false, false]],
+    [768, [true, false, false]],
+    [1023, [true, false, false]],
+    [1024, [true, true, false]],
+    [1279, [true, true, false]],
+    [1280, [true, true, true]],
+  ] as const)("at %ipx: md/lg/xl = %j", (width, expected) => {
+    mockViewport(width);
+    const got = [MD_QUERY, LG_QUERY, XL_QUERY].map((q) => renderHook(() => useMediaQuery(q)).result.current);
+    expect(got).toEqual(expected);
   });
 });

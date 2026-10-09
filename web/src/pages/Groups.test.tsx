@@ -30,7 +30,7 @@ function setup(groups: Group[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockViewport(1024);
+  mockViewport(1280);
   vi.mocked(confirm).mockResolvedValue(true);
 });
 

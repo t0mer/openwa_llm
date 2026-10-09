@@ -12,7 +12,7 @@ import { InlineError } from "../components/ui/inline-error";
 import { PageHeader } from "../components/ui/page-header";
 import { Skeleton } from "../components/ui/skeleton";
 import { Switch } from "../components/ui/switch";
-import { MD_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
+import { useMediaQuery, XL_QUERY } from "../hooks/useMediaQuery";
 import type { Group, GroupPatch, GroupSort } from "../types";
 import { useLoad, useLoadError } from "../useLoad";
 
@@ -56,6 +56,11 @@ function GroupName({ g }: { g: Group }) {
         {g.display_name && g.group_name && <>WhatsApp: <bdi>{g.group_name}</bdi> · </>}<bdi className="jid">{g.group_jid}</bdi>
       </div>
       {g.group_topic && <div className="text-xs text-muted-foreground" dir="auto"><bdi>{g.group_topic}</bdi></div>}
+      <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        {g.community_keys.length > 0 && <span>Community keys: <bdi>{g.community_keys.join(", ")}</bdi></span>}
+        <span>{g.message_count} messages</span>
+        <span>Last summary: {fmt(g.last_summary_sync)}</span>
+      </div>
     </div>
   );
 }
@@ -79,21 +84,14 @@ function LanguageSelect({ group: g, saving, onSave, className }: RowProps & { cl
   );
 }
 
-function Keys({ g }: { g: Group }) {
-  return g.community_keys.length ? <span dir="auto">{g.community_keys.join(", ")}</span> : <span className="text-muted-foreground">—</span>;
-}
-
 function GroupTableRow(p: RowProps) {
   const g = p.group;
   return (
     <tr className="border-t align-middle hover:bg-surface-2/60">
-      <td className="px-3 py-1.5"><GroupName g={g} /></td>
+      <td className="w-full px-3 py-1.5"><GroupName g={g} /></td>
       <td className="px-3 py-1.5"><RespondSwitch {...p} /></td>
       <td className="px-3 py-1.5"><SpamSwitch {...p} /></td>
       <td className="px-3 py-1.5"><div className="w-28"><LanguageSelect {...p} className="min-h-11 lg:min-h-9" /></div></td>
-      <td className="px-3 py-1.5"><Keys g={g} /></td>
-      <td className="tabular px-3 py-1.5">{g.message_count}</td>
-      <td className="whitespace-nowrap px-3 py-1.5">{fmt(g.last_summary_sync)}</td>
       <td className="px-3 py-1.5">
         <span className="inline-flex items-center gap-2">
           <span className="schedule-count tabular">{g.schedule_count}</span>
@@ -105,44 +103,35 @@ function GroupTableRow(p: RowProps) {
   );
 }
 
-function Pair({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="m-0 flex min-h-11 items-center text-sm">{children}</dd>
-    </div>
-  );
+/** A switch with its visible label, so phones show what each one does. */
+function SwitchRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="flex min-h-11 items-center gap-2 text-sm">{children}{label}</label>;
 }
 
 function GroupCard(p: RowProps) {
   const g = p.group;
   return (
-    <li className="flex flex-col gap-3 p-4">
+    <li className="flex flex-col gap-2 rounded-lg border bg-surface p-3">
       <GroupName g={g} />
-      <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2">
-        <Pair label="Respond"><RespondSwitch {...p} /></Pair>
-        <Pair label="Spam notice"><SpamSwitch {...p} /></Pair>
-        <div className="col-span-2 flex flex-col gap-1.5">
-          <dt className="text-xs font-medium text-muted-foreground">Summary language</dt>
-          <dd className="m-0"><LanguageSelect {...p} /></dd>
+      <div className="flex flex-wrap gap-x-6">
+        <SwitchRow label="Respond"><RespondSwitch {...p} /></SwitchRow>
+        <SwitchRow label="Spam notice"><SpamSwitch {...p} /></SwitchRow>
+      </div>
+      <div className="flex items-end gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Language</span>
+          <LanguageSelect {...p} />
         </div>
-        <Pair label="Community keys"><Keys g={g} /></Pair>
-        <Pair label="Messages"><span className="tabular">{g.message_count}</span></Pair>
-        <Pair label="Schedules"><span className="schedule-count tabular">{g.schedule_count}</span></Pair>
-        <div className="col-span-2 flex flex-col gap-1.5">
-          <dt className="text-xs font-medium text-muted-foreground">Last summary</dt>
-          <dd className="m-0 text-sm">{fmt(g.last_summary_sync)}</dd>
-        </div>
-      </dl>
-      <div className="flex items-center gap-2">
-        <Button size="lg" className="flex-1" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
-        <Button size="lg" className="flex-1" data-opener={openerKey("edit", g)} onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button>
+        <Button size="lg" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>
+          Schedules <span className="schedule-count tabular">{g.schedule_count}</span>
+        </Button>
+        <Button size="lg" data-opener={openerKey("edit", g)} onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button>
       </div>
     </li>
   );
 }
 
-const HEADERS = ["Group", "Respond", "Spam notice", "Summary language", "Community keys", "Messages", "Last summary", "Schedules"];
+const HEADERS = ["Group", "Respond", "Spam notice", "Summary language", "Schedules"];
 
 function LoadingRows({ desktop }: { desktop: boolean }) {
   return (
@@ -154,7 +143,7 @@ function LoadingRows({ desktop }: { desktop: boolean }) {
 }
 
 export default function Groups() {
-  const desktop = useMediaQuery(MD_QUERY);
+  const desktop = useMediaQuery(XL_QUERY);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [managed, setManaged] = useState<Managed>("all");
@@ -277,12 +266,12 @@ export default function Groups() {
           <EmptyState icon={Users} title="No groups match.">Try a different search or filter.</EmptyState>
         </div>
       ) : !data ? null : desktop ? (
-        <div className="overflow-x-auto rounded-lg border bg-surface">
+        <div className="relative overflow-x-auto rounded-lg border bg-surface">
           <table className="w-full text-start text-sm" aria-label="Groups">
             <thead>
               <tr className="text-start">
-                {HEADERS.map((h) => <th key={h} scope="col" className="px-3 py-2 text-start font-medium text-muted-foreground">{h}</th>)}
-                <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
+                {HEADERS.map((h) => <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 text-start font-medium text-muted-foreground">{h}</th>)}
+                <th scope="col" className="relative px-3 py-2"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -291,7 +280,7 @@ export default function Groups() {
           </table>
         </div>
       ) : (
-        <ul role="list" aria-label="Groups" className="m-0 list-none divide-y overflow-hidden rounded-lg border bg-surface p-0">
+        <ul role="list" aria-label="Groups" className="m-0 grid list-none grid-cols-1 gap-3 p-0 md:grid-cols-2">
           {items.map((g) => <GroupCard key={g.group_jid} {...rowProps(g)} />)}
         </ul>
       )}
