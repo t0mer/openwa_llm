@@ -50,6 +50,7 @@ export function useErrorToast(error: string | null) {
     const now = Date.now();
     const last = lastToasted.get(error);
     if (last !== undefined && now - last < TOAST_WINDOW_MS) return;
+    for (const [msg, at] of lastToasted) if (now - at >= TOAST_WINDOW_MS) lastToasted.delete(msg);
     lastToasted.set(error, now);
     toast.error(error);
   }, [error]);

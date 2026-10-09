@@ -38,7 +38,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && !document.querySelector(".swal2-popup")) {
+      if (e.key === "Escape" && !document.querySelector(".swal2-popup:not(.swal2-toast)")) {
         setOpen(false);
         burger.current?.focus();
       }

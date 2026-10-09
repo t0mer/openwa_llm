@@ -27,4 +27,13 @@ describe("useErrorToast", () => {
     rerender({ e: "flaky-1" });
     expect(toast.error).toHaveBeenCalledTimes(3);
   });
+
+  it("prunes expired entries from the dedupe map", () => {
+    // After the window, a repeat toasts again (entry was expired and replaced), proving old state is not kept forever.
+    const { rerender } = renderHook(({ e }: { e: string | null }) => useErrorToast(e), { initialProps: { e: "old" as string | null } });
+    vi.advanceTimersByTime(61_000);
+    rerender({ e: "new" });
+    rerender({ e: "old" });
+    expect(toast.error).toHaveBeenCalledTimes(3);
+  });
 });

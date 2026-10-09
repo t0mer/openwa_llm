@@ -83,4 +83,16 @@ describe("Layout", () => {
     expect(btn).toHaveAttribute("aria-expanded", "true");
     pop.remove();
   });
+
+  it("still closes the menu on Escape while only a toast is showing", async () => {
+    setup();
+    const btn = screen.getByRole("button", { name: "Menu" });
+    await userEvent.click(btn);
+    const toast = document.createElement("div");
+    toast.className = "swal2-popup swal2-toast";
+    document.body.append(toast);
+    await userEvent.keyboard("{Escape}");
+    expect(btn).toHaveAttribute("aria-expanded", "false");
+    toast.remove();
+  });
 });
