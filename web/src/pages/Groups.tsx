@@ -72,7 +72,7 @@ export default function Groups() {
     <section>
       <h1>Groups</h1>
       <form className="toolbar" onSubmit={onSearch}>
-        <input placeholder="Search name, topic or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search groups" />
+        <input className="grow" placeholder="Search name, topic or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search groups" />
         <button type="submit">Search</button>
         <select value={managed} onChange={(e) => { setOffset(0); setManaged(e.target.value as typeof managed); }} aria-label="Filter">
           <option value="all">All groups</option>
@@ -91,36 +91,36 @@ export default function Groups() {
       {error && <p role="alert" className="error">{error}</p>}
       {actionError && !editing && <p role="alert" className="error">{actionError}</p>}
       {loading && !data ? (
-        <p className="notice">Loading…</p>
+        <p className="notice" role="status">Loading…</p>
       ) : (
-        <table>
+        <table className="responsive" aria-label="Groups">
           <thead>
-            <tr><th>Group</th><th>Respond</th><th>Spam notice</th><th>Community keys</th><th>Messages</th><th>Last summary</th><th /></tr>
+            <tr><th scope="col">Group</th><th scope="col">Respond</th><th scope="col">Spam notice</th><th scope="col">Community keys</th><th scope="col">Messages</th><th scope="col">Last summary</th><th scope="col"><span className="sr-only">Actions</span></th></tr>
           </thead>
           <tbody>
             {(data?.items ?? []).map((g) => (
               <tr key={g.group_jid}>
-                <td>
+                <td data-label="Group" className="cell-primary">
                   <strong>{g.display_name || g.group_name || g.group_jid}</strong>
                   <div className="muted">
                     {g.display_name && g.group_name ? `WhatsApp: ${g.group_name} · ` : ""}{g.group_jid}
                   </div>
                   {g.group_topic && <div className="muted">{g.group_topic}</div>}
                 </td>
-                <td>
-                  <input type="checkbox" checked={g.managed} onChange={() => toggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
+                <td data-label="Respond">
+                  <input type="checkbox" className="switch" checked={g.managed} onChange={() => toggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
                 </td>
-                <td>
-                  <input type="checkbox" checked={g.notify_on_spam} onChange={() => void save(g, { notify_on_spam: !g.notify_on_spam })} aria-label={`Spam notice in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
+                <td data-label="Spam notice">
+                  <input type="checkbox" className="switch" checked={g.notify_on_spam} onChange={() => void save(g, { notify_on_spam: !g.notify_on_spam })} aria-label={`Spam notice in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
                 </td>
-                <td>{g.community_keys.length ? g.community_keys.join(", ") : <span className="muted">—</span>}</td>
-                <td>{g.message_count}</td>
-                <td>{fmt(g.last_summary_sync)}</td>
-                <td><button type="button" onClick={() => setEditing(g)} aria-label={`Edit ${g.group_jid}`}>Edit</button></td>
+                <td data-label="Community keys">{g.community_keys.length ? g.community_keys.join(", ") : <span className="muted">—</span>}</td>
+                <td data-label="Messages">{g.message_count}</td>
+                <td data-label="Last summary">{fmt(g.last_summary_sync)}</td>
+                <td className="cell-actions"><button type="button" onClick={() => setEditing(g)} aria-label={`Edit ${g.group_jid}`}>Edit</button></td>
               </tr>
             ))}
             {data && data.items.length === 0 && (
-              <tr><td colSpan={7} className="muted">No groups match.</td></tr>
+              <tr><td colSpan={7} className="muted empty-row">No groups match.</td></tr>
             )}
           </tbody>
         </table>

@@ -72,7 +72,7 @@ export default function Contacts() {
     <section>
       <h1>Contacts</h1>
       <form className="toolbar" onSubmit={onSearch}>
-        <input placeholder="Search name or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search contacts" />
+        <input className="grow" placeholder="Search name or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search contacts" />
         <button type="submit">Search</button>
         <select value={filter} onChange={(e) => { setOffset(0); setFilter(e.target.value as typeof filter); }} aria-label="Filter">
           <option value="all">All contacts</option>
@@ -83,14 +83,14 @@ export default function Contacts() {
       </form>
       {error && <p role="alert" className="error">{error}</p>}
       {loading && !data ? (
-        <p className="notice">Loading…</p>
+        <p className="notice" role="status">Loading…</p>
       ) : (
-        <table>
-          <thead><tr><th>Name</th><th>JID</th><th>Status</th><th /></tr></thead>
+        <table className="responsive" aria-label="Contacts">
+          <thead><tr><th scope="col">Name</th><th scope="col">JID</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {(data?.items ?? []).map((c) => (
               <tr key={c.jid}>
-                <td>
+                <td data-label="Name" className="cell-primary">
                   {editJid === c.jid ? (
                     <>
                       <input aria-label={`Name for ${c.jid}`} value={name} onChange={(e) => setName(e.target.value)} maxLength={255} disabled={saving} />
@@ -100,9 +100,9 @@ export default function Contacts() {
                     c.push_name ?? <span className="muted">—</span>
                   )}
                 </td>
-                <td className="muted">{c.jid}</td>
-                <td>{c.opted_out ? <span className="badge warn">Opted out</span> : <span className="badge">Tagged</span>}</td>
-                <td>
+                <td data-label="JID" className="muted">{c.jid}</td>
+                <td data-label="Status">{c.opted_out ? <span className="badge warn">Opted out</span> : <span className="badge">Tagged</span>}</td>
+                <td className="cell-actions">
                   {editJid === c.jid ? (
                     <>
                       <button type="button" className="primary" disabled={saving} onClick={() => void save(c.jid)}>Save</button>{" "}
@@ -114,7 +114,7 @@ export default function Contacts() {
                 </td>
               </tr>
             ))}
-            {data && data.items.length === 0 && <tr><td colSpan={4} className="muted">No contacts match.</td></tr>}
+            {data && data.items.length === 0 && <tr><td colSpan={4} className="muted empty-row">No contacts match.</td></tr>}
           </tbody>
         </table>
       )}
