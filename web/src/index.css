@@ -1,5 +1,4 @@
-/* Cascade order: legacy rules (styles.css) sit above base but below components and utilities. */
-@layer theme, base, legacy, components, utilities;
+@layer theme, base, components, utilities;
 
 @import "tailwindcss";
 
@@ -104,6 +103,14 @@
   select,
   summary {
     -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  /* Keep identifiers (JIDs, numbers) left-to-right inside RTL text. */
+  .jid {
+    direction: ltr;
+    unicode-bidi: isolate;
   }
 }
 
@@ -256,4 +263,54 @@
     width: 100%;
     min-height: 2.75rem;
   }
+}
+
+/* Bot actions results dialog (built as DOM in alerts.ts; unlayered like the other swal rules). */
+.swal-results {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  text-align: start;
+  max-height: 50vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.5rem;
+}
+.swal-result {
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  overflow-wrap: anywhere;
+}
+.swal-result strong {
+  color: var(--foreground);
+}
+.swal-result-detail {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+.swal-result-badge {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  color: var(--muted-foreground);
+  background: var(--surface);
+}
+.swal-result-badge-sent {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+.swal-result-badge-skipped {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+.swal-result-badge-failed {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
 }

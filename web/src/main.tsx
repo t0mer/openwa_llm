@@ -5,7 +5,6 @@ import "@fontsource-variable/rubik";
 import App from "./App";
 import { applyTheme } from "./lib/theme";
 import "./index.css";
-import "./styles.css";
 
 applyTheme();
 

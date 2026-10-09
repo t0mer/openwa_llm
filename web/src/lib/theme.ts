@@ -28,8 +28,6 @@ function paint(mode: ThemeMode): void {
   const theme = resolveTheme(mode);
   const root = document.documentElement;
   root.classList.toggle("dark", theme === "dark");
-  // Legacy hook for the not-yet-migrated stylesheet; removed together with styles.css.
-  root.setAttribute("data-theme", theme);
 }
 
 /**

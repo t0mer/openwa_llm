@@ -29,7 +29,6 @@ describe("theme", () => {
   beforeEach(() => {
     localStorage.clear();
     root().classList.remove("dark");
-    root().removeAttribute("data-theme");
   });
   afterEach(() => {
     applyTheme("light"); // drop any system listener

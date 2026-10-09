@@ -145,12 +145,12 @@ export function showSummaryResults(results: GroupActionResult[], message?: strin
     const li = document.createElement("li");
     li.className = `swal-result swal-result-${r.status}`;
     const badge = document.createElement("span");
-    badge.className = `badge ${r.status === "sent" ? "ok" : r.status === "failed" ? "bad" : "warn"}`;
+    badge.className = `swal-result-badge swal-result-badge-${r.status}`;
     badge.textContent = r.status;
     const name = document.createElement("strong");
     name.textContent = r.group_name;
     const detail = document.createElement("div");
-    detail.className = "muted";
+    detail.className = "swal-result-detail";
     detail.textContent = describeResult(r);
     li.append(badge, " ", name, detail);
     list.append(li);

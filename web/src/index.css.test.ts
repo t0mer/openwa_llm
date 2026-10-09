@@ -57,6 +57,12 @@ describe("index.css tokens", () => {
     expect(css).toContain(".tabular");
     expect(css).toContain("prefers-reduced-motion: reduce");
   });
+  it("has no legacy layer or data-theme hook left", () => {
+    expect(css).toMatch(/^@layer theme, base, components, utilities;/m);
+    expect(css).not.toContain("legacy");
+    expect(main).not.toContain("styles.css");
+    expect(indexHtml).not.toContain("data-theme");
+  });
   it("imports the bundled Rubik font and no external font host", () => {
     expect(main).toContain('import "@fontsource-variable/rubik";');
     expect(css).not.toContain("googleapis");

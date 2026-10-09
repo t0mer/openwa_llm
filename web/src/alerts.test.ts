@@ -55,6 +55,19 @@ describe("alerts", () => {
     expect(opts.icon).toBe("warning");
   });
 
+  it("showSummaryResults rows use only classes that index.css defines", async () => {
+    fire.mockResolvedValueOnce({});
+    await showSummaryResults([
+      { group_name: "A", group_jid: "1@g.us", status: "sent", reason: null, message_count: 1, required: 1 },
+      { group_name: "B", group_jid: "2@g.us", status: "failed", reason: "boom", message_count: null, required: null },
+    ]);
+    const root = fire.mock.calls[0][0].html as HTMLElement;
+    const classes = new Set([...root.querySelectorAll("[class]")].flatMap((e) => [...e.classList]));
+    expect([...classes].sort()).toEqual(
+      ["swal-result", "swal-result-badge", "swal-result-badge-failed", "swal-result-badge-sent", "swal-result-detail", "swal-result-failed", "swal-result-sent", "swal-results"].sort(),
+    );
+  });
+
   it("showSummaryResults handles an empty list", async () => {
     fire.mockResolvedValueOnce({});
     await showSummaryResults([], "No managed groups");

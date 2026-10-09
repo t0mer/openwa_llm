@@ -51,7 +51,7 @@ function parse(raw: string): Node[] {
   return list();
 }
 
-const LAYERS = ["theme", "base", "legacy", "components", "utilities"];
+const LAYERS = ["theme", "base", "components", "utilities"];
 
 /** Layer names in the order the browser first meets them (statements and blocks, in document order). */
 function layerFirstMention(nodes: Node[], seen: string[] = []): string[] {
@@ -89,35 +89,50 @@ describe("production bundle", () => {
     expect(text.some((t) => /url\(data:font/.test(t))).toBe(false);
   });
 
-  it("the effective cascade order is theme < base < legacy < components < utilities", () => {
+  it("the effective cascade order is theme < base < components < utilities, with no legacy layer", () => {
     const seen = layerFirstMention(parse(css));
     const pos = LAYERS.map((l) => seen.indexOf(l));
     expect(pos.every((p) => p >= 0), `layers seen: ${seen.join(",")}`).toBe(true);
     expect([...pos].sort((a, b) => a - b)).toEqual(pos);
+    expect(seen).not.toContain("legacy");
   });
 
   it("every unlayered rule is on the allowlist (tokens, @property/@font-face/@keyframes, SweetAlert)", () => {
     const tree = parse(css);
     expect(unlayeredViolations(tree)).toEqual([]);
-    // and the legacy rules really live in the legacy layer
-    const legacy = tree.find((n) => n.head === "@layer legacy" && n.children)!;
-    expect(legacy.children!.some((n) => /^button(,|$)/.test(n.head) || n.head.includes(".btn"))).toBe(true);
     // swal rules stay unlayered so they beat sweetalert2's own unlayered CSS
     expect(tree.some((n) => n.head.includes(".swal-popup"))).toBe(true);
+    // the Bot actions results list is styled by unlayered swal rules too
+    for (const sel of [".swal-results", ".swal-result", ".swal-result-badge-sent", ".swal-result-badge-failed", ".swal-result-badge-skipped", ".swal-result-detail"]) {
+      expect(tree.some((n) => !n.children && n.head.split(",").map((x) => x.trim()).includes(sel)), sel).toBe(true);
+    }
   });
 
-  it("body text is Rubik through the effective chain: legacy body font -> --font -> Rubik Variable", () => {
+  it("provides the .jid bidi utility (left-to-right isolate) in the components layer", () => {
     const tree = parse(css);
-    const legacy = tree.find((n) => n.head === "@layer legacy" && n.children)!.children!;
-    const body = legacy.find((n) => n.head === "body")!;
-    expect(body.body).toMatch(/font:\s*15px\/1\.5 var\(--font\)/);
-    const rootTokens = legacy.filter((n) => n.head === ":root").map((n) => n.body).join(";");
-    expect(rootTokens).toMatch(/--font:\s*"Rubik Variable"/);
-    // legacy is above base, so nothing unlayered may re-set the body font
-    const unlayeredBody = tree.filter((n) => !n.children && /^(body|html)\b/.test(n.head));
-    expect(unlayeredBody).toEqual([]);
-    // the Rubik face is declared for that family name
+    const layers = tree.filter((n) => n.head === "@layer components" && n.children).flatMap((n) => n.children!);
+    const jid = layers.filter((n) => n.head.split(",").map((x) => x.trim()).includes(".jid"));
+    const decls = jid.flatMap((r) => r.body.split(";").map((d) => d.trim().replace(/\s+/g, "")));
+    expect(decls).toContain("direction:ltr");
+    expect(decls).toContain("unicode-bidi:isolate");
+  });
+
+  it("body text is Rubik: base-layer body uses --font-sans, which is the Rubik Variable stack", () => {
+    const tree = parse(css);
+    const base = tree.filter((n) => n.head === "@layer base" && n.children).flatMap((n) => n.children!);
+    const body = base.find((n) => n.head === "body")!;
+    expect(body.body).toMatch(/font-family:\s*var\(--font-sans\)/);
+    expect(body.body).toMatch(/font-size:\s*15px/);
+    expect(css).toMatch(/--font-sans:\s*"Rubik Variable"/);
+    // nothing unlayered may re-set the body font
+    expect(tree.filter((n) => !n.children && /^(body|html)\b/.test(n.head))).toEqual([]);
     expect(css).toMatch(/@font-face\{font-family:Rubik Variable/);
+  });
+
+  it("legacy styles.css rules are gone from the bundle", () => {
+    for (const legacy of ["table.responsive", ".cell-actions", ".modal-backdrop", "--accent", "--s4", "button.burger"]) {
+      expect(css, legacy).not.toContain(legacy);
+    }
   });
 
   it("modal SweetAlert containers take pointer input over a Radix modal (body has pointer-events:none)", () => {
