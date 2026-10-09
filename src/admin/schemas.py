@@ -58,9 +58,12 @@ class GroupOut(BaseModel):
     last_summary_sync: datetime
     last_ingest: datetime
     message_count: int
+    schedule_count: int = 0
 
     @classmethod
-    def from_group(cls, group, message_count: int) -> "GroupOut":
+    def from_group(
+        cls, group, message_count: int, schedule_count: int = 0
+    ) -> "GroupOut":
         return cls(
             group_jid=group.group_jid,
             group_name=group.group_name,
@@ -74,6 +77,7 @@ class GroupOut(BaseModel):
             last_summary_sync=group.last_summary_sync,
             last_ingest=group.last_ingest,
             message_count=int(message_count or 0),
+            schedule_count=int(schedule_count or 0),
         )
 
 

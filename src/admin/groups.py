@@ -8,7 +8,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from api.deps import get_db_async_session
-from models import Group, Message
+from models import Group, GroupSummarySchedule, Message
 from whatsapp.jid import normalize_jid
 
 from .schemas import MAX_OFFSET, GroupOut, GroupPatch, Page, clean_keys, clean_text
@@ -71,6 +71,15 @@ async def _message_count(session: AsyncSession, group_jid: str) -> int:
     return int(result.scalar_one())
 
 
+async def _schedule_count(session: AsyncSession, group_jid: str) -> int:
+    result = await session.execute(
+        select(func.count())
+        .select_from(GroupSummarySchedule)
+        .where(GroupSummarySchedule.group_jid == group_jid)
+    )
+    return int(result.scalar_one())
+
+
 @router.get("", response_model=Page[GroupOut])
 async def list_groups(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
@@ -87,9 +96,23 @@ async def list_groups(
         .subquery()
     )
     message_count = func.coalesce(counts.c.n, 0)
+    schedule_counts = (
+        select(
+            col(GroupSummarySchedule.group_jid).label("group_jid"),
+            func.count().label("n"),
+        )
+        .group_by(col(GroupSummarySchedule.group_jid))
+        .subquery()
+    )
+    schedule_count = func.coalesce(schedule_counts.c.n, 0)
     rows_stmt = (
-        select(Group, message_count.label("message_count"))
+        select(
+            Group,
+            message_count.label("message_count"),
+            schedule_count.label("schedule_count"),
+        )
         .outerjoin(counts, counts.c.group_jid == Group.group_jid)
+        .outerjoin(schedule_counts, schedule_counts.c.group_jid == Group.group_jid)
         .where(*group_filters(search, managed))
         .order_by(*_order_by(sort, message_count))
         .limit(limit)
@@ -101,7 +124,9 @@ async def list_groups(
     )
     total = (await session.execute(total_stmt)).scalar_one()
     return Page(
-        items=[GroupOut.from_group(group, count) for group, count in rows],
+        items=[
+            GroupOut.from_group(group, count, sched) for group, count, sched in rows
+        ],
         total=int(total),
     )
 
@@ -115,7 +140,11 @@ async def get_group(
     group = await session.get(Group, jid)
     if group is None:
         raise HTTPException(status_code=404, detail="group not found")
-    return GroupOut.from_group(group, await _message_count(session, jid))
+    return GroupOut.from_group(
+        group,
+        await _message_count(session, jid),
+        await _schedule_count(session, jid),
+    )
 
 
 @router.patch("/{group_jid}", response_model=GroupOut)
@@ -141,4 +170,8 @@ async def patch_group(
         group.summary_language = patch.summary_language
     session.add(group)
     await session.flush()
-    return GroupOut.from_group(group, await _message_count(session, jid))
+    return GroupOut.from_group(
+        group,
+        await _message_count(session, jid),
+        await _schedule_count(session, jid),
+    )

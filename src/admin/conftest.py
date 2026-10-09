@@ -14,7 +14,10 @@ SECRET = "s" * 32
 
 def settings():
     return SimpleNamespace(
-        admin_password="pw", admin_session_secret=SECRET, admin_cookie_secure=False
+        admin_password="pw",
+        admin_session_secret=SECRET,
+        admin_cookie_secure=False,
+        timezone="Asia/Jerusalem",
     )
 
 
