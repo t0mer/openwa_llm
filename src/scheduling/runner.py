@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import update
@@ -159,3 +160,25 @@ async def run_due(
             )
         )
     return records
+
+
+async def scheduler_loop(app: Any, interval: float = 60) -> None:
+    """Tick forever; a failing tick is logged and never ends the loop."""
+    while True:
+        try:
+            await run_due(
+                app.state.settings, app.state.async_session, app.state.whatsapp
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Scheduler tick failed")
+        await asyncio.sleep(interval)
+
+
+def start_scheduler(app: Any, interval: float = 60) -> "asyncio.Task[None] | None":
+    """Start the loop unless `SCHEDULER_ENABLED=false`; returns the task."""
+    if not app.state.settings.scheduler_enabled:
+        logger.info("Summary scheduler disabled (SCHEDULER_ENABLED=false)")
+        return None
+    return asyncio.create_task(scheduler_loop(app, interval))
