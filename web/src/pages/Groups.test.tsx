@@ -237,6 +237,21 @@ describe("Groups page", () => {
       await waitFor(() => expect(screen.getByRole("combobox", { name: /summary language for wa name/i })).toBeEnabled());
     });
 
+    it("edit dialog shows the language and sends it only when changed", async () => {
+      setup([{ ...base, summary_language: "en" }]);
+      await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+      const dialog = screen.getByRole("dialog");
+      const select = within(dialog).getByLabelText("Summary language");
+      expect(select).toHaveValue("en");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+      expect(api.patchGroup).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: /edit 1@g\.us/i }));
+      await userEvent.selectOptions(screen.getByLabelText("Summary language", { selector: "[role=dialog] select" }), "");
+      await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { summary_language: null }));
+    });
+
     it("toasts the error and reverts the select on failure", async () => {
       setup([base]);
       vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("boom"));

@@ -179,6 +179,7 @@ export default function Groups() {
 function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; error: string | null; saving: boolean; onCancel: () => void; onSave: (patch: GroupPatch) => Promise<void> }) {
   const [displayName, setDisplayName] = useState(group.display_name ?? "");
   const [keys, setKeys] = useState<string[]>(group.community_keys);
+  const [language, setLanguage] = useState<string>(group.summary_language ?? "");
   const nameInput = useRef<HTMLInputElement>(null);
   const backdrop = useRef<HTMLDivElement>(null);
   const savingRef = useRef(saving);
@@ -236,6 +237,7 @@ function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; e
     const patch: GroupPatch = {};
     if (displayName.trim() !== (group.display_name ?? "")) patch.display_name = displayName.trim() || null;
     if (JSON.stringify(keys) !== JSON.stringify(group.community_keys)) patch.community_keys = keys;
+    if (language !== (group.summary_language ?? "")) patch.summary_language = toLanguage(language);
     if (Object.keys(patch).length === 0) return onCancel();
     void onSave(patch);
   }
@@ -250,6 +252,12 @@ function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; e
         <label>
           Display name
           <input ref={nameInput} value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={255} />
+        </label>
+        <label>
+          Summary language
+          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+            <LanguageOptions />
+          </select>
         </label>
         <div>
           <strong>Community keys</strong>
