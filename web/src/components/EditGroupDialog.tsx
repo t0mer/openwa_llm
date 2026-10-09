@@ -58,6 +58,7 @@ export default function EditGroupDialog({ group, error, saving, onCancel, onSave
 
   function submit(e: FormEvent) {
     e.preventDefault();
+    if (saving) return;
     const patch: GroupPatch = {};
     if (displayName.trim() !== (group.display_name ?? "")) patch.display_name = displayName.trim() || null;
     if (JSON.stringify(keys) !== JSON.stringify(group.community_keys)) patch.community_keys = keys;
@@ -102,7 +103,8 @@ export default function EditGroupDialog({ group, error, saving, onCancel, onSave
           {error && <InlineError>{error}</InlineError>}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button size="lg" className="md:min-h-10 md:text-sm" onClick={onCancel} disabled={saving}>Cancel</Button>
-            <Button type="submit" variant="primary" size="lg" className="md:min-h-10 md:text-sm" disabled={saving}>
+            {/* aria-disabled, not disabled: the clicked Save keeps focus while saving */}
+            <Button type="submit" variant="primary" size="lg" className="md:min-h-10 md:text-sm" aria-disabled={saving || undefined}>
               Save
             </Button>
           </div>

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -407,5 +407,83 @@ describe("DialogContent closeDisabled", () => {
     await screen.findByRole("dialog");
     await outsidePointerDown();
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+});
+
+describe("Dialog inert outside", () => {
+  function Stack() {
+    const [a, setA] = useState(false);
+    const [b, setB] = useState(false);
+    return (
+      <>
+        <button onClick={() => setA(true)}>open A</button>
+        <Dialog open={a} onOpenChange={setA}>
+          <DialogContent title="A">
+            <button onClick={() => setB(true)}>open B</button>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={b} onOpenChange={setB}>
+          <DialogContent title="B">b</DialogContent>
+        </Dialog>
+      </>
+    );
+  }
+
+  it("ref-counts inert across stacked dialogs and leaves nothing behind", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(<Stack />);
+    const app = screen.getByRole("button", { name: "open A" }).parentElement!;
+    for (let round = 0; round < 2; round++) {
+      await user.click(screen.getByRole("button", { name: "open A" }));
+      const dlgA = await screen.findByRole("dialog", { name: "A" });
+      expect(app).toHaveAttribute("inert");
+      expect(dlgA.closest("[inert]")).toBeNull();
+      await user.click(within(dlgA).getByRole("button", { name: "open B" }));
+      const dlgB = await screen.findByRole("dialog", { name: "B" });
+      expect(dlgA.closest("[inert]")).not.toBeNull(); // A is behind B now
+      expect(dlgB.closest("[inert]")).toBeNull();
+      await user.keyboard("{Escape}"); // closes B only
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "B" })).not.toBeInTheDocument());
+      expect(app).toHaveAttribute("inert"); // A still open
+      expect(screen.getByRole("dialog", { name: "A" }).closest("[inert]")).toBeNull();
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(document.querySelectorAll("[inert]")).toHaveLength(0);
+    }
+  });
+
+  it("does not take over an inert attribute set by someone else", async () => {
+    const other = document.createElement("div");
+    other.setAttribute("inert", "");
+    document.body.appendChild(other);
+    const { unmount } = render(
+      <Dialog defaultOpen>
+        <DialogContent title="T">x</DialogContent>
+      </Dialog>,
+    );
+    await screen.findByRole("dialog");
+    unmount();
+    expect(other).toHaveAttribute("inert");
+    other.remove();
+  });
+});
+
+describe("Button aria-disabled (soft disabled)", () => {
+  it("keeps focus, looks disabled and ignores clicks and form submission", async () => {
+    const onClick = vi.fn();
+    const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault());
+    render(
+      <form onSubmit={onSubmit}>
+        <Button type="submit" aria-disabled onClick={onClick}>Save</Button>
+      </form>,
+    );
+    const btn = screen.getByRole("button", { name: "Save" });
+    btn.focus();
+    await userEvent.click(btn);
+    expect(btn).toHaveFocus();
+    expect(btn).not.toBeDisabled();
+    expect(btn).toHaveClass("opacity-50");
+    expect(onClick).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

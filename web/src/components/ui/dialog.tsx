@@ -1,6 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { useEffect, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import { useEffect, useRef, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { Button } from "./button";
 
@@ -44,6 +44,44 @@ function SwalFocusPassThrough() {
     };
   }, []);
   return null;
+}
+
+/** How many open dialogs made each element inert; only elements we made inert are released. */
+const inertCount = new Map<Element, number>();
+
+/**
+ * Marks every other child of <body> (the app root, earlier dialogs' portals) `inert` while the
+ * dialog is open. Radix only adds aria-hidden and a focus trap; when the focused button becomes
+ * disabled browsers move focus to <body>, and Tab could then reach the page. SweetAlert
+ * containers stay interactive (excluded here, and any created later are not marked). Reference
+ * counted, so stacked dialogs and StrictMode's double effects never leave a stray `inert`.
+ */
+function InertOutside() {
+  const marker = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const own = marker.current?.closest("[role=dialog]");
+    if (!own) return;
+    const marked: Element[] = [];
+    for (const el of Array.from(document.body.children)) {
+      if (el.contains(own) || el.matches(`${SWAL_CONTAINER}, [data-radix-focus-guard], [data-dialog-overlay]`)) continue;
+      const count = inertCount.get(el);
+      if (count === undefined && el.hasAttribute("inert")) continue; // inert for another reason
+      inertCount.set(el, (count ?? 0) + 1);
+      el.setAttribute("inert", "");
+      marked.push(el);
+    }
+    return () => {
+      for (const el of marked) {
+        const count = (inertCount.get(el) ?? 1) - 1;
+        if (count > 0) inertCount.set(el, count);
+        else {
+          inertCount.delete(el);
+          el.removeAttribute("inert");
+        }
+      }
+    };
+  }, []);
+  return <span ref={marker} hidden />;
 }
 
 /**
@@ -115,6 +153,7 @@ export function DialogContent({
           </DialogPrimitive.Close>
         </div>
         <SwalFocusPassThrough />
+        <InertOutside />
         {children}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>

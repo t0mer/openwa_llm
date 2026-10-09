@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -212,7 +213,14 @@ describe("Groups page", () => {
     const dialog = screen.getByRole("dialog");
     await user.type(within(dialog).getByLabelText("Display name"), "X");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
-    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+    const saveBtn = within(dialog).getByRole("button", { name: "Save" });
+    // Save stays focusable (aria-disabled) so focus is not dropped to <body> while saving
+    expect(saveBtn).toHaveAttribute("aria-disabled", "true");
+    expect(saveBtn).not.toHaveAttribute("disabled");
+    expect(saveBtn).toHaveFocus();
+    await user.click(saveBtn);
+    await user.keyboard("{Enter}");
+    expect(api.patchGroup).toHaveBeenCalledTimes(1);
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled();
     await user.keyboard("{Escape}");
@@ -220,6 +228,32 @@ describe("Groups page", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     release();
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(editBtn()).toHaveFocus());
+  });
+
+  it("makes the app root inert while the edit dialog is open, and not after it closes", async () => {
+    setup([base]);
+    for (let i = 0; i < 2; i++) {
+      await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+      const dialog = screen.getByRole("dialog");
+      const search = screen.getByRole("textbox", { name: "Search groups", hidden: true });
+      expect(search.closest("[inert]")).not.toBeNull();
+      expect(dialog.closest("[inert]")).toBeNull();
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(document.querySelectorAll("[inert]")).toHaveLength(0);
+      // focus returns once the page is interactive again
+      await waitFor(() => expect(editBtn()).toHaveFocus());
+    }
+  });
+
+  it("leaves no inert attribute behind under StrictMode", async () => {
+    vi.mocked(api.listGroups).mockResolvedValue({ items: [base], total: 1 });
+    render(<StrictMode><Groups /></StrictMode>);
+    await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    expect(screen.getByRole("textbox", { name: "Search groups", hidden: true }).closest("[inert]")).not.toBeNull();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(document.querySelectorAll("[inert]")).toHaveLength(0);
     await waitFor(() => expect(editBtn()).toHaveFocus());
   });
 

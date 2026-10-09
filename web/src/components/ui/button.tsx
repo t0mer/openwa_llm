@@ -12,10 +12,28 @@ export interface ButtonProps extends ComponentPropsWithRef<"button">, VariantPro
  * With `asChild` the child (e.g. an <a>) is rendered instead of a <button>, so `type` is never
  * forwarded, and `disabled` (which links ignore) becomes aria-disabled + tabIndex -1 +
  * pointer-events-none, with clicks suppressed.
+ *
+ * A native button with `aria-disabled` (true) is "soft disabled": it looks disabled and ignores
+ * clicks (also form submission) but keeps focus. Use it for a button that holds focus while its
+ * action runs, because a `disabled` focused button drops focus to <body>.
  */
 export function Button({ className, variant, size, asChild, type, disabled, onClick, ...props }: ButtonProps) {
   const classes = cn(buttonVariants({ variant, size }), className);
-  if (!asChild) return <button className={classes} type={type ?? "button"} disabled={disabled} onClick={onClick} {...props} />;
+  if (!asChild) {
+    const soft = props["aria-disabled"] === true || props["aria-disabled"] === "true";
+    return (
+      <button
+        className={cn(classes, soft && "cursor-not-allowed opacity-50")}
+        type={type ?? "button"}
+        disabled={disabled}
+        onClick={(e) => {
+          if (soft) e.preventDefault();
+          else onClick?.(e);
+        }}
+        {...props}
+      />
+    );
+  }
   return (
     <Slot
       className={cn(classes, disabled && "pointer-events-none opacity-50")}
