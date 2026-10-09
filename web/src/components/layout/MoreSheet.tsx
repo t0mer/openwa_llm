@@ -5,7 +5,7 @@ import { useAuth } from "../../auth";
 import { THEME_OPTIONS, useThemeMode } from "../../hooks/useThemeMode";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
-import { Dialog, DialogContent, DialogTrigger } from "../ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogTrigger } from "../ui/dialog";
 import { NAV_ITEMS } from "./nav";
 
 /** The phone "More" tab: secondary pages, theme and log out in a bottom sheet. */
@@ -27,19 +27,21 @@ export function MoreSheet({ trigger }: { trigger: ReactNode }) {
       >
         <div className="flex flex-col gap-1">
           {NAV_ITEMS.filter((i) => !i.primary).map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                cn(
-                  "flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium",
-                  isActive ? "bg-primary-soft text-primary" : "text-foreground hover:bg-surface-2",
-                )
-              }
-            >
-              <Icon aria-hidden="true" className="size-5" />
-              {label}
-            </NavLink>
+            // DialogClose closes the sheet even when the link points at the current page.
+            <DialogClose asChild key={to}>
+              <NavLink
+                to={to}
+                className={({ isActive }) =>
+                  cn(
+                    "flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium",
+                    isActive ? "bg-primary-soft text-primary" : "text-foreground hover:bg-surface-2",
+                  )
+                }
+              >
+                <Icon aria-hidden="true" className="size-5" />
+                {label}
+              </NavLink>
+            </DialogClose>
           ))}
         </div>
         <div role="group" aria-label="Theme" className="flex flex-col gap-2">

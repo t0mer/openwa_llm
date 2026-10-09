@@ -37,7 +37,7 @@ export function DialogContent({
 }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className={overlay} />
+      <DialogPrimitive.Overlay data-dialog-overlay="" className={overlay} />
       <DialogPrimitive.Content
         {...(description ? {} : { "aria-describedby": undefined })}
         {...props}
