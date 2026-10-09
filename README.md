@@ -1,8 +1,8 @@
 # 📱 WhatsApp Group Summary Bot
 
-![release version](https://img.shields.io/github/v/release/ilanbenb/wa_llm)
-![Build Image](https://github.com/ilanbenb/wa_llm/actions/workflows/docker.yml/badge.svg)
-![Release](https://github.com/ilanbenb/wa_llm/actions/workflows/release.yml/badge.svg)
+![release version](https://img.shields.io/github/v/release/t0mer/openwa_llm)
+![Build Image](https://github.com/t0mer/openwa_llm/actions/workflows/docker.yml/badge.svg)
+![Release](https://github.com/t0mer/openwa_llm/actions/workflows/release.yml/badge.svg)
 
 AI-powered WhatsApp bot that **joins any group, tracks conversations, and generates intelligent summaries**.
 
