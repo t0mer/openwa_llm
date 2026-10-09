@@ -13,6 +13,7 @@ from handler.knowledge_base_answers import KnowledgeBaseAnswers
 from models import Message
 from whatsapp.jid import parse_jid
 from utils.chat_text import chat2text
+from utils.language import is_hebrew
 from utils.mentions import safe_extract_mentions
 from utils.opt_out import get_opt_out_map
 from whatsapp import WhatsAppGateway
@@ -123,15 +124,23 @@ class Router(BaseHandler):
         )
 
     async def about(self, message):
+        if is_hebrew(message.text):
+            text = "אני בוט בקוד פתוח שנוצר עבור קהילת GenAI Israel - https://llm.org.il.\nאני יכול לעזור לכם להתעדכן בהודעות בצ'אט ולענות על שאלות על בסיס הידע של הקבוצה.\nשלחו לי PRs ותנו לי כוכב ב-https://github.com/t0mer/openwa_llm ⭐️\nמבוסס במקור על https://github.com/ilanbenb/wa_llm"
+        else:
+            text = "I'm an open-source bot created for the GenAI Israel community - https://llm.org.il.\nI can help you catch up on the chat messages and answer questions based on the group's knowledge.\nPlease send me PRs and star me at https://github.com/t0mer/openwa_llm ⭐️\nOriginally based on https://github.com/ilanbenb/wa_llm"
         await self.send_message(
             message.chat_jid,
-            "I'm an open-source bot created for the GenAI Israel community - https://llm.org.il.\nI can help you catch up on the chat messages and answer questions based on the group's knowledge.\nPlease send me PRs and star me at https://github.com/t0mer/openwa_llm ⭐️\nOriginally based on https://github.com/ilanbenb/wa_llm",
+            text,
             # in_reply_to=message.message_id,
         )
 
     async def default_response(self, message):
+        if is_hebrew(message.text):
+            text = "סליחה, אבל נראה לי שאני לא יכול לעזור בזה כרגע 😅.\nאני יכול לעזור להתעדכן בהודעות בצ'אט או לענות על שאלות על בסיס הידע של הקבוצה."
+        else:
+            text = "I'm sorry, but I dont think this is something I can help with right now 😅.\n I can help catch up on the chat messages or answer questions based on the group's knowledge."
         await self.send_message(
             message.chat_jid,
-            "I'm sorry, but I dont think this is something I can help with right now 😅.\n I can help catch up on the chat messages or answer questions based on the group's knowledge.",
+            text,
             # in_reply_to=message.message_id,
         )
