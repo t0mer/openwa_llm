@@ -23,7 +23,9 @@ from .locks import group_lock
 logger = logging.getLogger(__name__)
 
 GRACE = timedelta(minutes=60)
+SCHEDULED_RUN_TIMEOUT: float = 20 * 60  # seconds; read at call time (tests patch it)
 UNEXPECTED_ERROR = "unexpected_error"
+TIMEOUT = "timeout"
 GROUP_NOT_MANAGED = "group_not_managed"
 
 SessionFactory = Callable[[], AsyncSession]
@@ -84,17 +86,18 @@ async def _run_claimed(
     group_jid: str,
 ) -> RunRecord:
     try:
-        async with group_lock(group_jid):
-            async with session_factory() as session:
-                group = await session.get(Group, group_jid)
-                if group is None or not group.managed:
-                    result = GroupSummaryResult(
-                        status="skipped", reason=GROUP_NOT_MANAGED
-                    )
-                else:
-                    result = await summarize_and_send_to_group(
-                        settings, session, whatsapp, group
-                    )
+        async with asyncio.timeout(SCHEDULED_RUN_TIMEOUT):
+            async with group_lock(group_jid):
+                async with session_factory() as session:
+                    group = await session.get(Group, group_jid)
+                    if group is None or not group.managed:
+                        result = GroupSummaryResult(
+                            status="skipped", reason=GROUP_NOT_MANAGED
+                        )
+                    else:
+                        result = await summarize_and_send_to_group(
+                            settings, session, whatsapp, group
+                        )
         rec = RunRecord(
             schedule_id,
             group_jid,
@@ -104,6 +107,9 @@ async def _run_claimed(
         )
     except asyncio.CancelledError:
         raise
+    except TimeoutError:
+        logger.warning("Scheduled summary timed out for group %s", group_jid)
+        rec = RunRecord(schedule_id, group_jid, "failed", TIMEOUT)
     except Exception:
         logger.exception("Scheduled summary failed for group %s", group_jid)
         rec = RunRecord(schedule_id, group_jid, "failed", UNEXPECTED_ERROR)

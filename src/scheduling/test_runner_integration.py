@@ -268,3 +268,56 @@ async def test_run_holds_the_group_lock(db_sessionmaker, monkeypatch):
     monkeypatch.setattr(runner, "summarize_and_send_to_group", fake)
     await run_due(SETTINGS, db_sessionmaker, MagicMock(), now=NOW)
     assert held == [True]
+
+
+async def test_hung_summary_times_out_releases_lock_and_next_schedule_runs(
+    db_sessionmaker, monkeypatch
+):
+    from scheduling.locks import group_lock
+
+    monkeypatch.setattr(runner, "SCHEDULED_RUN_TIMEOUT", 0.2)
+    s1 = await seed(db_sessionmaker)
+    s2 = await seed(db_sessionmaker)
+    calls = 0
+
+    async def fake(settings, session, whatsapp, group):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await asyncio.sleep(3600)
+        return GroupSummaryResult(status="sent", message_count=16)
+
+    monkeypatch.setattr(runner, "summarize_and_send_to_group", fake)
+    recs = await asyncio.wait_for(
+        run_due(SETTINGS, db_sessionmaker, MagicMock(), now=NOW), 5
+    )
+    assert sorted(r.status for r in recs) == ["failed", "sent"]
+    failed = [r for r in recs if r.status == "failed"][0]
+    assert failed.reason == "timeout"
+    row = await load(db_sessionmaker, failed.schedule_id)
+    assert (row.last_status, row.last_reason) == ("failed", "timeout")
+    assert {s1, s2} == {r.schedule_id for r in recs}
+    lock = group_lock("1@g.us")
+    await asyncio.wait_for(lock.acquire(), 0.5)
+    lock.release()
+
+
+async def test_cancellation_still_propagates_through_timeout(
+    db_sessionmaker, monkeypatch
+):
+    monkeypatch.setattr(runner, "SCHEDULED_RUN_TIMEOUT", 60)
+    sid = await seed(db_sessionmaker)
+    started = asyncio.Event()
+
+    async def hang(*a, **k):
+        started.set()
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(runner, "summarize_and_send_to_group", hang)
+    task = asyncio.create_task(
+        runner._run_claimed(SETTINGS, db_sessionmaker, MagicMock(), sid, "1@g.us")
+    )
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 2)
