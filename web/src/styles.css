@@ -137,29 +137,7 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
 .modal label { display: grid; gap: var(--s1); }
 .modal p { margin: 0; }
 
-/* ---------- SweetAlert2 theming (follows the app theme via CSS variables) ---------- */
-.swal2-container { font-family: var(--font); }
-.swal-popup.swal2-popup, .swal2-popup.swal2-toast.swal-popup { --swal2-background: var(--surface); --swal2-color: var(--text); --swal2-border: 1px solid var(--border); --swal2-toast-border: 1px solid var(--border); }
-/* Icon colours are hard-coded in sweetalert2, so override them with theme tokens. */
-.swal-popup .swal2-icon.swal2-success { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
-.swal-popup .swal2-icon.swal2-success [class^="swal2-success-line"] { background-color: var(--ok); }
-.swal-popup .swal2-icon.swal2-success .swal2-success-ring { border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
-.swal-popup .swal2-icon.swal2-success [class^="swal2-success-circular-line"], .swal-popup .swal2-icon.swal2-success .swal2-success-fix { background-color: var(--surface) !important; }
-.swal-popup .swal2-icon.swal2-error { color: var(--danger); border-color: var(--danger); }
-.swal-popup .swal2-icon.swal2-error [class^="swal2-x-mark-line"] { background-color: var(--danger); }
-.swal-popup .swal2-icon.swal2-warning { color: var(--warn); border-color: var(--warn); }
-.swal-popup .swal2-icon.swal2-info { color: var(--accent); border-color: var(--accent); }
-.swal-popup.swal2-popup { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); font-size: 15px; max-width: calc(100vw - 24px); }
-.swal-popup .swal2-title { color: var(--text); font-size: 1.2rem; }
-.swal-popup .swal2-html-container, .swal-popup .swal2-html-container p { color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
-.swal-popup .swal2-actions { gap: var(--s2); flex-wrap: wrap; }
-.swal-popup .swal2-actions .btn { min-height: var(--tap); padding: 0 var(--s5); }
-.swal-popup .swal2-close { color: var(--muted); }
-.swal-popup .swal2-close:hover { color: var(--text); background: transparent; }
-.swal-popup .swal2-timer-progress-bar { background: var(--accent); }
-.swal2-popup.swal2-toast.swal-popup { padding: var(--s3) var(--s4); align-items: center; max-width: min(380px, calc(100vw - 24px)); }
-.swal2-popup.swal2-toast .swal2-title { font-size: .95rem; font-weight: 500; margin: 0 var(--s3); text-align: left; }
-.swal2-container.swal2-backdrop-show { background: rgba(8, 12, 22, .55); }
+/* SweetAlert2 theming lives in index.css; only the results list (migrated in a later task) stays here. */
 .swal-results { list-style: none; margin: var(--s3) 0 0; padding: 0; text-align: left; max-height: 50vh; overflow-y: auto; display: grid; gap: var(--s2); }
 .swal-result { padding: var(--s2) var(--s3); background: var(--surface-2); border-radius: var(--radius-sm); }
 .swal-result strong { color: var(--text); }
@@ -188,9 +166,6 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: up
   input[type="checkbox"].switch { width: 52px; height: 30px; }
   input[type="checkbox"].switch::after { width: 24px; height: 24px; }
   input[type="checkbox"].switch:checked::after { transform: translateX(22px); }
-  .swal-popup.swal2-popup { width: calc(100vw - 24px); padding: var(--s4); }
-  .swal-popup .swal2-actions { flex-direction: column-reverse; width: 100%; }
-  .swal-popup .swal2-actions .btn { width: 100%; margin: 0; }
 }
 
 /* ---------- Responsive tables: stacked cards below 720px (uses data-label, no extra DOM) ---------- */

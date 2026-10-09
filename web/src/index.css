@@ -117,3 +117,135 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+/* SweetAlert2 theme.
+ * SweetAlert2 injects its own unlayered stylesheet, so these rules are
+ * unlayered too and read only the design tokens: popups follow the light/dark class on <html>
+ * with no per-theme rules. Buttons get their look from the Button classes set in alerts.ts.
+ */
+.swal2-container {
+  font-family: var(--font-sans);
+}
+.swal2-container.swal2-backdrop-show {
+  background: rgb(20 18 43 / 0.6);
+  backdrop-filter: blur(2px);
+}
+.swal-popup.swal2-popup,
+.swal2-popup.swal2-toast.swal-popup {
+  --swal2-background: var(--surface);
+  --swal2-color: var(--foreground);
+  --swal2-border: 1px solid var(--border);
+  --swal2-toast-border: 1px solid var(--border);
+  --swal2-border-radius: var(--radius-lg);
+  --swal2-timer-progress-bar-background: var(--primary);
+  --swal2-close-button-color: var(--muted-foreground);
+  --swal2-confirm-button-box-shadow: none;
+  --swal2-cancel-button-box-shadow: none;
+  --swal2-deny-button-box-shadow: none;
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  font-size: 15px;
+  max-width: calc(100vw - 24px);
+}
+.swal-popup .swal2-title {
+  color: var(--foreground);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.swal-popup .swal2-html-container,
+.swal-popup .swal2-html-container p {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.swal-popup .swal2-actions {
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.swal-popup .swal2-actions button {
+  margin: 0;
+  min-height: 2.5rem;
+}
+.swal-popup .swal2-actions button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.swal-popup .swal2-close {
+  color: var(--muted-foreground);
+  border-radius: var(--radius-md);
+}
+.swal-popup .swal2-close:hover {
+  color: var(--foreground);
+  background: var(--surface-2);
+}
+.swal-popup .swal2-close:focus-visible {
+  outline: 2px solid var(--ring);
+  box-shadow: none;
+}
+.swal-popup .swal2-timer-progress-bar {
+  background: var(--primary);
+}
+.swal2-popup.swal2-toast.swal-popup {
+  padding: 0.75rem 1rem;
+  align-items: center;
+  max-width: min(380px, calc(100vw - 24px));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+.swal2-popup.swal2-toast .swal2-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin: 0 0.75rem;
+  text-align: start;
+}
+/* Icon colours are hard-coded in SweetAlert2: recolour them with tokens. */
+.swal-popup .swal2-icon.swal2-success {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+}
+.swal-popup .swal2-icon.swal2-success [class^="swal2-success-line"] {
+  background-color: var(--success);
+}
+.swal-popup .swal2-icon.swal2-success .swal2-success-ring {
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+}
+.swal-popup .swal2-icon.swal2-success [class^="swal2-success-circular-line"],
+.swal-popup .swal2-icon.swal2-success .swal2-success-fix {
+  background-color: var(--surface) !important;
+}
+.swal-popup .swal2-icon.swal2-error {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.swal-popup .swal2-icon.swal2-error [class^="swal2-x-mark-line"] {
+  background-color: var(--danger);
+}
+.swal-popup .swal2-icon.swal2-warning {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+.swal-popup .swal2-icon.swal2-info,
+.swal-popup .swal2-icon.swal2-question {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+@media (max-width: 767px) {
+  .swal-popup.swal2-popup:not(.swal2-toast) {
+    width: calc(100vw - 24px);
+    padding: 1rem;
+  }
+  .swal-popup:not(.swal2-toast) .swal2-actions {
+    flex-direction: column-reverse;
+    width: 100%;
+  }
+  .swal-popup:not(.swal2-toast) .swal2-actions button {
+    width: 100%;
+    min-height: 2.75rem;
+  }
+}

@@ -1,5 +1,6 @@
 import Swal from "sweetalert2";
 import { describeResult } from "./results";
+import { buttonVariants } from "./components/ui/button-variants";
 import type { GroupActionResult } from "./types";
 
 /*
@@ -13,9 +14,10 @@ const classes = {
   popup: "swal-popup",
   title: "swal-title",
   htmlContainer: "swal-body",
-  confirmButton: "btn primary",
-  cancelButton: "btn secondary",
-  denyButton: "btn danger",
+  // The same classes the Button component uses, so popups match the rest of the UI in both themes.
+  confirmButton: buttonVariants({ variant: "primary" }),
+  cancelButton: buttonVariants({ variant: "outline" }),
+  denyButton: buttonVariants({ variant: "danger" }),
 };
 
 const baseOptions = {
@@ -71,7 +73,7 @@ export function confirm({ title, text, confirmText = "Confirm", danger = false }
   return modal(async () => {
   const result = await Swal.fire({
     ...baseOptions,
-    customClass: { ...classes, confirmButton: danger ? "btn danger-solid" : "btn primary" },
+    customClass: { ...classes, confirmButton: buttonVariants({ variant: danger ? "danger" : "primary" }) },
     icon: "warning",
     titleText: title,
     text,
