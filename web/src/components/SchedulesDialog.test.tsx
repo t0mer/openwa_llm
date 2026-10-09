@@ -649,7 +649,7 @@ describe("Groups integration", () => {
     vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [] });
     vi.mocked(api.createSchedule).mockResolvedValue(sched());
     render(<Groups />);
-    const opener = await screen.findByRole("button", { name: "Schedules for WA" });
+    const opener = await screen.findByRole("button", { name: "Schedules 0 for WA" });
     const count = () => opener.closest("tr, li")!.querySelector(".schedule-count");
     expect(count()).toHaveTextContent("0");
     await userEvent.click(opener);

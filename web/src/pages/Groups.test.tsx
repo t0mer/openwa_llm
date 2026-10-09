@@ -356,6 +356,6 @@ describe("Groups page", () => {
     expect(await screen.findByRole("columnheader", { name: "Schedules" })).toBeInTheDocument();
     const row = screen.getByRole("row", { name: /My alias/ });
     expect(row).toHaveTextContent("3");
-    expect(within(row).getByRole("button", { name: "Schedules for My alias" })).toHaveTextContent("Schedules");
+    expect(within(row).getByRole("button", { name: "Schedules 3 for My alias" })).toHaveTextContent("Schedules");
   });
 });

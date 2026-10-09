@@ -30,6 +30,8 @@ function fmt(ts: string): string {
 }
 
 const groupLabel = (g: Group) => g.display_name || g.group_name || g.group_jid;
+/** Starts with the visible button text ("Schedules 2") so the name contains its label (WCAG 2.5.3). */
+const schedulesName = (g: Group) => `Schedules ${g.schedule_count} for ${groupLabel(g)}`;
 
 /**
  * Dialog openers carry a stable key, so focus can return to the opener even when the table/cards
@@ -58,8 +60,8 @@ function GroupName({ g }: { g: Group }) {
       {g.group_topic && <div className="text-xs text-muted-foreground" dir="auto"><bdi>{g.group_topic}</bdi></div>}
       <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
         {g.community_keys.length > 0 && <span>Community keys: <bdi>{g.community_keys.join(", ")}</bdi></span>}
-        <span>{g.message_count} messages</span>
-        <span>Last summary: {fmt(g.last_summary_sync)}</span>
+        <span>{g.message_count} {g.message_count === 1 ? "message" : "messages"}</span>
+        <span>Last summary: <bdi>{fmt(g.last_summary_sync)}</bdi></span>
       </div>
     </div>
   );
@@ -91,11 +93,11 @@ function GroupTableRow(p: RowProps) {
       <td className="w-full px-3 py-1.5"><GroupName g={g} /></td>
       <td className="px-3 py-1.5"><RespondSwitch {...p} /></td>
       <td className="px-3 py-1.5"><SpamSwitch {...p} /></td>
-      <td className="px-3 py-1.5"><div className="w-28"><LanguageSelect {...p} className="min-h-11 lg:min-h-9" /></div></td>
+      <td className="px-3 py-1.5"><div className="w-28"><LanguageSelect {...p} className="min-h-9" /></div></td>
       <td className="px-3 py-1.5">
         <span className="inline-flex items-center gap-2">
           <span className="schedule-count tabular">{g.schedule_count}</span>
-          <Button size="table" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
+          <Button size="table" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={schedulesName(g)}>Schedules</Button>
         </span>
       </td>
       <td className="px-3 py-1.5 text-end"><Button size="table" data-opener={openerKey("edit", g)} onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button></td>
@@ -117,12 +119,12 @@ function GroupCard(p: RowProps) {
         <SwitchRow label="Respond"><RespondSwitch {...p} /></SwitchRow>
         <SwitchRow label="Spam notice"><SpamSwitch {...p} /></SwitchRow>
       </div>
-      <div className="flex items-end gap-2">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Language</span>
-          <LanguageSelect {...p} />
-        </div>
-        <Button size="lg" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>
+      <div className="flex flex-col gap-1">
+        <span className="text-xs text-muted-foreground">Language</span>
+        <LanguageSelect {...p} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button size="lg" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={schedulesName(g)}>
           Schedules <span className="schedule-count tabular">{g.schedule_count}</span>
         </Button>
         <Button size="lg" data-opener={openerKey("edit", g)} onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button>
@@ -134,10 +136,19 @@ function GroupCard(p: RowProps) {
 const HEADERS = ["Group", "Respond", "Spam notice", "Summary language", "Schedules"];
 
 function LoadingRows({ desktop }: { desktop: boolean }) {
+  const label = <span className="sr-only">Loading…</span>;
+  if (desktop) {
+    return (
+      <div role="status" className="rounded-lg border bg-surface p-3">
+        {label}
+        {Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="my-2 h-[72px]" />)}
+      </div>
+    );
+  }
   return (
-    <div role="status" className="rounded-lg border bg-surface p-3">
-      <span className="sr-only">Loading…</span>
-      {Array.from({ length: desktop ? 6 : 3 }, (_, i) => <Skeleton key={i} className={desktop ? "my-2 h-9" : "my-2 h-32"} />)}
+    <div role="status" className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      {label}
+      {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-72 rounded-lg" />)}
     </div>
   );
 }
