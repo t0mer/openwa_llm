@@ -76,6 +76,7 @@ _RICH_KINDS = {
 
 
 _MAX_DETAIL = 200
+_MAX_CARDS = 5
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -101,6 +102,7 @@ def _contact_detail(data: dict[str, Any]) -> str | None:
         if isinstance(data.get(key), list):
             cards.extend(data[key])
     cards.append(data.get("vcard"))
+    cards = cards[:_MAX_CARDS]
     names = []
     for card in cards:
         if not isinstance(card, str):
@@ -108,9 +110,9 @@ def _contact_detail(data: dict[str, Any]) -> str | None:
         for line in card.splitlines():
             match = re.match(r"FN(?:;[^:]*)?:(.*)$", line.strip(), re.I)
             if match and match.group(1).strip():
-                names.append(match.group(1).strip())
+                names.append(match.group(1).strip()[:_MAX_DETAIL])
                 break
-    return ", ".join(names) or None
+    return ", ".join(names)[:_MAX_DETAIL] or None
 
 
 def _location_detail(data: dict[str, Any]) -> str | None:

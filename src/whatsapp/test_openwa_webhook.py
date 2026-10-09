@@ -544,3 +544,11 @@ def test_location_ignores_body_and_long_bodies_are_capped():
     )
     poll = _text(type="poll", body="q" * 1000)
     assert poll == "[[Attached Poll]] " + "q" * 200
+
+
+def test_contact_detail_is_capped():
+    one = _text(type="vcard", vcard="FN:" + "x" * 5000)
+    assert one is not None and len(one) <= len("[[Attached Contact]] ") + 200
+    cards = [f"FN:{'n' * 100}{i}" for i in range(50)]
+    many = _text(type="vcard", vCards=cards)
+    assert many is not None and len(many) <= len("[[Attached Contact]] ") + 200
