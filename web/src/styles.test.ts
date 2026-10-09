@@ -39,4 +39,12 @@ describe("styles.css", () => {
     // the base rule must be at least as specific as the generic button rule so it wins
     expect(css).toMatch(/\nbutton\.burger \{ display: none;/);
   });
+
+  it("styles the schedules dialog with a stacked single-column layout on narrow screens", () => {
+    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(stripped).toMatch(/\.schedule-row \{[^}]*grid-template-columns: 1fr auto/);
+    const media = /@media \(max-width: 720px\) \{\s*\.schedule-row \{[^}]*grid-template-columns: 1fr;/;
+    expect(stripped).toMatch(media);
+    expect(stripped).toMatch(/\.modal\.modal-wide \{[^}]*overflow-y: auto/);
+  });
 });
