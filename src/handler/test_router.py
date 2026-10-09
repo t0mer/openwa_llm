@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, MagicMock, patch
 
 import pytest
@@ -294,3 +295,22 @@ async def test_router_summarize_with_opt_out(
     # but here we are using a closure.
     # However, since we mocked get_opt_out_map and asserted it was called, and the code uses the result,
     # it gives us confidence.
+
+
+async def _default_text(question):
+    router = Router(AsyncMock(), AsyncMock(), AsyncMock(), Mock())
+    router.send_message = AsyncMock()
+    await router.default_response(SimpleNamespace(chat_jid="chat@g.us", text=question))
+    assert router.send_message.await_args is not None
+    return router.send_message.await_args.args[1]
+
+
+async def test_default_response_english():
+    text = await _default_text("sing me a song")
+    assert text.startswith("I'm sorry")
+
+
+async def test_default_response_hebrew():
+    text = await _default_text("שיר לי שיר")
+    assert text.startswith("סליחה")
+    assert "I'm sorry" not in text

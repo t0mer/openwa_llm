@@ -61,3 +61,21 @@ async def test_summary_mentions_failure_sends_without_mentions(caplog):
     send.assert_awaited_once()
     assert _kwargs(send)["mentions"] == []
     assert "Could not compute mentions" in caplog.text
+
+
+async def test_summary_prompt_labels_the_request():
+    session = AsyncMock()
+    session.exec.return_value = SimpleNamespace(all=lambda: [])
+    router = Router(session, AsyncMock(), AsyncMock(), Mock())
+    router.send_message = AsyncMock()
+    agent = SimpleNamespace(run=AsyncMock(return_value=SimpleNamespace(output="x")))
+    with (
+        patch("handler.router.Agent", Mock(return_value=agent)),
+        patch("handler.router.get_opt_out_map", AsyncMock(return_value={})),
+    ):
+        await router.summarize(_msg(ASKER, "q"))
+    assert agent.run.await_args is not None
+    prompt = agent.run.await_args.args[0]
+    assert "# Request:\n" in prompt
+    assert "@227912345678901: hello" in prompt
+    assert "# History:" in prompt
