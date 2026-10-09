@@ -503,7 +503,7 @@ def test_rich_text_kinds():
 def test_rich_text_malformed_falls_back_to_label():
     assert _text(type="location", location="nope") == "[[Attached Location]]"
     assert (
-        _text(type="location", location={"latitude": "x", "longitude": None})
+        _text(type="location", location={"latitude": float("nan"), "longitude": None})
         == "[[Attached Location]]"
     )
     assert _text(type="vcard", vCards="oops", vcard=5) == "[[Attached Contact]]"
@@ -523,3 +523,10 @@ def test_vcard_crlf_and_param_forms():
     param = "BEGIN:VCARD\nFN;CHARSET=UTF-8:Avi Cohen\nEND:VCARD"
     assert _text(type="vcard", vCards=[crlf]) == "[[Attached Contact]] Dana Levi"
     assert _text(type="vcard", vCards=[param]) == "[[Attached Contact]] Avi Cohen"
+
+
+def test_location_keeps_full_coordinate_precision():
+    assert (
+        _text(type="location", latitude=32.0853, longitude=34.781768)
+        == "[[Attached Location]] 32.0853,34.781768"
+    )

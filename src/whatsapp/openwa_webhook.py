@@ -86,7 +86,9 @@ def _first_str(source: dict[str, Any], *keys: str) -> str | None:
 def _num(value: Any) -> str | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return f"{value:g}" if abs(value) < 1e6 else None
+    if not abs(value) <= 1e6:
+        return None
+    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 def _contact_detail(data: dict[str, Any]) -> str | None:
