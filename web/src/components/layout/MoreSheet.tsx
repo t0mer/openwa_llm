@@ -18,7 +18,13 @@ export function MoreSheet({ trigger }: { trigger: ReactNode }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent title="More">
+      <DialogContent
+        title="More"
+        // A SweetAlert popup owns Escape while it is open (toasts do not).
+        onEscapeKeyDown={(e) => {
+          if (document.querySelector(".swal2-popup:not(.swal2-toast)")) e.preventDefault();
+        }}
+      >
         <div className="flex flex-col gap-1">
           {NAV_ITEMS.filter((i) => !i.primary).map(({ to, label, icon: Icon }) => (
             <NavLink

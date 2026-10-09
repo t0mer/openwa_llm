@@ -123,6 +123,20 @@ describe("More sheet", () => {
     expect(screen.getByRole("button", { name: "More" })).toHaveClass("text-primary");
   });
 
+  it("ignores Escape while a SweetAlert popup is open, but not for a toast", async () => {
+    setup(375);
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    const pop = document.createElement("div");
+    pop.className = "swal2-popup";
+    document.body.append(pop);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "More" })).toBeInTheDocument();
+    pop.className = "swal2-popup swal2-toast";
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    pop.remove();
+  });
+
   it("logs out", async () => {
     setup(375);
     await userEvent.click(screen.getByRole("button", { name: "More" }));

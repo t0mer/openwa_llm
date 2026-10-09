@@ -1,7 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { Loader2, MessagesSquare } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
+import { Button } from "../components/ui/button";
+import { Field, Input } from "../components/ui/field";
+import { InlineError } from "../components/ui/inline-error";
+import { APP_NAME } from "../components/ui/page-header";
 
 export default function Login() {
   const { status, login } = useAuth();
@@ -9,8 +14,12 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    document.title = `Log in · ${APP_NAME}`;
+  }, []);
+
   if (status === "authenticated") return <Navigate to="/groups" replace />;
-  if (status === "disabled") return <p className="notice" role="status">The admin UI is disabled on this server.</p>;
+  if (status === "disabled") return <p className="p-8 text-center text-muted-foreground" role="status">The admin UI is disabled on this server.</p>;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -32,14 +41,22 @@ export default function Login() {
   }
 
   return (
-    <form className="login" onSubmit={submit}>
-      <h1>Admin login</h1>
-      <label>
-        Password
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus required autoComplete="current-password" />
-      </label>
-      <button type="submit" className="primary" disabled={busy}>Log in</button>
-      {error && <p role="alert" className="inline-error">{error}</p>}
-    </form>
+    <main className="grid min-h-dvh place-items-center px-4 py-8">
+      <form onSubmit={submit} className="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-6 shadow-overlay">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <MessagesSquare aria-hidden="true" className="size-8 text-primary" />
+          <p className="text-sm text-muted-foreground">{APP_NAME}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Admin login</h1>
+        </div>
+        <Field label="Password">
+          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus required autoComplete="current-password" />
+        </Field>
+        <Button type="submit" variant="primary" size="lg" disabled={busy} aria-busy={busy}>
+          {busy && <Loader2 data-testid="login-spinner" aria-hidden="true" className="animate-spin" />}
+          Log in
+        </Button>
+        {error && <InlineError>{error}</InlineError>}
+      </form>
+    </main>
   );
 }
