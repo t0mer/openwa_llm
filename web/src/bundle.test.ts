@@ -119,4 +119,14 @@ describe("production bundle", () => {
     // the Rubik face is declared for that family name
     expect(css).toMatch(/@font-face\{font-family:Rubik Variable/);
   });
+
+  it("modal SweetAlert containers take pointer input over a Radix modal (body has pointer-events:none)", () => {
+    const tree = parse(css);
+    // an unlayered rule for exactly `.swal2-container` (one class), so SweetAlert's own
+    // `body.swal2-toast-shown .swal2-container { pointer-events: none }` still wins for toasts
+    const rules = tree.filter((n) => !n.children && n.head.split(",").map((x) => x.trim()).includes(".swal2-container"));
+    const decls = rules.flatMap((r) => r.body.split(";").map((d) => d.trim().replace(/\s+/g, "")));
+    expect(decls).toContain("pointer-events:auto");
+  });
 });
+

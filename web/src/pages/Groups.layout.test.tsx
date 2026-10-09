@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Groups from "./Groups";
@@ -207,11 +207,13 @@ describe("Groups across a viewport resize", () => {
 
   it("swaps table and cards without duplicating controls or losing state", async () => {
     const vp = mockViewport(1024);
-    const many = Array.from({ length: 50 }, (_, i) => ({ ...base, group_jid: i === 0 ? "1@g.us" : `${i + 100}@g.us` }));
+    // A short page (3 rows) of a larger total keeps Next/Previous meaningful without rendering 50 rows twice.
+    const many = Array.from({ length: 3 }, (_, i) => ({ ...base, group_jid: i === 0 ? "1@g.us" : `${i + 100}@g.us` }));
     vi.mocked(api.listGroups).mockResolvedValue({ items: many, total: 120 });
     render(<Groups />);
     await screen.findByRole("table");
-    await userEvent.type(screen.getByRole("textbox", { name: "Search groups" }), "draft");
+    // one change event instead of one per typed character
+    fireEvent.change(screen.getByRole("textbox", { name: "Search groups" }), { target: { value: "draft" } });
     await userEvent.click(screen.getByRole("button", { name: "Disabled" }));
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50, managed: false })));
@@ -221,7 +223,7 @@ describe("Groups across a viewport resize", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(controls().respond).toHaveLength(1);
     expect(controls().edit).toHaveLength(1);
-    expect(controls().lang).toHaveLength(50);
+    expect(controls().lang).toHaveLength(many.length);
     expect(screen.getByRole("textbox", { name: "Search groups" })).toHaveValue("draft");
     expect(screen.getByRole("button", { name: "Disabled" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
@@ -231,7 +233,7 @@ describe("Groups across a viewport resize", () => {
     expect(screen.queryByRole("list", { name: "Groups" })).not.toBeInTheDocument();
     expect(controls().respond).toHaveLength(1);
     expect(controls().edit).toHaveLength(1);
-    expect(controls().lang).toHaveLength(50);
+    expect(controls().lang).toHaveLength(many.length);
     expect(screen.getByRole("textbox", { name: "Search groups" })).toHaveValue("draft");
     expect(screen.getByRole("button", { name: "Disabled" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
