@@ -39,3 +39,28 @@ def test_admin_session_secret_must_be_long_enough():
         Settings.model_validate({**REQUIRED, "admin_session_secret": "short"})
     ok = Settings.model_validate({**REQUIRED, "admin_session_secret": "x" * 32})
     assert ok.admin_session_secret == "x" * 32
+
+
+def test_timezone_defaults_to_jerusalem_and_scheduler_enabled(monkeypatch):
+    monkeypatch.delenv("TIMEZONE", raising=False)
+    monkeypatch.delenv("SCHEDULER_ENABLED", raising=False)
+    s = Settings.model_validate(REQUIRED)
+    assert s.timezone == "Asia/Jerusalem"
+    assert s.scheduler_enabled is True
+
+
+def test_timezone_accepts_valid_iana_name():
+    assert Settings.model_validate({**REQUIRED, "timezone": "UTC"}).timezone == "UTC"
+
+
+def test_invalid_timezone_is_rejected_readably_without_secrets():
+    with pytest.raises(ValidationError) as exc:
+        Settings.model_validate({**REQUIRED, "timezone": "Mars/Olympus"})
+    text = str(exc.value)
+    assert "timezone" in text and "Mars/Olympus" in text
+    assert "w" * 16 not in text  # webhook secret is not echoed
+
+
+def test_scheduler_can_be_disabled():
+    s = Settings.model_validate({**REQUIRED, "scheduler_enabled": False})
+    assert s.scheduler_enabled is False

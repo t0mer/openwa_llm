@@ -4,6 +4,7 @@ from typing import Self
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from whatsapp.jid import (
     parse_jid,
@@ -60,6 +61,22 @@ class Settings(BaseSettings):
     admin_password: str | None = None
     admin_session_secret: str | None = None  # >= 32 chars
     admin_cookie_secure: bool = False
+
+    # Scheduled summaries
+    timezone: str = "Asia/Jerusalem"  # IANA zone schedules are evaluated in
+    scheduler_enabled: bool = True
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, ValueError, OSError) as e:
+            raise ValueError(
+                f"Invalid TIMEZONE '{v}': expected an IANA name such as "
+                "'Asia/Jerusalem' or 'UTC'"
+            ) from e
+        return v
 
     @field_validator("qa_testers")
     @classmethod
