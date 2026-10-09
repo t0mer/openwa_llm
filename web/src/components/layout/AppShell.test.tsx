@@ -9,8 +9,9 @@ import AppShell from "./AppShell";
 const logout = vi.fn();
 vi.mock("../../auth", () => ({ useAuth: () => ({ logout }) }));
 
+let viewport: ReturnType<typeof mockViewport>;
 function setup(width: number, path = "/groups") {
-  mockViewport(width);
+  viewport = mockViewport(width);
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
@@ -43,10 +44,10 @@ describe("AppShell breakpoints", () => {
   });
 
   it("is full width from 1024 and icon-only below, with labels on the links", () => {
-    setup(1024);
+    const first = setup(1024);
     expect(document.querySelector("aside")).toHaveClass("w-60");
     expect(within(screen.getByRole("navigation")).getByText("Groups")).toBeVisible();
-    document.body.innerHTML = "";
+    first.unmount();
     setup(1023);
     expect(document.querySelector("aside")).toHaveClass("w-16");
     const link = screen.getByRole("link", { name: "Bot actions" });
@@ -71,6 +72,36 @@ describe("AppShell breakpoints", () => {
   it("keeps content clear of the fixed tab bar on phones", () => {
     setup(375);
     expect(screen.getByRole("main")).toHaveClass("pb-24", "md:pb-10");
+  });
+});
+
+describe("resizing", () => {
+  it("swaps sidebar wide, icon-only and tab bar as the viewport changes", () => {
+    setup(1024);
+    expect(document.querySelector("aside")).toHaveClass("w-60");
+    viewport.setWidth(800);
+    expect(document.querySelector("aside")).toHaveClass("w-16");
+    viewport.setWidth(600);
+    expect(document.querySelector("aside")).toBeNull();
+    expect(screen.getByRole("button", { name: "More" })).toBeInTheDocument();
+    viewport.setWidth(1024);
+    expect(document.querySelector("aside")).toHaveClass("w-60");
+    expect(screen.queryByRole("button", { name: "More" })).not.toBeInTheDocument();
+  });
+
+  it("closes an open More sheet when the viewport becomes desktop", async () => {
+    setup(600);
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("dialog", { name: "More" })).toBeInTheDocument();
+    viewport.setWidth(1024);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("removes its media query listeners on unmount", () => {
+    const { unmount } = setup(1024);
+    expect(viewport.listenerCount()).toBeGreaterThan(0);
+    unmount();
+    expect(viewport.listenerCount()).toBe(0);
   });
 });
 
@@ -111,7 +142,7 @@ describe("More sheet", () => {
   it("closes on a backdrop click", async () => {
     setup(375);
     await userEvent.click(screen.getByRole("button", { name: "More" }));
-    await userEvent.click(document.querySelector(".fixed.inset-0")!);
+    await userEvent.click(document.querySelector("[data-dialog-overlay]")!);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -135,6 +166,23 @@ describe("More sheet", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     pop.remove();
+  });
+
+  it("closes when the link for the current page is tapped", async () => {
+    setup(375, "/opt-outs");
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    await userEvent.click(screen.getByRole("link", { name: "Opt-outs" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it.each(["/Opt-Outs", "/opt-outs/", "/opt-outs/x"])("highlights More for %s", (path) => {
+    setup(375, path);
+    expect(screen.getByRole("button", { name: "More" })).toHaveClass("text-primary");
+  });
+
+  it("does not highlight More on a primary page or a lookalike path", () => {
+    setup(375, "/opt-outsider");
+    expect(screen.getByRole("button", { name: "More" })).not.toHaveClass("text-primary");
   });
 
   it("logs out", async () => {

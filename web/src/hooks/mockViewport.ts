@@ -1,7 +1,14 @@
+import { act } from "@testing-library/react";
 import { vi } from "vitest";
 
-/** Stub window.matchMedia for a viewport width (supports min-width / max-width queries and prefers-color-scheme). */
-export function mockViewport(width: number, opts: { dark?: boolean } = {}) {
+/**
+ * Stub window.matchMedia for a viewport width (min-width / max-width queries and prefers-color-scheme).
+ * `setWidth` resizes and dispatches change events to the registered listeners inside act().
+ * `listenerCount` is how many are currently registered.
+ */
+export function mockViewport(initial: number, opts: { dark?: boolean } = {}) {
+  let width = initial;
+  const entries = new Set<{ q: string; matches: boolean; fn: () => void }>();
   const match = (q: string) => {
     const min = /min-width:\s*(\d+)px/.exec(q);
     const max = /max-width:\s*(\d+)px/.exec(q);
@@ -10,15 +17,31 @@ export function mockViewport(width: number, opts: { dark?: boolean } = {}) {
   };
   vi.stubGlobal(
     "matchMedia",
-    vi.fn((q: string) => ({
-      matches: match(q),
-      media: q,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-      onchange: null,
-    })),
+    vi.fn((q: string) => {
+      const mql = {
+        get matches() {
+          return match(q);
+        },
+        media: q,
+        addEventListener: (_: string, fn: () => void) => entries.add({ q, matches: match(q), fn }),
+        removeEventListener: (_: string, fn: () => void) => {
+          for (const e of entries) if (e.fn === fn) entries.delete(e);
+        },
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        onchange: null,
+      };
+      return mql;
+    }),
   );
+  return {
+    setWidth(next: number) {
+      width = next;
+      act(() => {
+        for (const e of [...entries]) e.fn();
+      });
+    },
+    listenerCount: () => entries.size,
+  };
 }

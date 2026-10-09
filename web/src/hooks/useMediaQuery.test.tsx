@@ -12,16 +12,21 @@ describe("useMediaQuery", () => {
 
   it("follows change events", () => {
     let listener: () => void = () => {};
+    let removeSpy: ReturnType<typeof vi.fn> = vi.fn();
     const mql = {
       matches: false,
       addEventListener: (_: string, l: () => void) => (listener = l),
       removeEventListener: vi.fn(),
     };
+    removeSpy = mql.removeEventListener;
     vi.stubGlobal("matchMedia", vi.fn(() => mql));
-    const { result } = renderHook(() => useMediaQuery("(min-width: 768px)"));
+    const { result, unmount } = renderHook(() => useMediaQuery("(min-width: 768px)"));
     expect(result.current).toBe(false);
     mql.matches = true;
     act(() => listener());
     expect(result.current).toBe(true);
+    expect(removeSpy).not.toHaveBeenCalled();
+    unmount();
+    expect(removeSpy).toHaveBeenCalledWith("change", listener);
   });
 });
