@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState } from "react";
+import { BookOpen, CircleAlert, CircleCheck, CircleDot, Loader, Send } from "lucide-react";
 import { api } from "../api";
 import { confirm, errorDialog, showSummaryResults, toast } from "../alerts";
+import { Badge, type Tone } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { InlineError } from "../components/ui/inline-error";
+import { PageHeader } from "../components/ui/page-header";
+import { Section } from "../components/ui/section";
+import { Skeleton } from "../components/ui/skeleton";
 import { describeResult } from "../results";
 import type { ActionName, ActionStatus } from "../types";
 import { useErrorToast, useLoad } from "../useLoad";
 
-const CARDS: { name: ActionName; title: string; button: string; description: string; confirm: string }[] = [
+const CARDS: { name: ActionName; icon: typeof Send; title: string; button: string; description: string; confirm: string }[] = [
   {
     name: "summarize",
+    icon: Send,
     title: "Group summaries",
     button: "Run summaries now",
     description: "Generates an AI summary for every group where the bot is enabled and posts it to the group and its community groups.",
@@ -15,6 +23,7 @@ const CARDS: { name: ActionName; title: string; button: string; description: str
   },
   {
     name: "load_kb",
+    icon: BookOpen,
     title: "Knowledge base",
     button: "Load knowledge base topics",
     description: "Splits new conversations in enabled groups into topics and stores their embeddings.",
@@ -22,28 +31,38 @@ const CARDS: { name: ActionName; title: string; button: string; description: str
   },
 ];
 
-function badge(state: ActionStatus["state"]) {
-  const map = { idle: ["Idle", ""], running: ["Running", "warn"], succeeded: ["Succeeded", "ok"], failed: ["Failed", "bad"] } as const;
-  const [label, cls] = map[state];
-  return <span className={`badge ${cls}`}>{label}</span>;
+const STATES = {
+  idle: { label: "Idle", tone: "neutral", icon: CircleDot },
+  running: { label: "Running", tone: "warning", icon: Loader },
+  succeeded: { label: "Succeeded", tone: "success", icon: CircleCheck },
+  failed: { label: "Failed", tone: "danger", icon: CircleAlert },
+} as const satisfies Record<ActionStatus["state"], { label: string; tone: Tone; icon: unknown }>;
+
+function StateBadge({ state }: { state: ActionStatus["state"] }) {
+  const { label, tone, icon } = STATES[state];
+  return <Badge tone={tone} icon={icon}>{label}</Badge>;
 }
 
-function renderResults(name: ActionName, status: ActionStatus | undefined) {
+const RESULT_TONE = { sent: "success", failed: "danger" } as const;
+
+function Results({ name, status }: { name: ActionName; status: ActionStatus | undefined }) {
   if (name !== "summarize" || !status) return null;
   const results = status.results ?? [];
   const message = status.summary?.message;
   if (!results.length && !message) return null;
   return (
-    <div className="results">
-      <h3>Last run</h3>
-      {status.summary && <p className="muted">{status.summary.managed_groups} managed group(s){message ? ` — ${message}` : ""}</p>}
+    <div className="flex flex-col gap-2 border-t pt-3">
+      <h3 className="text-sm font-semibold">Last run</h3>
+      {status.summary && <p className="text-sm text-muted-foreground">{status.summary.managed_groups} managed group(s){message ? ` — ${message}` : ""}</p>}
       {results.length > 0 && (
-        <ul aria-label="Summary results per group">
+        <ul role="list" aria-label="Summary results per group" className="m-0 list-none divide-y overflow-hidden rounded-md border p-0">
           {results.map((r) => (
-            <li key={r.group_jid}>
-              <span className={`badge ${r.status === "sent" ? "ok" : r.status === "failed" ? "bad" : "warn"}`}>{r.status}</span>{" "}
-              <strong>{r.group_name}</strong>
-              <div className="muted">{describeResult(r)}</div>
+            <li key={r.group_jid} className="flex items-start gap-3 p-3">
+              <Badge className="mt-0.5" tone={RESULT_TONE[r.status as keyof typeof RESULT_TONE] ?? "warning"}>{r.status}</Badge>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <strong className="font-medium" dir="auto"><bdi>{r.group_name}</bdi></strong>
+                <div className="text-xs text-muted-foreground">{describeResult(r)}</div>
+              </div>
             </li>
           ))}
         </ul>
@@ -95,34 +114,36 @@ export default function Actions() {
   }
 
   return (
-    <section>
-      <h1>Bot actions</h1>
-      <p className="muted">Jobs run in the background on the server. Status is kept in memory and resets when the server restarts.</p>
+    <div className="flex flex-col gap-5">
+      <PageHeader title="Bot actions" description="Jobs run in the background on the server. Status is kept in memory and resets when the server restarts." />
+      {error && <InlineError>{error}</InlineError>}
       {loading && !data ? (
-        <p className="notice" role="status">Loading…</p>
+        <div role="status" className="grid gap-4 md:grid-cols-2">
+          <span className="sr-only">Loading…</span>
+          <Skeleton className="h-56" />
+          <Skeleton className="h-56" />
+        </div>
       ) : (
-        <div className="cards">
+        <div className="grid items-start gap-4 md:grid-cols-2">
           {CARDS.map((card) => {
             const status = data?.[card.name];
             return (
-              <div className="card" key={card.name}>
-                <h2>{card.title}</h2>
-                <p className="muted">{card.description}</p>
-                <div>{status && badge(status.state)}</div>
-                <div className="muted">Started: {when(status?.started_at ?? null)}</div>
-                <div className="muted">Finished: {when(status?.finished_at ?? null)}</div>
-                {renderResults(card.name, status)}
-                {status?.error && <div role="alert" className="inline-error">{status.error}</div>}
-                <div>
-                  <button type="button" className="primary" disabled={status?.state === "running" || starting !== null} onClick={() => void run(card.name, card.title, card.confirm)}>
-                    {card.button}
-                  </button>
+              <Section key={card.name} title={card.title} description={card.description}>
+                <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
+                  <div>{status && <StateBadge state={status.state} />}</div>
+                  <div>Started: {when(status?.started_at ?? null)}</div>
+                  <div>Finished: {when(status?.finished_at ?? null)}</div>
                 </div>
-              </div>
+                <Results name={card.name} status={status} />
+                {status?.error && <InlineError>{status.error}</InlineError>}
+                <Button variant="primary" size="lg" className="w-full md:w-auto md:self-start" disabled={status?.state === "running" || starting !== null} onClick={() => void run(card.name, card.title, card.confirm)}>
+                  <card.icon aria-hidden="true" />{card.button}
+                </Button>
+              </Section>
             );
           })}
         </div>
       )}
-    </section>
+    </div>
   );
 }
