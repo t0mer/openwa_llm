@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { confirm, toast } from "../alerts";
+import SchedulesDialog from "../components/SchedulesDialog";
 import TagInput from "../components/TagInput";
 import type { Group, GroupPatch, GroupSort, SummaryLanguage } from "../types";
 import { useErrorToast, useLoad } from "../useLoad";
@@ -38,6 +39,7 @@ export default function Groups() {
   const [sort, setSort] = useState<GroupSort>("name");
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<Group | null>(null);
+  const [scheduling, setScheduling] = useState<Group | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [savingJid, setSavingJid] = useState<string | null>(null);
 
@@ -150,7 +152,7 @@ export default function Groups() {
                 <td data-label="Last summary"><div className="cell-value">{fmt(g.last_summary_sync)}</div></td>
                 <td data-label="Schedules"><div className="cell-value">
                   <span className="schedule-count">{g.schedule_count}</span>{" "}
-                  <button type="button" aria-label={`Schedules for ${label(g)}`}>Schedules</button>
+                  <button type="button" onClick={() => setScheduling(g)} aria-label={`Schedules for ${label(g)}`}>Schedules</button>
                 </div></td>
                 <td className="cell-actions"><button type="button" onClick={() => setEditing(g)} aria-label={`Edit ${g.group_jid}`}>Edit</button></td>
               </tr>
@@ -165,6 +167,13 @@ export default function Groups() {
         <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</button>
         <button type="button" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</button>
       </div>
+      {scheduling && (
+        <SchedulesDialog
+          group={{ group_jid: scheduling.group_jid, label: label(scheduling), managed: scheduling.managed }}
+          onClose={() => setScheduling(null)}
+          onChanged={() => void reload()}
+        />
+      )}
       {editing && (
         <EditGroup
           group={editing}
