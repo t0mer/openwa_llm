@@ -16,11 +16,11 @@ from admin.auth import CSRF_HEADER, CSRF_VALUE, SESSION_COOKIE, create_session_t
 from admin.router import build_admin_router
 from api.deps import get_db_async_session
 from config import get_settings
-from models import Group, Message, OptOut, Reaction, Sender
+from models import Group, GroupSummarySchedule, Message, OptOut, Reaction, Sender
 
 TABLES = [
     model.__table__  # pyright: ignore[reportAttributeAccessIssue]
-    for model in (Sender, Group, Message, Reaction, OptOut)
+    for model in (Sender, Group, Message, Reaction, OptOut, GroupSummarySchedule)
 ]
 
 
