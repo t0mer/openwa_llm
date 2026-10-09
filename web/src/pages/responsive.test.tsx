@@ -1,7 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Contacts from "./Contacts";
-import Groups from "./Groups";
 import Messages from "./Messages";
 import OptOuts from "./OptOuts";
 import { api } from "../api";
@@ -25,7 +24,7 @@ beforeEach(() => {
 });
 
 describe("responsive tables", () => {
-  it.each([["Groups", Groups], ["Contacts", Contacts], ["OptOuts", OptOuts], ["Messages", Messages]] as const)(
+  it.each([["Contacts", Contacts], ["OptOuts", OptOuts], ["Messages", Messages]] as const)(
     "%s: every labelled cell has exactly one value wrapper",
     async (_n, Page) => {
       render(<Page />);

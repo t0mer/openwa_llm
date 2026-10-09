@@ -1,9 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Groups from "./Groups";
 import { api } from "../api";
 import type { Group } from "../types";
+import { mockViewport } from "../hooks/mockViewport";
 
 vi.mock("../api", async (orig) => {
   const actual = await orig<typeof import("../api")>();
@@ -28,6 +29,7 @@ function setup(groups: Group[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockViewport(1024);
   vi.mocked(confirm).mockResolvedValue(true);
 });
 
@@ -40,7 +42,7 @@ describe("Groups page", () => {
 
   it("asks for confirmation before enabling managed and shows last_summary_sync", async () => {
     setup([base]);
-    await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /respond.*1@g\.us/i }));
     expect(confirm).toHaveBeenCalledTimes(1);
     const opts = vi.mocked(confirm).mock.calls[0][0] as { title: string; text: string };
     expect(opts.title).toContain("WA name");
@@ -51,15 +53,15 @@ describe("Groups page", () => {
   it("does not enable managed when the confirmation is declined", async () => {
     vi.mocked(confirm).mockResolvedValue(false);
     setup([base]);
-    await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /respond.*1@g\.us/i }));
     expect(api.patchGroup).not.toHaveBeenCalled();
-    expect(screen.getByRole("checkbox", { name: /respond.*1@g\.us/i })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: /respond.*1@g\.us/i })).not.toBeChecked();
   });
 
   it("disabling managed and toggling the spam notice do not ask for confirmation", async () => {
     setup([{ ...base, managed: true }]);
-    await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
-    await userEvent.click(screen.getByRole("checkbox", { name: /spam.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /respond.*1@g\.us/i }));
+    await userEvent.click(screen.getByRole("switch", { name: /spam.*1@g\.us/i }));
     expect(confirm).not.toHaveBeenCalled();
     expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { managed: false });
     expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { notify_on_spam: true });
@@ -79,28 +81,28 @@ describe("Groups page", () => {
 
   it("toasts success after a save", async () => {
     setup([{ ...base, managed: true }]);
-    await userEvent.click(await screen.findByRole("checkbox", { name: /spam.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /spam.*1@g\.us/i }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("WA name")));
   });
 
   it("toasts the error and keeps the old value when saving fails", async () => {
     setup([base]);
     vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("boom"));
-    await userEvent.click(await screen.findByRole("checkbox", { name: /spam.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /spam.*1@g\.us/i }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /spam.*1@g\.us/i })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: /spam.*1@g\.us/i })).not.toBeChecked();
   });
 
   it("failed list save toasts, reloads, and reflects server state", async () => {
     setup([base]);
     vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("nope"));
-    const box = await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i });
+    const box = await screen.findByRole("switch", { name: /respond.*1@g\.us/i });
     const before = vi.mocked(api.listGroups).mock.calls.length;
     await userEvent.click(box);
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("nope"));
     await waitFor(() => expect(vi.mocked(api.listGroups).mock.calls.length).toBeGreaterThan(before));
-    expect(screen.getByRole("checkbox", { name: /respond.*1@g\.us/i })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: /respond.*1@g\.us/i })).not.toBeChecked();
   });
 
   it("keeps the dialog open with edits and an inner alert on failure, closes on retry success", async () => {
@@ -183,9 +185,9 @@ describe("Groups page", () => {
     expect(cancelBtn).toHaveFocus();
     await userEvent.tab();
     expect(name).toHaveFocus();
-    expect(document.querySelector("section > .toolbar")).toHaveAttribute("inert");
+    expect(document.querySelector("form[role=search]")).toHaveAttribute("inert");
     await userEvent.click(cancelBtn);
-    expect(document.querySelector("section > .toolbar")).not.toHaveAttribute("inert");
+    expect(document.querySelector("form[role=search]")).not.toHaveAttribute("inert");
   });
 
   it("ignores Escape and backdrop clicks while saving", async () => {
@@ -264,10 +266,8 @@ describe("Groups page", () => {
   it("shows the schedule count and a Schedules button naming the group", async () => {
     setup([{ ...base, display_name: "My alias", schedule_count: 3 }]);
     expect(await screen.findByRole("columnheader", { name: "Schedules" })).toBeInTheDocument();
-    const cell = document.querySelector('td[data-label="Schedules"]')!;
-    expect(cell.children).toHaveLength(1);
-    expect(cell.children[0]).toHaveClass("cell-value");
-    expect(cell).toHaveTextContent("3");
-    expect(within(cell as HTMLElement).getByRole("button", { name: "Schedules for My alias" })).toHaveTextContent("Schedules");
+    const row = screen.getByRole("row", { name: /My alias/ });
+    expect(row).toHaveTextContent("3");
+    expect(within(row).getByRole("button", { name: "Schedules for My alias" })).toHaveTextContent("Schedules");
   });
 });

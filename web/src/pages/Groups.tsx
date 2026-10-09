@@ -1,8 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Users } from "lucide-react";
 import { api } from "../api";
 import { confirm, toast } from "../alerts";
 import SchedulesDialog from "../components/SchedulesDialog";
 import TagInput from "../components/TagInput";
+import { Button } from "../components/ui/button";
+import { EmptyState } from "../components/ui/empty-state";
+import { Input, Select } from "../components/ui/field";
+import { FilterChip } from "../components/ui/filter-chip";
+import { InlineError } from "../components/ui/inline-error";
+import { PageHeader } from "../components/ui/page-header";
+import { Skeleton } from "../components/ui/skeleton";
+import { Switch } from "../components/ui/switch";
+import { MD_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import type { Group, GroupPatch, GroupSort, SummaryLanguage } from "../types";
 import { useErrorToast, useLoad } from "../useLoad";
 
@@ -12,6 +22,13 @@ const LANGUAGES: { value: SummaryLanguage; label: string }[] = [
   { value: "he", label: "HE" },
   { value: "en", label: "EN" },
   { value: "ru", label: "RU" },
+];
+
+type Managed = "all" | "managed" | "unmanaged";
+const FILTERS: { value: Managed; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "managed", label: "Enabled" },
+  { value: "unmanaged", label: "Disabled" },
 ];
 
 /** Select value ("" = Auto) to API value. */
@@ -32,10 +49,128 @@ function fmt(ts: string): string {
   return new Date(ts).toLocaleString();
 }
 
+const groupLabel = (g: Group) => g.display_name || g.group_name || g.group_jid;
+
+/** Everything a row or card needs to act on one group. */
+interface RowProps {
+  group: Group;
+  saving: boolean;
+  onToggleManaged: (g: Group) => void;
+  onSave: (g: Group, patch: GroupPatch) => void;
+  onSchedules: (g: Group) => void;
+  onEdit: (g: Group) => void;
+}
+
+function GroupName({ g }: { g: Group }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <strong className="font-medium" dir="auto"><bdi>{groupLabel(g)}</bdi></strong>
+      <div className="break-all text-xs text-muted-foreground">
+        {g.display_name && g.group_name && <>WhatsApp: <bdi>{g.group_name}</bdi> · </>}<bdi className="jid">{g.group_jid}</bdi>
+      </div>
+      {g.group_topic && <div className="text-xs text-muted-foreground" dir="auto"><bdi>{g.group_topic}</bdi></div>}
+    </div>
+  );
+}
+
+/** Larger hit area (44px) without changing the switch's look. */
+const SWITCH_HIT = "relative after:absolute after:-inset-2.5 after:content-['']";
+
+function RespondSwitch({ group: g, saving, onToggleManaged }: RowProps) {
+  return <Switch className={SWITCH_HIT} checked={g.managed} onCheckedChange={() => onToggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} disabled={saving} />;
+}
+
+function SpamSwitch({ group: g, saving, onSave }: RowProps) {
+  return <Switch className={SWITCH_HIT} checked={g.notify_on_spam} onCheckedChange={() => onSave(g, { notify_on_spam: !g.notify_on_spam })} aria-label={`Spam notice in ${g.group_jid}`} disabled={saving} />;
+}
+
+function LanguageSelect({ group: g, saving, onSave, className }: RowProps & { className?: string }) {
+  return (
+    <Select className={className} value={g.summary_language ?? ""} onChange={(e) => onSave(g, { summary_language: toLanguage(e.target.value) })} aria-label={`Summary language for ${groupLabel(g)}`} disabled={saving}>
+      <LanguageOptions />
+    </Select>
+  );
+}
+
+function Keys({ g }: { g: Group }) {
+  return g.community_keys.length ? <span dir="auto">{g.community_keys.join(", ")}</span> : <span className="text-muted-foreground">—</span>;
+}
+
+function GroupTableRow(p: RowProps) {
+  const g = p.group;
+  return (
+    <tr className="border-t align-middle hover:bg-surface-2/60">
+      <td className="px-3 py-1.5"><GroupName g={g} /></td>
+      <td className="px-3 py-1.5"><RespondSwitch {...p} /></td>
+      <td className="px-3 py-1.5"><SpamSwitch {...p} /></td>
+      <td className="px-3 py-1.5"><div className="w-28"><LanguageSelect {...p} className="min-h-9" /></div></td>
+      <td className="px-3 py-1.5"><Keys g={g} /></td>
+      <td className="tabular px-3 py-1.5">{g.message_count}</td>
+      <td className="whitespace-nowrap px-3 py-1.5">{fmt(g.last_summary_sync)}</td>
+      <td className="px-3 py-1.5">
+        <span className="inline-flex items-center gap-2">
+          <span className="schedule-count tabular">{g.schedule_count}</span>
+          <Button size="sm" onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
+        </span>
+      </td>
+      <td className="px-3 py-1.5 text-end"><Button size="sm" onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button></td>
+    </tr>
+  );
+}
+
+function Pair({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="m-0 flex min-h-11 items-center text-sm">{children}</dd>
+    </div>
+  );
+}
+
+function GroupCard(p: RowProps) {
+  const g = p.group;
+  return (
+    <li className="flex flex-col gap-3 p-4">
+      <GroupName g={g} />
+      <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2">
+        <Pair label="Respond"><RespondSwitch {...p} /></Pair>
+        <Pair label="Spam notice"><SpamSwitch {...p} /></Pair>
+        <div className="col-span-2 flex flex-col gap-1.5">
+          <dt className="text-xs font-medium text-muted-foreground">Summary language</dt>
+          <dd className="m-0"><LanguageSelect {...p} /></dd>
+        </div>
+        <Pair label="Community keys"><Keys g={g} /></Pair>
+        <Pair label="Messages"><span className="tabular">{g.message_count}</span></Pair>
+        <div className="col-span-2 flex flex-col gap-1.5">
+          <dt className="text-xs font-medium text-muted-foreground">Last summary</dt>
+          <dd className="m-0 text-sm">{fmt(g.last_summary_sync)}</dd>
+        </div>
+      </dl>
+      <div className="flex items-center gap-2">
+        <span className="schedule-count tabular text-sm">{g.schedule_count}</span>
+        <Button size="lg" className="flex-1" onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
+        <Button size="lg" className="flex-1" onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button>
+      </div>
+    </li>
+  );
+}
+
+const HEADERS = ["Group", "Respond", "Spam notice", "Summary language", "Community keys", "Messages", "Last summary", "Schedules"];
+
+function LoadingRows({ desktop }: { desktop: boolean }) {
+  return (
+    <div role="status" className="rounded-lg border bg-surface p-3">
+      <span className="sr-only">Loading…</span>
+      {Array.from({ length: desktop ? 6 : 3 }, (_, i) => <Skeleton key={i} className={desktop ? "my-2 h-9" : "my-2 h-32"} />)}
+    </div>
+  );
+}
+
 export default function Groups() {
+  const desktop = useMediaQuery(MD_QUERY);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
-  const [managed, setManaged] = useState<"all" | "managed" | "unmanaged">("all");
+  const [managed, setManaged] = useState<Managed>("all");
   const [sort, setSort] = useState<GroupSort>("name");
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<Group | null>(null);
@@ -56,7 +191,7 @@ export default function Groups() {
   );
   useErrorToast(error);
 
-  const label = (g: Group) => g.display_name || g.group_name || g.group_jid;
+  const label = groupLabel;
 
   /** Save a patch. Failures show inline in the edit dialog, otherwise as a toast. */
   async function save(group: Group, patch: GroupPatch, inline = false): Promise<boolean> {
@@ -98,74 +233,71 @@ export default function Groups() {
   }
 
   const total = data?.total ?? 0;
+  const items = data?.items ?? [];
+  const rowProps = (group: Group): RowProps => ({
+    group,
+    saving: savingJid === group.group_jid,
+    onToggleManaged: (g) => void toggleManaged(g),
+    onSave: (g, patch) => void save(g, patch),
+    onSchedules: setScheduling,
+    onEdit: setEditing,
+  });
 
   return (
-    <section>
-      <h1>Groups</h1>
-      <form className="toolbar" onSubmit={onSearch}>
-        <input className="grow" placeholder="Search name, topic or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search groups" />
-        <button type="submit">Search</button>
-        <select value={managed} onChange={(e) => { setOffset(0); setManaged(e.target.value as typeof managed); }} aria-label="Filter">
-          <option value="all">All groups</option>
-          <option value="managed">Bot enabled</option>
-          <option value="unmanaged">Bot disabled</option>
-        </select>
-        <select value={sort} onChange={(e) => { setOffset(0); setSort(e.target.value as GroupSort); }} aria-label="Sort">
-          <option value="name">Name</option>
-          <option value="-message_count">Most messages</option>
-          <option value="-last_summary_sync">Last summary (newest)</option>
-          <option value="last_summary_sync">Last summary (oldest)</option>
-          <option value="-created_at">Newest</option>
-        </select>
-        <span className="muted">{total} groups</span>
-      </form>
-      {loading && !data ? (
-        <p className="notice" role="status">Loading…</p>
-      ) : (
-        <table className="responsive" aria-label="Groups">
-          <thead>
-            <tr><th scope="col">Group</th><th scope="col">Respond</th><th scope="col">Spam notice</th><th scope="col">Summary language</th><th scope="col">Community keys</th><th scope="col">Messages</th><th scope="col">Last summary</th><th scope="col">Schedules</th><th scope="col"><span className="sr-only">Actions</span></th></tr>
-          </thead>
-          <tbody>
-            {(data?.items ?? []).map((g) => (
-              <tr key={g.group_jid}>
-                <td data-label="Group" className="cell-primary"><div className="cell-value">
-                  <strong><bdi>{label(g)}</bdi></strong>
-                  <div className="muted">
-                    {g.display_name && g.group_name && <>WhatsApp: <bdi>{g.group_name}</bdi> · </>}<bdi className="jid">{g.group_jid}</bdi>
-                  </div>
-                  {g.group_topic && <div className="muted"><bdi>{g.group_topic}</bdi></div>}
-                </div></td>
-                <td data-label="Respond"><div className="cell-value">
-                  <input type="checkbox" className="switch" checked={g.managed} onChange={() => void toggleManaged(g)} aria-label={`Respond in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
-                </div></td>
-                <td data-label="Spam notice"><div className="cell-value">
-                  <input type="checkbox" className="switch" checked={g.notify_on_spam} onChange={() => void save(g, { notify_on_spam: !g.notify_on_spam })} aria-label={`Spam notice in ${g.group_jid}`} disabled={savingJid === g.group_jid} />
-                </div></td>
-                <td data-label="Summary language"><div className="cell-value">
-                  <select value={g.summary_language ?? ""} onChange={(e) => void save(g, { summary_language: toLanguage(e.target.value) })} aria-label={`Summary language for ${label(g)}`} disabled={savingJid === g.group_jid}>
-                    <LanguageOptions />
-                  </select>
-                </div></td>
-                <td data-label="Community keys"><div className="cell-value">{g.community_keys.length ? g.community_keys.join(", ") : <span className="muted">—</span>}</div></td>
-                <td data-label="Messages"><div className="cell-value">{g.message_count}</div></td>
-                <td data-label="Last summary"><div className="cell-value">{fmt(g.last_summary_sync)}</div></td>
-                <td data-label="Schedules"><div className="cell-value">
-                  <span className="schedule-count">{g.schedule_count}</span>{" "}
-                  <button type="button" onClick={() => setScheduling(g)} aria-label={`Schedules for ${label(g)}`}>Schedules</button>
-                </div></td>
-                <td className="cell-actions"><button type="button" onClick={() => setEditing(g)} aria-label={`Edit ${g.group_jid}`}>Edit</button></td>
-              </tr>
+    <div className="flex flex-col gap-5">
+      <PageHeader title="Groups" description="Choose where the bot replies, how summaries are written and when they are sent." />
+      <form role="search" aria-label="Group filters" className="flex flex-col gap-3" onSubmit={onSearch}>
+        <div className="flex flex-wrap gap-2">
+          <Input className="min-w-0 flex-1 basis-56" placeholder="Search name, topic or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search groups" />
+          <Button type="submit" variant="primary" size="lg">Search</Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Filter" className="flex flex-wrap gap-2">
+            {FILTERS.map((f) => (
+              <FilterChip key={f.value} active={managed === f.value} onClick={() => { setOffset(0); setManaged(f.value); }}>{f.label}</FilterChip>
             ))}
-            {data && data.items.length === 0 && (
-              <tr><td colSpan={9} className="muted empty-row">No groups match.</td></tr>
-            )}
-          </tbody>
-        </table>
+          </div>
+          <div className="w-full sm:ms-auto sm:w-56">
+            <Select value={sort} onChange={(e) => { setOffset(0); setSort(e.target.value as GroupSort); }} aria-label="Sort">
+              <option value="name">Name</option>
+              <option value="-message_count">Most messages</option>
+              <option value="-last_summary_sync">Last summary (newest)</option>
+              <option value="last_summary_sync">Last summary (oldest)</option>
+              <option value="-created_at">Newest</option>
+            </Select>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">{total} groups</p>
+      </form>
+      {error && <InlineError>{error}</InlineError>}
+      {loading && !data ? (
+        <LoadingRows desktop={desktop} />
+      ) : data && items.length === 0 ? (
+        <div className="rounded-lg border bg-surface">
+          <EmptyState icon={Users} title="No groups match.">Try a different search or filter.</EmptyState>
+        </div>
+      ) : desktop ? (
+        <div className="overflow-x-auto rounded-lg border bg-surface">
+          <table className="w-full text-start text-sm" aria-label="Groups">
+            <thead>
+              <tr className="text-start">
+                {HEADERS.map((h) => <th key={h} scope="col" className="px-3 py-2 text-start font-medium text-muted-foreground">{h}</th>)}
+                <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((g) => <GroupTableRow key={g.group_jid} {...rowProps(g)} />)}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <ul aria-label="Groups" className="m-0 list-none divide-y overflow-hidden rounded-lg border bg-surface p-0">
+          {items.map((g) => <GroupCard key={g.group_jid} {...rowProps(g)} />)}
+        </ul>
       )}
-      <div className="toolbar">
-        <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</button>
-        <button type="button" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</button>
+      <div className="flex items-center gap-2">
+        <Button size="lg" className="md:min-h-9" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</Button>
+        <Button size="lg" className="md:min-h-9" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</Button>
       </div>
       {scheduling && (
         <SchedulesDialog
@@ -185,7 +317,7 @@ export default function Groups() {
           }}
         />
       )}
-    </section>
+    </div>
   );
 }
 
