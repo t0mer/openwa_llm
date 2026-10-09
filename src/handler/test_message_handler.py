@@ -286,7 +286,8 @@ async def _run_group_message(
     handler = MessageHandler(
         mock_session, whatsapp, mock_embedding_client, mock_settings
     )
-    handler.router = AsyncMock()
+    router = AsyncMock()
+    handler.router = router
     message_id = f"lid-{next(_ids)}"  # the handler dedupes by id across tests
     msg = Message(
         message_id=message_id,
@@ -307,7 +308,7 @@ async def _run_group_message(
             from_me=from_me,
         )
     )
-    return handler, msg
+    return router, msg
 
 
 @pytest.mark.asyncio
@@ -315,7 +316,7 @@ async def _run_group_message(
 async def test_lid_tag_reaches_router_when_bot_lid_known(
     mock_session, mock_embedding_client, mock_settings, mentioned_jids
 ):
-    handler, msg = await _run_group_message(
+    router, msg = await _run_group_message(
         mock_session,
         mock_embedding_client,
         mock_settings,
@@ -323,7 +324,7 @@ async def test_lid_tag_reaches_router_when_bot_lid_known(
         "@209878492672151 מה המצב?",
         mentioned_jids=mentioned_jids,
     )
-    handler.router.assert_awaited_once_with(msg)
+    router.assert_awaited_once_with(msg)
 
 
 @pytest.mark.asyncio
@@ -332,7 +333,7 @@ async def test_lid_tag_ignored_when_bot_lid_unknown(
     mock_session, mock_embedding_client, mock_settings, mentioned_jids
 ):
     # Degradation: without the bot's lid behaviour is the old phone-only one.
-    handler, _ = await _run_group_message(
+    router, _ = await _run_group_message(
         mock_session,
         mock_embedding_client,
         mock_settings,
@@ -340,28 +341,28 @@ async def test_lid_tag_ignored_when_bot_lid_unknown(
         "@209878492672151 מה המצב?",
         mentioned_jids=mentioned_jids,
     )
-    handler.router.assert_not_awaited()
+    router.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_phone_tag_still_works_with_lid_known(
     mock_session, mock_embedding_client, mock_settings
 ):
-    handler, msg = await _run_group_message(
+    router, msg = await _run_group_message(
         mock_session,
         mock_embedding_client,
         mock_settings,
         _whatsapp_for(BOT_LID),
         "@972559661780 hello",
     )
-    handler.router.assert_awaited_once_with(msg)
+    router.assert_awaited_once_with(msg)
 
 
 @pytest.mark.asyncio
 async def test_message_from_bot_lid_is_ignored(
     mock_session, mock_embedding_client, mock_settings
 ):
-    handler, _ = await _run_group_message(
+    router, _ = await _run_group_message(
         mock_session,
         mock_embedding_client,
         mock_settings,
@@ -369,14 +370,14 @@ async def test_message_from_bot_lid_is_ignored(
         "@209878492672151 talking to myself",
         sender="209878492672151@lid",
     )
-    handler.router.assert_not_awaited()
+    router.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_from_me_message_is_ignored_even_with_tag(
     mock_session, mock_embedding_client, mock_settings
 ):
-    handler, _ = await _run_group_message(
+    router, _ = await _run_group_message(
         mock_session,
         mock_embedding_client,
         mock_settings,
@@ -384,4 +385,4 @@ async def test_from_me_message_is_ignored_even_with_tag(
         "@209878492672151 hi",
         from_me=True,
     )
-    handler.router.assert_not_awaited()
+    router.assert_not_awaited()

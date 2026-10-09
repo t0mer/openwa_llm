@@ -79,5 +79,7 @@ async def test_conversation_topics_maps_both_bot_ids_to_bot():
         await get_conversation_topics(
             AsyncMock(), [msg], ("972559661780", "209878492672151")
         )
-    content = agent.await_args.args[1]
+    await_args = agent.await_args
+    assert await_args is not None
+    content = await_args.args[1]
     assert "@bot and @bot please" in content
