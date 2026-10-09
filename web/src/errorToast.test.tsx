@@ -1,6 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useErrorToast } from "./useLoad";
+import { toastDedupeSize, useErrorToast } from "./useLoad";
 
 vi.mock("./alerts");
 import { toast } from "./alerts";
@@ -35,5 +35,9 @@ describe("useErrorToast", () => {
     rerender({ e: "new" });
     rerender({ e: "old" });
     expect(toast.error).toHaveBeenCalledTimes(3);
+    rerender({ e: null });
+    vi.advanceTimersByTime(61_000);
+    rerender({ e: "fresh" });
+    expect(toastDedupeSize()).toBe(1);
   });
 });

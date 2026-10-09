@@ -30,7 +30,16 @@ const baseOptions = {
  */
 let activeModals = 0;
 let modalChain: Promise<unknown> = Promise.resolve();
-let pendingToast: (() => void) | null = null;
+const MAX_DEFERRED = 3;
+const pendingToasts: { icon: "success" | "error" | "info"; message: string }[] = [];
+
+/** Messages of toasts currently deferred behind a modal (exposed for tests). */
+export const deferredToasts = () => pendingToasts.map((t) => t.message);
+
+function deferToast(icon: "success" | "error" | "info", message: string) {
+  pendingToasts.push({ icon, message });
+  if (pendingToasts.length > MAX_DEFERRED) pendingToasts.shift(); // drop the oldest
+}
 
 function modal<T>(fn: () => Promise<T>): Promise<T> {
   activeModals++;
@@ -39,10 +48,12 @@ function modal<T>(fn: () => Promise<T>): Promise<T> {
     .catch(() => undefined)
     .then(() => {
       activeModals--;
-      if (activeModals === 0 && pendingToast) {
-        const t = pendingToast;
-        pendingToast = null;
-        t();
+      if (activeModals === 0) {
+        // Show the deferred toasts one after another; each toast replaces the previous one.
+        const queued = pendingToasts.splice(0);
+        queued.forEach((t, i) =>
+          setTimeout(() => (activeModals > 0 ? deferToast(t.icon, t.message) : fireToast(t.icon, t.message)), i * 1500),
+        );
       }
     });
   return run;
@@ -85,10 +96,13 @@ const toaster = Swal.mixin({
   customClass: { ...classes, popup: "swal-popup swal-toast" },
 });
 
+function fireToast(icon: "success" | "error" | "info", message: string) {
+  void toaster.fire({ icon, titleText: message, timer: icon === "error" ? 8000 : 4000 });
+}
+
 function show(icon: "success" | "error" | "info", message: string) {
-  const fire = () => void toaster.fire({ icon, titleText: message, timer: icon === "error" ? 8000 : 4000 });
-  if (activeModals > 0) pendingToast = fire; // keep only the latest deferred toast
-  else fire();
+  if (activeModals > 0) deferToast(icon, message);
+  else fireToast(icon, message);
 }
 
 export const toast = {

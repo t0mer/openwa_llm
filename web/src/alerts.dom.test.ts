@@ -1,7 +1,7 @@
 // Unmocked SweetAlert2: attacker-controlled names must never become DOM elements.
 import Swal from "sweetalert2";
 import { afterEach, describe, expect, it } from "vitest";
-import { confirm, errorDialog, showSummaryResults, toast } from "./alerts";
+import { confirm, deferredToasts, errorDialog, showSummaryResults, toast } from "./alerts";
 
 // jsdom has no matchMedia, which SweetAlert2 uses when rendering icons.
 window.matchMedia ??= ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as never;
@@ -67,5 +67,14 @@ describe("alerts never render data as HTML", () => {
     await flush();
     await flush();
     expect(document.querySelector(".swal-toast")).not.toBeNull();
+  });
+
+  it("keeps a small FIFO of deferred toasts, dropping the oldest", async () => {
+    void confirm({ title: "Sure?" });
+    await flush();
+    for (const m of ["t1", "t2", "t3", "t4"]) toast.info(m);
+    expect(deferredToasts()).toEqual(["t2", "t3", "t4"]);
+    Swal.clickCancel();
+    await flush();
   });
 });

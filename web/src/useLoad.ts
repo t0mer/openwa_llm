@@ -43,6 +43,9 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[], intervalMs =
 const TOAST_WINDOW_MS = 60_000;
 const lastToasted = new Map<string, number>();
 
+/** Number of remembered messages (exposed for tests). */
+export const toastDedupeSize = () => lastToasted.size;
+
 /** Surface a load error as a toast, at most once per message per minute (polls can flap). */
 export function useErrorToast(error: string | null) {
   useEffect(() => {
