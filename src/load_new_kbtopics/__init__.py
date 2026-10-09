@@ -1,12 +1,13 @@
 import hashlib
 import logging
+from collections.abc import Collection, Iterable
 from datetime import datetime
 from typing import Dict, List
 
 from pydantic import BaseModel, Field, PrivateAttr
 from pydantic_ai import Agent, ModelSettings
 from pydantic_ai.agent import AgentRunResult
-from sqlmodel import desc, select
+from sqlmodel import col, desc, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from tenacity import (
     retry,
@@ -23,6 +24,7 @@ from models.upsert import bulk_upsert
 from services.prompt_manager import prompt_manager
 from utils.voyage_embed_text import voyage_embed_text
 from whatsapp import WhatsAppGateway
+from whatsapp.identity import get_bot_identity
 
 logger = logging.getLogger(__name__)
 
@@ -169,13 +171,14 @@ def split_messages(
 
 
 async def get_conversation_topics(
-    settings: Settings, messages: list[Message], my_number: str
+    settings: Settings, messages: list[Message], my_numbers: Iterable[str]
 ) -> List[Topic]:
     if len(messages) == 0:
         return []
 
     speaker_mapping = _get_speaker_mapping(messages)
-    speaker_mapping[my_number] = "bot"
+    for my_number in my_numbers:
+        speaker_mapping[my_number] = "bot"
 
     # Format conversation as "{timestamp}: {participant_enumeration}: {message}"
     # Swap tags in message to user tags E.G. "@972536150150 please comment" to "@user_1 please comment"
@@ -244,6 +247,17 @@ async def load_topics(
     await db_session.commit()
 
 
+def messages_to_ingest_stmt(group: Group, bot_jids: Collection[str]):
+    """Group messages since the last ingest, excluding the bot's own."""
+    return (
+        select(Message)
+        .where(Message.timestamp >= group.last_ingest)
+        .where(Message.group_jid == group.group_jid)
+        .where(col(Message.sender_jid).not_in(sorted(bot_jids)))
+        .order_by(desc(Message.timestamp))
+    )
+
+
 class topicsLoader:
     async def load_topics(
         self,
@@ -252,16 +266,10 @@ class topicsLoader:
         embedding_client: AsyncClient,
         whatsapp: WhatsAppGateway,
     ):
-        my_jid = await whatsapp.get_my_jid()
+        bot = await get_bot_identity(whatsapp)
         try:
             # Since yesterday at 12:00 UTC. Between 24 hours to 48 hours ago
-            stmt = (
-                select(Message)
-                .where(Message.timestamp >= group.last_ingest)
-                .where(Message.group_jid == group.group_jid)
-                .where(Message.sender_jid != my_jid.normalize_str())
-                .order_by(desc(Message.timestamp))
-            )
+            stmt = messages_to_ingest_stmt(group, bot.normalized())
             res = await db_session.exec(stmt)
             # Convert Sequence to list explicitly
             messages = list(res.all())
@@ -288,7 +296,7 @@ class topicsLoader:
                 )
 
                 settings = get_settings()
-                topics = await get_conversation_topics(settings, chunk, my_jid.user)
+                topics = await get_conversation_topics(settings, chunk, bot.users())
                 logger.info(
                     f"Loading {len(topics)} topics from chunk {i + 1} for group {group.group_name}"
                 )

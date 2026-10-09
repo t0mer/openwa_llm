@@ -10,6 +10,7 @@ from handler.router import Router
 from handler.whatsapp_group_link_spam import WhatsappGroupLinkSpamHandler
 from handler.kb_qa import KBQAHandler
 from whatsapp import InboundMessage, InboundReaction, WhatsAppGateway
+from whatsapp.identity import get_bot_identity
 from .base_handler import BaseHandler
 from models import Message, OptOut
 from urllib.parse import urlparse
@@ -55,8 +56,9 @@ class MessageHandler(BaseHandler):
             return
 
         # Ignore messages sent by the bot itself
-        my_jid = await self.whatsapp.get_my_jid()
-        if event.from_me or message.sender_jid == my_jid.normalize_str():
+        bot = await get_bot_identity(self.whatsapp)
+        bot_jids = bot.normalized()
+        if event.from_me or message.sender_jid in bot_jids:
             return
 
         if message.sender_jid.endswith("@lid"):
@@ -113,9 +115,9 @@ class MessageHandler(BaseHandler):
         if message and message.group and not message.group.managed:
             return
 
-        mentioned = (
-            message.has_mentioned(my_jid)
-            or my_jid.normalize_str() in event.mentioned_jids
+        # WhatsApp may tag the bot by phone number or by its @lid privacy id.
+        mentioned = any(message.has_mentioned(jid) for jid in bot.jids()) or any(
+            jid in event.mentioned_jids for jid in bot_jids
         )
         if mentioned:
             await self.router(message)

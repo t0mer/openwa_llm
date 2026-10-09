@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+import time
+from typing import Any, Callable
 from urllib.parse import quote
 
 import httpx
@@ -10,6 +11,7 @@ import httpx
 from .gateway import GatewayError
 from .jid import (
     DefaultUserServer,
+    HiddenUserServer,
     JID,
     parse_jid,
     to_canonical_jid,
@@ -18,6 +20,9 @@ from .jid import (
 from .types import GroupInfo, SessionStatus
 
 logger = logging.getLogger(__name__)
+
+# How long a failed bot-LID lookup is remembered before OpenWA is asked again.
+LID_FAILURE_TTL_SECONDS = 300.0
 
 
 def _unwrap(data: Any) -> Any:
@@ -70,6 +75,7 @@ class OpenWAGateway:
         *,
         groups_page_size: int = 100,
         timeout: float = 30.0,
+        clock: Callable[[], float] = time.monotonic,
     ):
         self._session_path = f"/api/sessions/{quote(session_id, safe='')}"
         self._http = httpx.AsyncClient(
@@ -79,6 +85,9 @@ class OpenWAGateway:
         )
         self._groups_page_size = groups_page_size
         self._jid: JID | None = None
+        self._clock = clock
+        self._lid: JID | None = None
+        self._lid_failed_at: float | None = None
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -139,6 +148,41 @@ class OpenWAGateway:
             raise GatewayError(f"OpenWA session phone is unusable: {status.phone!r}")
         self._jid = parse_jid(f"{digits}@{DefaultUserServer}")
         return self._jid
+
+    async def get_my_lid(self) -> JID | None:
+        if self._lid:
+            return self._lid
+        if (
+            self._lid_failed_at is not None
+            and self._clock() - self._lid_failed_at < LID_FAILURE_TTL_SECONDS
+        ):
+            return None
+        try:
+            lid = await self._lookup_my_lid()
+        except GatewayError as e:
+            logger.warning("Could not determine the bot's @lid: %s", e)
+            lid = None
+        if lid is None:
+            self._lid_failed_at = self._clock()
+            return None
+        self._lid = lid
+        self._lid_failed_at = None
+        return lid
+
+    async def _lookup_my_lid(self) -> JID | None:
+        phone = (await self.get_my_jid()).user
+        data = _unwrap(
+            await self._request(
+                "GET", f"{self._session_path}/contacts/check/{quote(phone, safe='')}"
+            )
+        )
+        whatsapp_id = data.get("whatsappId") if isinstance(data, dict) else None
+        if not isinstance(whatsapp_id, str):
+            return None
+        user, sep, server = whatsapp_id.partition("@")
+        if not user or sep != "@" or server != HiddenUserServer:
+            return None
+        return parse_jid(f"{user}@{server}")
 
     async def list_groups(self) -> list[GroupInfo]:
         groups: list[GroupInfo] = []

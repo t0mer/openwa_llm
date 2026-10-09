@@ -199,3 +199,107 @@ async def test_non_json_success_response_is_gateway_error(gateway, httpx_mock):
     with pytest.raises(GatewayError, match="non-JSON") as exc:
         await gateway.send_text("120363@g.us", "yo")
     assert len(str(exc.value)) < 500
+
+
+READY = {"status": "ready", "phone": "972501234567"}
+CHECK = f"{BASE}/api/sessions/s1/contacts/check/972501234567"
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+@pytest.fixture
+def clock():
+    return FakeClock()
+
+
+@pytest.fixture
+def lid_gateway(clock):
+    return OpenWAGateway(BASE, api_key="k", session_id="s1", clock=clock)
+
+
+async def test_get_my_lid_returns_lid_jid_and_caches_success(lid_gateway, httpx_mock):
+    httpx_mock.add_response(url=SESSION, json=READY)
+    httpx_mock.add_response(
+        url=CHECK,
+        json={
+            "number": "972501234567",
+            "exists": True,
+            "whatsappId": "209878492672151@lid",
+        },
+    )
+    jid = await lid_gateway.get_my_lid()
+    assert jid is not None
+    assert (jid.user, jid.server) == ("209878492672151", "lid")
+    # Only one response registered per URL: a second HTTP call fails the test.
+    assert await lid_gateway.get_my_lid() is jid
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"exists": True},
+        {"whatsappId": 123},
+        {"whatsappId": "972501234567@c.us"},
+        {"whatsappId": "@lid"},
+        ["unexpected"],
+    ],
+)
+async def test_get_my_lid_odd_payload_is_none(lid_gateway, httpx_mock, payload):
+    httpx_mock.add_response(url=SESSION, json=READY)
+    httpx_mock.add_response(url=CHECK, json=payload)
+    assert await lid_gateway.get_my_lid() is None
+
+
+async def test_get_my_lid_unwraps_data_envelope(lid_gateway, httpx_mock):
+    httpx_mock.add_response(url=SESSION, json=READY)
+    httpx_mock.add_response(url=CHECK, json={"data": {"whatsappId": "42@lid"}})
+    jid = await lid_gateway.get_my_lid()
+    assert jid is not None and jid.user == "42"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"status_code": 500, "text": "boom"},
+        {"status_code": 409},
+        {"status_code": 200, "text": "<html>not json</html>"},
+    ],
+)
+async def test_get_my_lid_failures_return_none(lid_gateway, httpx_mock, response):
+    httpx_mock.add_response(url=SESSION, json=READY)
+    httpx_mock.add_response(url=CHECK, **response)
+    assert await lid_gateway.get_my_lid() is None
+
+
+async def test_get_my_lid_network_error_returns_none(lid_gateway, httpx_mock):
+    httpx_mock.add_response(url=SESSION, json=READY)
+    httpx_mock.add_exception(httpx.ConnectError("down"), url=CHECK)
+    assert await lid_gateway.get_my_lid() is None
+
+
+async def test_get_my_lid_caches_failure_for_300_seconds(
+    lid_gateway, clock, httpx_mock
+):
+    httpx_mock.add_response(url=SESSION, json=READY)
+    httpx_mock.add_response(url=CHECK, status_code=500, text="boom")
+    assert await lid_gateway.get_my_lid() is None
+    clock.now += 299
+    assert await lid_gateway.get_my_lid() is None  # no new request allowed
+    clock.now += 2
+    httpx_mock.add_response(url=CHECK, json={"whatsappId": "7@lid"})
+    jid = await lid_gateway.get_my_lid()
+    assert jid is not None and jid.user == "7"
+
+
+async def test_get_my_lid_session_not_ready_is_none_and_cached(
+    lid_gateway, clock, httpx_mock
+):
+    httpx_mock.add_response(url=SESSION, json={"status": "qr_ready", "phone": None})
+    assert await lid_gateway.get_my_lid() is None
+    assert await lid_gateway.get_my_lid() is None  # cached: no second session call

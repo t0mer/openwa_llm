@@ -1,10 +1,11 @@
 import asyncio
 import logging
+from collections.abc import Collection
 from datetime import datetime
 
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunResult
-from sqlmodel import select, desc
+from sqlmodel import col, desc, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from tenacity import (
     retry,
@@ -19,6 +20,7 @@ from services.prompt_manager import prompt_manager
 from utils.chat_text import chat2text
 from utils.opt_out import get_opt_out_map
 from whatsapp import WhatsAppGateway
+from whatsapp.identity import get_bot_identity
 
 logger = logging.getLogger(__name__)
 
@@ -46,16 +48,22 @@ async def summarize(
     return await agent.run(chat2text(messages, opt_out_map))
 
 
-async def summarize_and_send_to_group(
-    settings: Settings, session, whatsapp: WhatsAppGateway, group: Group
-):
-    resp = await session.exec(
+def messages_to_summarize_stmt(group: Group, bot_jids: Collection[str]):
+    """Group messages since the last summary, excluding the bot's own."""
+    return (
         select(Message)
         .where(Message.group_jid == group.group_jid)
         .where(Message.timestamp >= group.last_summary_sync)
-        .where(Message.sender_jid != (await whatsapp.get_my_jid()).normalize_str())
+        .where(col(Message.sender_jid).not_in(sorted(bot_jids)))
         .order_by(desc(Message.timestamp))
     )
+
+
+async def summarize_and_send_to_group(
+    settings: Settings, session, whatsapp: WhatsAppGateway, group: Group
+):
+    bot = await get_bot_identity(whatsapp)
+    resp = await session.exec(messages_to_summarize_stmt(group, bot.normalized()))
     messages: list[Message] = resp.all()
 
     if len(messages) < 15:
