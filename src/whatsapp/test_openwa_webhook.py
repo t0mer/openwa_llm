@@ -472,40 +472,44 @@ def test_media_message_gets_reference_instead_of_url():
     assert plain.media_url is None
 
 
+def _text(**over) -> str | None:
+    ev = _msg(**over)
+    assert isinstance(ev, InboundMessage)
+    return ev.text
+
+
 def test_rich_text_kinds():
-    assert _msg(type="ptt").text == "[[Attached Audio]]"
+    assert _text(type="ptt") == "[[Attached Audio]]"
     assert (
-        _msg(
+        _text(
             type="location",
             location={"latitude": 32.08, "longitude": 34.78, "name": "Cafe"},
-        ).text
+        )
         == "[[Attached Location]] 32.08,34.78 Cafe"
     )
     assert (
-        _msg(type="location", latitude=1.5, longitude=2.5, address="Main St").text
+        _text(type="location", latitude=1.5, longitude=2.5, address="Main St")
         == "[[Attached Location]] 1.5,2.5 Main St"
     )
     assert (
-        _msg(type="vcard", vCards=["BEGIN:VCARD\nFN:Dana Levi\nEND:VCARD"]).text
+        _text(type="vcard", vCards=["BEGIN:VCARD\nFN:Dana Levi\nEND:VCARD"])
         == "[[Attached Contact]] Dana Levi"
     )
-    assert _msg(type="poll", poll={"name": "Lunch?"}).text == "[[Attached Poll]] Lunch?"
-    assert _msg(type="list", list={"title": "Menu"}).text == "[[Attached List]] Menu"
-    assert (
-        _msg(type="order", orderTitle="Order #5").text == "[[Attached Order]] Order #5"
-    )
+    assert _text(type="poll", poll={"name": "Lunch?"}) == "[[Attached Poll]] Lunch?"
+    assert _text(type="list", list={"title": "Menu"}) == "[[Attached List]] Menu"
+    assert _text(type="order", orderTitle="Order #5") == "[[Attached Order]] Order #5"
 
 
 def test_rich_text_malformed_falls_back_to_label():
-    assert _msg(type="location", location="nope").text == "[[Attached Location]]"
+    assert _text(type="location", location="nope") == "[[Attached Location]]"
     assert (
-        _msg(type="location", location={"latitude": "x", "longitude": None}).text
+        _text(type="location", location={"latitude": "x", "longitude": None})
         == "[[Attached Location]]"
     )
-    assert _msg(type="vcard", vCards="oops", vcard=5).text == "[[Attached Contact]]"
-    assert _msg(type="poll", poll=[1]).text == "[[Attached Poll]]"
-    assert _msg(type="list", list=None).text == "[[Attached List]]"
-    assert _msg(type="order").text == "[[Attached Order]]"
+    assert _text(type="vcard", vCards="oops", vcard=5) == "[[Attached Contact]]"
+    assert _text(type="poll", poll=[1]) == "[[Attached Poll]]"
+    assert _text(type="list", list=None) == "[[Attached List]]"
+    assert _text(type="order") == "[[Attached Order]]"
 
 
 def test_broadcast_and_newsletter_chats_are_ignored():
