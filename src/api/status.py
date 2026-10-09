@@ -54,11 +54,14 @@ async def status(
         else:
             # Ensure the bot JID is resolvable — webhook handling depends on it.
             my_jid = await whatsapp.get_my_jid()
+            # Best-effort: an unknown @lid must not make the check unhealthy.
+            my_lid = await whatsapp.get_my_lid()
             health_data["checks"]["whatsapp"] = {
                 "status": "healthy",
                 "duration_seconds": whatsapp_duration,
                 "session_status": session_status.status,
                 "bot_jid": str(my_jid),
+                "bot_lid": str(my_lid) if my_lid else None,
             }
 
     except Exception as e:
