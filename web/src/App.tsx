@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
+import { Notice } from "./components/layout/Notice";
 import AppShell from "./components/layout/AppShell";
 import Actions from "./pages/Actions";
 import Contacts from "./pages/Contacts";
@@ -10,8 +11,8 @@ import OptOuts from "./pages/OptOuts";
 
 function Protected() {
   const { status } = useAuth();
-  if (status === "loading") return <p className="p-8 text-center text-muted-foreground" role="status">Loading…</p>;
-  if (status === "disabled") return <p className="p-8 text-center text-muted-foreground">The admin UI is disabled on this server.</p>;
+  if (status === "loading") return <Notice live>Loading…</Notice>;
+  if (status === "disabled") return <Notice>The admin UI is disabled on this server.</Notice>;
   if (status !== "authenticated") return <Navigate to="/login" replace />;
   return <AppShell />;
 }

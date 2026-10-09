@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
+import { Notice } from "../components/layout/Notice";
 import { Button } from "../components/ui/button";
 import { Field, Input } from "../components/ui/field";
 import { InlineError } from "../components/ui/inline-error";
@@ -19,7 +20,7 @@ export default function Login() {
   }, []);
 
   if (status === "authenticated") return <Navigate to="/groups" replace />;
-  if (status === "disabled") return <p className="p-8 text-center text-muted-foreground" role="status">The admin UI is disabled on this server.</p>;
+  if (status === "disabled") return <Notice live>The admin UI is disabled on this server.</Notice>;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
