@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
