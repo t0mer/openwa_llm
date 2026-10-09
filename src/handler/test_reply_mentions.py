@@ -81,3 +81,62 @@ async def test_kb_reply_no_mention_when_not_tagged_or_opted_out():
     assert _kwargs(send)["mentions"] == []
     send = await _run_kb("Hey @227912345678901", {"227912345678901": "Dan"})
     assert _kwargs(send)["mentions"] == []
+
+
+OTHER = "972501234567@s.whatsapp.net"
+
+
+async def test_kb_reply_mentions_history_and_topic_senders():
+    session = AsyncMock()
+    hist = Message(
+        message_id="h",
+        text="x",
+        chat_jid="chat@g.us",
+        sender_jid=OTHER,
+        timestamp=Mock(),
+    )
+    session.exec.return_value = SimpleNamespace(all=lambda: [hist])
+    kb = KnowledgeBaseAnswers(session, AsyncMock(), AsyncMock(), Mock())
+    kb.send_message = AsyncMock()
+    kb.rephrasing_agent = AsyncMock(return_value=SimpleNamespace(output="r"))
+    topic_msg = SimpleNamespace(sender_jid="111222333444@s.whatsapp.net", text="t")
+    kb.generation_agent = AsyncMock(
+        return_value=SimpleNamespace(
+            output="@972501234567 and @111222333444 and @555666777888"
+        )
+    )
+    msg = _message()
+    msg.group = None
+    with (
+        patch(
+            "handler.knowledge_base_answers.get_opt_out_map",
+            AsyncMock(return_value={}),
+        ),
+        patch(
+            "handler.knowledge_base_answers.get_bot_identity",
+            AsyncMock(
+                return_value=SimpleNamespace(phone=SimpleNamespace(user="b"), lid=None)
+            ),
+        ),
+        patch(
+            "handler.knowledge_base_answers.voyage_embed_text",
+            AsyncMock(return_value=[[0.0]]),
+        ),
+        patch(
+            "search.hybrid_search.hybrid_search",
+            AsyncMock(
+                return_value=[
+                    SimpleNamespace(messages=[topic_msg], vector_distance=0.1)
+                ]
+            ),
+        ),
+        patch(
+            "search.hybrid_search.format_search_results_for_prompt",
+            Mock(return_value=""),
+        ),
+    ):
+        await kb(msg)
+    assert _kwargs(kb.send_message)["mentions"] == [
+        OTHER,
+        "111222333444@s.whatsapp.net",
+    ]
