@@ -4,8 +4,8 @@ import { BrowserRouter } from "react-router-dom";
 import "@fontsource-variable/rubik";
 import App from "./App";
 import { applyTheme } from "./lib/theme";
-import "./styles.css";
 import "./index.css";
+import "./styles.css";
 
 applyTheme();
 

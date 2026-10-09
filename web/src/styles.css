@@ -1,3 +1,10 @@
+/*
+ * Legacy rules of the pre-Iris UI, kept only until every page is migrated (removed in Task 6).
+ * They live in the `legacy` cascade layer, below components and utilities, so they can never
+ * override the new Tailwind utilities. The order statement must match index.css.
+ */
+@layer theme, base, legacy, components, utilities;
+@layer legacy {
 /* ---------- Design tokens ---------- */
 :root {
   --bg: #f4f6fa; --surface: #ffffff; --surface-2: #eef1f6; --text: #172033; --muted: #5b667a;
@@ -8,7 +15,7 @@
   --radius: 10px; --radius-sm: 7px; --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 14px rgba(16, 24, 40, .06);
   --shadow-lg: 0 12px 40px rgba(16, 24, 40, .22);
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font: "Rubik Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --tap: 44px;
   color-scheme: light;
 }
@@ -213,4 +220,5 @@ bdi.jid { unicode-bidi: isolate; direction: ltr; }
   .schedule-time select { flex: 1 1 auto; min-width: 0; }
   .schedule-actions button { flex: 1 1 auto; }
   .modal.modal-wide { padding: var(--s3); }
+}
 }
