@@ -1,7 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import { confirm, toast } from "../alerts";
 import type { Meridiem, Schedule, ScheduleStatus } from "../types";
+import { Badge, type Tone } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Dialog, DialogContent } from "./ui/dialog";
+import { Select } from "./ui/field";
+import { InlineError } from "./ui/inline-error";
+import { Switch } from "./ui/switch";
+import { useReturnFocus } from "./useReturnFocus";
 
 export const MAX_SCHEDULES = 20;
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -23,7 +30,7 @@ export function describeReason(reason: string | null): string | null {
   return REASONS[reason] ?? reason.replace(/_/g, " ");
 }
 
-const BADGE: Record<ScheduleStatus, string> = { sent: "ok", skipped: "warn", failed: "bad" };
+const TONE: Record<ScheduleStatus, Tone> = { sent: "success", skipped: "warning", failed: "danger" };
 
 interface Row {
   key: string;
@@ -117,9 +124,17 @@ interface Props {
   onClose: () => void;
   /** Called after a schedule was created or deleted so the caller can refresh counts. */
   onChanged: () => void;
+  /** Where focus goes after the dialog closes (default: the element focused when it opened). */
+  returnFocus?: () => void;
 }
 
-export default function SchedulesDialog({ group, onClose, onChanged }: Props) {
+/** Day toggles look like chips; the native checkbox keeps its role, name and keyboard behaviour. */
+const DAY_CHIP =
+  "inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-sm font-medium md:min-h-9 has-[:checked]:border-primary has-[:checked]:bg-primary-soft has-[:checked]:text-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60";
+/** Compact selects in the time row; still 44px tall on phones. */
+const TIME_SELECT = "w-[4.75rem] md:min-h-9";
+
+export default function SchedulesDialog({ group, onClose, onChanged, returnFocus }: Props) {
   const [timezone, setTimezone] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,10 +142,10 @@ export default function SchedulesDialog({ group, onClose, onChanged }: Props) {
   const keySeq = useRef(0);
   const nextKey = () => `r${++keySeq.current}`;
 
-  const backdrop = useRef<HTMLDivElement>(null);
+  const idPrefix = useId();
   const dialogEl = useRef<HTMLDivElement>(null);
   const addBtn = useRef<HTMLButtonElement>(null);
-  const closeBtn = useRef<HTMLButtonElement>(null);
+  const onCloseAutoFocus = useReturnFocus(returnFocus);
   // Where focus should go after the next render: a row key, "add" or "first".
   const [focusTo, setFocusTo] = useState<string | null>(null);
   const confirming = useRef(false);
@@ -140,8 +155,6 @@ export default function SchedulesDialog({ group, onClose, onChanged }: Props) {
   const close = () => {
     if (!busyRef.current && !confirming.current) onClose();
   };
-  const closeRef = useRef(close);
-  closeRef.current = close;
 
   const live = useRef(true);
   useEffect(() => {
@@ -180,53 +193,12 @@ export default function SchedulesDialog({ group, onClose, onChanged }: Props) {
     let target: HTMLElement | null = null;
     if (focusTo === "add") target = addBtn.current;
     else {
-      const row = focusTo === "first" ? root.querySelector<HTMLElement>(".schedule-row") : root.querySelector<HTMLElement>(`[data-row-key="${focusTo}"]`);
+      const row = focusTo === "first" ? root.querySelector<HTMLElement>("[data-row-key]") : root.querySelector<HTMLElement>(`[data-row-key="${focusTo}"]`);
       target = row?.querySelector<HTMLElement>("input:not(:disabled)") ?? (focusTo === "first" ? addBtn.current : null);
     }
     (target ?? addBtn.current)?.focus();
     setFocusTo(null);
   }, [focusTo, loading, rows]);
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    closeBtn.current?.focus();
-    const inerted: Element[] = [];
-    for (let node: Element | null = backdrop.current; node && node !== document.body; node = node.parentElement) {
-      for (const sib of Array.from(node.parentElement?.children ?? [])) {
-        if (sib !== node && !sib.hasAttribute("inert")) {
-          sib.setAttribute("inert", "");
-          inerted.push(sib);
-        }
-      }
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && !document.querySelector(".swal2-popup:not(.swal2-toast)")) closeRef.current();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      for (const el of inerted) el.removeAttribute("inert");
-      opener?.focus?.();
-    };
-  }, []);
-
-  function trapTab(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.key !== "Tab") return;
-    const focusable = Array.from(
-      e.currentTarget.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])"),
-    ).filter((el) => !el.matches(":disabled"));
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || !e.currentTarget.contains(active))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && (active === last || !e.currentTarget.contains(active))) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
 
   const update = (key: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -334,77 +306,105 @@ export default function SchedulesDialog({ group, onClose, onChanged }: Props) {
   const names = rowNames(rows);
 
   return (
-    <div ref={backdrop} className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
-      <div ref={dialogEl} className="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="schedules-title" onKeyDown={trapTab}>
-        <h2 id="schedules-title">Schedules: <bdi>{group.label}</bdi></h2>
-        {timezone && <p className="muted">Times use the server time zone: <strong>{timezone}</strong></p>}
-        {!group.managed && <p className="notice" role="note">Schedules only run for managed groups.</p>}
-        {loading && <p className="muted" role="status">Loading…</p>}
-        {loadError && <p role="alert" className="inline-error">{loadError}</p>}
-        {!loading && !loadError && rows.length === 0 && <p className="muted">No schedules yet.</p>}
-        <ul className="schedule-list">
-          {rows.map((row, index) => {
-            const name = names[index];
-            const b = row.base;
-            const dirty = !b || Object.keys(changes(row) ?? {}).length > 0;
-            const reason = b ? describeReason(b.last_reason) : null;
-            return (
-              <li key={row.key} className="schedule-row" role="group" data-row-key={row.key} aria-label={name.charAt(0).toUpperCase() + name.slice(1)}>
-                <fieldset className="schedule-days" disabled={row.saving}>
-                  <legend className="sr-only">Days</legend>
-                  {DAYS.map((name, day) => (
-                    <label key={name} className="day">
-                      <input type="checkbox" checked={row.weekdays.includes(day)} onChange={() => toggleDay(row, day)} />
-                      <span>{name}</span>
-                    </label>
-                  ))}
-                </fieldset>
-                <div className="schedule-time">
-                  <select aria-label="Hour" value={row.hour12} disabled={row.saving} onChange={(e) => update(row.key, { hour12: Number(e.target.value) })}>
-                    {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                  <span aria-hidden="true">:</span>
-                  <select aria-label="Minute" value={row.minute} disabled={row.saving} onChange={(e) => update(row.key, { minute: Number(e.target.value) })}>
-                    {MINUTES.map((m) => <option key={m} value={m}>{pad(m)}</option>)}
-                  </select>
-                  <select aria-label="AM or PM" value={row.meridiem} disabled={row.saving} onChange={(e) => update(row.key, { meridiem: e.target.value as Meridiem })}>
-                    <option value="AM">AM</option>
-                    <option value="PM">PM</option>
-                  </select>
-                  <label className="schedule-enabled">
-                    <input type="checkbox" className="switch" checked={row.enabled} disabled={row.saving} onChange={(e) => update(row.key, { enabled: e.target.checked })} />
-                    <span>Enabled</span>
-                  </label>
-                </div>
-                <div className="schedule-last muted">
-                  {b?.last_run_at && b.last_status ? (
-                    <>
-                      Last run {fmt(b.last_run_at)}{" "}
-                      <span className={`badge ${BADGE[b.last_status] ?? ""}`}>{b.last_status}</span>
-                      {reason && <> {reason}</>}
-                      {b.last_message_count != null && <> ({b.last_message_count} {b.last_message_count === 1 ? "message" : "messages"})</>}
-                    </>
-                  ) : (
-                    "Never run"
-                  )}
-                </div>
-                {row.weekdays.length === 0 && row.attempted && (
-                  <p role="alert" className="inline-error">Select at least one day.</p>
-                )}
-                <div className="schedule-actions">
-                  <button type="button" className="primary" onClick={() => void save(row)} disabled={row.saving || !dirty} aria-label={`Save ${name}`}>Save</button>
-                  <button type="button" onClick={() => void remove(row)} disabled={row.saving} aria-label={`${b ? "Delete" : "Remove"} ${name}`}>{b ? "Delete" : "Remove"}</button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-        <div className="toolbar">
-          <button ref={addBtn} type="button" onClick={addRow} disabled={loading || !!loadError || rows.length >= MAX_SCHEDULES}>Add schedule</button>
-          {rows.length >= MAX_SCHEDULES && <span className="muted">Limit of {MAX_SCHEDULES} schedules reached.</span>}
-          <button ref={closeBtn} type="button" onClick={close} disabled={busy}>Close</button>
+    <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
+      <DialogContent
+        wide
+        title={<>Schedules: <bdi>{group.label}</bdi></>}
+        closeDisabled={busy}
+        // While the delete confirm is pending, Escape belongs to it (SweetAlert popups are also
+        // guarded inside DialogContent).
+        onEscapeKeyDown={(e) => { if (confirming.current) e.preventDefault(); }}
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
+        <div ref={dialogEl} className="flex flex-col gap-4">
+          {timezone && (
+            <p className="text-sm text-muted-foreground">
+              Times use the server time zone: <strong className="font-medium text-foreground">{timezone}</strong>
+            </p>
+          )}
+          {!group.managed && <p className="rounded-md bg-warning-soft p-3 text-sm text-warning" role="note">Schedules only run for managed groups.</p>}
+          {loading && <p className="text-sm text-muted-foreground" role="status">Loading…</p>}
+          {loadError && <InlineError>{loadError}</InlineError>}
+          {!loading && !loadError && rows.length === 0 && <p className="text-sm text-muted-foreground">No schedules yet.</p>}
+          <ul role="list" aria-label="Schedules" className="m-0 flex list-none flex-col gap-3 p-0">
+            {rows.map((row, index) => {
+              const name = names[index];
+              const b = row.base;
+              const dirty = !b || Object.keys(changes(row) ?? {}).length > 0;
+              const reason = b ? describeReason(b.last_reason) : null;
+              const enabledId = `${idPrefix}-${row.key}-enabled`;
+              return (
+                <li
+                  key={row.key}
+                  className="flex flex-col gap-3 rounded-lg border border-border bg-surface-2/40 p-3 md:p-4"
+                  role="group"
+                  data-row-key={row.key}
+                  aria-label={name.charAt(0).toUpperCase() + name.slice(1)}
+                >
+                  <fieldset className="m-0 flex min-w-0 flex-wrap gap-1.5 border-0 p-0" disabled={row.saving}>
+                    <legend className="sr-only">Days</legend>
+                    {DAYS.map((day, i) => (
+                      <label key={day} className={DAY_CHIP}>
+                        <input type="checkbox" className="size-4 accent-primary" checked={row.weekdays.includes(i)} disabled={row.saving} onChange={() => toggleDay(row, i)} />
+                        <span>{day}</span>
+                      </label>
+                    ))}
+                  </fieldset>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+                    <div className="flex items-center gap-1.5" dir="ltr">
+                      <Select aria-label="Hour" className={TIME_SELECT} value={row.hour12} disabled={row.saving} onChange={(e) => update(row.key, { hour12: Number(e.target.value) })}>
+                        {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
+                      </Select>
+                      <span aria-hidden="true" className="font-medium">:</span>
+                      <Select aria-label="Minute" className={TIME_SELECT} value={row.minute} disabled={row.saving} onChange={(e) => update(row.key, { minute: Number(e.target.value) })}>
+                        {MINUTES.map((m) => <option key={m} value={m}>{pad(m)}</option>)}
+                      </Select>
+                      <Select aria-label="AM or PM" className={TIME_SELECT} value={row.meridiem} disabled={row.saving} onChange={(e) => update(row.key, { meridiem: e.target.value as Meridiem })}>
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </Select>
+                    </div>
+                    <div className="flex min-h-11 items-center gap-3">
+                      <Switch id={enabledId} checked={row.enabled} disabled={row.saving} onCheckedChange={(enabled) => update(row.key, { enabled })} />
+                      <label htmlFor={enabledId} className="text-sm font-medium">Enabled</label>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 break-words text-xs text-muted-foreground">
+                    {b?.last_run_at && b.last_status ? (
+                      <>
+                        Last run {fmt(b.last_run_at)}{" "}
+                        <Badge tone={TONE[b.last_status] ?? "neutral"}>{b.last_status}</Badge>
+                        {reason && <> {reason}</>}
+                        {b.last_message_count != null && <> ({b.last_message_count} {b.last_message_count === 1 ? "message" : "messages"})</>}
+                      </>
+                    ) : (
+                      "Never run"
+                    )}
+                  </div>
+                  {row.weekdays.length === 0 && row.attempted && <InlineError>Select at least one day.</InlineError>}
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button variant={b ? "danger-outline" : "outline"} size="sm" className="min-h-11 md:min-h-9" onClick={() => void remove(row)} disabled={row.saving} aria-label={`${b ? "Delete" : "Remove"} ${name}`}>
+                      {b ? "Delete" : "Remove"}
+                    </Button>
+                    <Button variant="primary" size="sm" className="min-h-11 md:min-h-9" onClick={() => void save(row)} disabled={row.saving || !dirty} aria-label={`Save ${name}`}>
+                      Save
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button ref={addBtn} size="lg" className="md:min-h-10 md:text-sm" onClick={addRow} disabled={loading || !!loadError || rows.length >= MAX_SCHEDULES}>
+              Add schedule
+            </Button>
+            {rows.length >= MAX_SCHEDULES && <span className="text-sm text-muted-foreground">Limit of {MAX_SCHEDULES} schedules reached.</span>}
+            <Button variant="primary" size="lg" className="ms-auto md:min-h-10 md:text-sm" onClick={close} disabled={busy}>
+              Done
+            </Button>
+          </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

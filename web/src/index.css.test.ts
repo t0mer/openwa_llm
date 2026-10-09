@@ -63,3 +63,11 @@ describe("index.css tokens", () => {
     expect(indexHtml).not.toContain("googleapis");
   });
 });
+
+describe("SweetAlert2 over a Radix modal", () => {
+  it("lets modal popups take pointer input although Radix sets pointer-events:none on <body>", () => {
+    const m = /\n\.swal2-container \{([^}]*)\}/.exec(css);
+    expect(m).not.toBeNull();
+    expect(m![1]).toMatch(/pointer-events:\s*auto;/);
+  });
+});

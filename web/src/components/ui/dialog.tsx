@@ -1,6 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import { useEffect, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { Button } from "./button";
 
@@ -12,10 +12,47 @@ const overlay = "fixed inset-0 z-50 bg-[#14122b]/60 backdrop-blur-[2px]";
 
 type ContentProps = Omit<ComponentPropsWithoutRef<typeof DialogPrimitive.Content>, "title">;
 
+/** SweetAlert2 renders its popups and toasts into this container, appended to <body>. */
+const SWAL_CONTAINER = ".swal2-container";
+const inSwal = (target: EventTarget | null) => target instanceof Element && !!target.closest(SWAL_CONTAINER);
+/** A SweetAlert modal (not a toast) is showing over the dialog. */
+export const swalModalOpen = () => !!document.querySelector(".swal2-popup:not(.swal2-toast)");
+
+/** The SweetAlert container holding a modal popup (not a toast) that `node` is inside, if any. */
+const inSwalModal = (node: EventTarget | null) =>
+  node instanceof Element && !!node.closest(SWAL_CONTAINER)?.querySelector(".swal2-popup:not(.swal2-toast)");
+
+/**
+ * Radix traps focus with focusin/focusout listeners on `document`. A SweetAlert confirm opened from
+ * the dialog lives outside it (appended to <body>) and focuses itself synchronously, so the trap
+ * would pull focus straight back into the dialog. Focus moves into a SweetAlert modal stop at
+ * <body>: React's handlers (on the portal root) still run, Radix's document-level trap does not.
+ */
+function SwalFocusPassThrough() {
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      if (inSwalModal(e.target)) e.stopPropagation();
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      if (inSwalModal(e.relatedTarget)) e.stopPropagation();
+    };
+    document.body.addEventListener("focusin", onFocusIn);
+    document.body.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.body.removeEventListener("focusin", onFocusIn);
+      document.body.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
+  return null;
+}
+
 /**
  * A bottom sheet on phones, a centred dialog from md. `wide` widens it (Schedules). Extra Radix
  * Content props pass through. `closeDisabled` (use while saving) disables the close button and
  * blocks Escape and outside clicks, after any caller handlers have run.
+ *
+ * SweetAlert2 popups opened over the dialog keep working: they may take focus, clicks inside them
+ * are not "outside" clicks, and Escape while a SweetAlert modal is open closes only that modal.
  */
 export function DialogContent({
   title,
@@ -29,7 +66,7 @@ export function DialogContent({
   onInteractOutside,
   ...props
 }: ContentProps & {
-  title: string;
+  title: ReactNode;
   description?: string;
   children: ReactNode;
   wide?: boolean;
@@ -45,15 +82,15 @@ export function DialogContent({
         // Caller handlers run first; closeDisabled then still blocks every way of closing.
         onEscapeKeyDown={(e) => {
           onEscapeKeyDown?.(e);
-          if (closeDisabled) e.preventDefault();
+          if (closeDisabled || swalModalOpen()) e.preventDefault();
         }}
         onPointerDownOutside={(e) => {
           onPointerDownOutside?.(e);
-          if (closeDisabled) e.preventDefault();
+          if (closeDisabled || inSwal(e.target)) e.preventDefault();
         }}
         onInteractOutside={(e) => {
           onInteractOutside?.(e);
-          if (closeDisabled) e.preventDefault();
+          if (closeDisabled || inSwal(e.target)) e.preventDefault();
         }}
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] flex-col gap-4 overflow-y-auto rounded-t-xl border border-border bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-overlay",
@@ -77,6 +114,7 @@ export function DialogContent({
             </Button>
           </DialogPrimitive.Close>
         </div>
+        <SwalFocusPassThrough />
         {children}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>

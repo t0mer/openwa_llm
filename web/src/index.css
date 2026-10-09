@@ -130,6 +130,9 @@
  */
 .swal2-container {
   font-family: var(--font-sans);
+  /* A Radix modal dialog sets pointer-events:none on <body>; a confirm opened from it must stay
+     clickable. Toast containers keep SweetAlert's own pointer-events:none (more specific rule). */
+  pointer-events: auto;
 }
 .swal2-container.swal2-backdrop-show {
   background: rgb(20 18 43 / 0.6);

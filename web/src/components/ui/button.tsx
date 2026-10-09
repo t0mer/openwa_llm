@@ -1,10 +1,10 @@
 import { Slot } from "@radix-ui/react-slot";
 import { type VariantProps } from "class-variance-authority";
-import type { ButtonHTMLAttributes, MouseEvent } from "react";
+import type { ComponentPropsWithRef, MouseEvent } from "react";
 import { cn } from "../../lib/cn";
 import { buttonVariants } from "./button-variants";
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+export interface ButtonProps extends ComponentPropsWithRef<"button">, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
 

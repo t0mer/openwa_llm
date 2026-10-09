@@ -304,6 +304,7 @@ export default function Groups() {
         <SchedulesDialog
           group={{ group_jid: scheduling.group_jid, label: label(scheduling), managed: scheduling.managed }}
           onClose={() => setScheduling(null)}
+          returnFocus={() => returnFocus(openerKey("schedules", scheduling))}
           onChanged={() => void reload()}
         />
       )}
