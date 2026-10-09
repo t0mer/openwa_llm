@@ -212,7 +212,7 @@ def test_parse_media_caption_and_document_filename():
     assert isinstance(empty_image, InboundMessage)
     assert image.text == "[[Attached Image]] look at this"
     assert doc.text == "[[Attached Document]] plan.pdf"
-    assert empty_image.text is None
+    assert empty_image.text == "[[Attached Image]]"
 
 
 def test_parse_message_without_id_gets_fallback_id():
@@ -470,3 +470,39 @@ def test_media_message_gets_reference_instead_of_url():
     assert by_media.media_url == "openwa-media:9725@c.us/m1"
     assert by_type.media_url == "openwa-media:9725@c.us/m1"
     assert plain.media_url is None
+
+
+def test_rich_text_kinds():
+    assert _msg(type="ptt").text == "[[Attached Audio]]"
+    assert (
+        _msg(
+            type="location",
+            location={"latitude": 32.08, "longitude": 34.78, "name": "Cafe"},
+        ).text
+        == "[[Attached Location]] 32.08,34.78 Cafe"
+    )
+    assert (
+        _msg(type="location", latitude=1.5, longitude=2.5, address="Main St").text
+        == "[[Attached Location]] 1.5,2.5 Main St"
+    )
+    assert (
+        _msg(type="vcard", vCards=["BEGIN:VCARD\nFN:Dana Levi\nEND:VCARD"]).text
+        == "[[Attached Contact]] Dana Levi"
+    )
+    assert _msg(type="poll", poll={"name": "Lunch?"}).text == "[[Attached Poll]] Lunch?"
+    assert _msg(type="list", list={"title": "Menu"}).text == "[[Attached List]] Menu"
+    assert (
+        _msg(type="order", orderTitle="Order #5").text == "[[Attached Order]] Order #5"
+    )
+
+
+def test_rich_text_malformed_falls_back_to_label():
+    assert _msg(type="location", location="nope").text == "[[Attached Location]]"
+    assert (
+        _msg(type="location", location={"latitude": "x", "longitude": None}).text
+        == "[[Attached Location]]"
+    )
+    assert _msg(type="vcard", vCards="oops", vcard=5).text == "[[Attached Contact]]"
+    assert _msg(type="poll", poll=[1]).text == "[[Attached Poll]]"
+    assert _msg(type="list", list=None).text == "[[Attached List]]"
+    assert _msg(type="order").text == "[[Attached Order]]"

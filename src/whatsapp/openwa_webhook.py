@@ -21,6 +21,7 @@ _MEDIA_LABELS = {
     "video": "Video",
     "audio": "Audio",
     "voice": "Audio",
+    "ptt": "Audio",
     "document": "Document",
     "sticker": "Sticker",
 }
@@ -62,16 +63,104 @@ def _str(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+_RICH_KINDS = {
+    "vcard": "Contact",
+    "multi_vcard": "Contact",
+    "contact": "Contact",
+    "location": "Location",
+    "poll": "Poll",
+    "poll_creation": "Poll",
+    "list": "List",
+    "order": "Order",
+}
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _first_str(source: dict[str, Any], *keys: str) -> str | None:
+    return next((v for v in (_str(source.get(k)) for k in keys) if v), None)
+
+
+def _num(value: Any) -> str | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return f"{value:g}" if abs(value) < 1e6 else None
+
+
+def _contact_detail(data: dict[str, Any]) -> str | None:
+    cards: list[Any] = []
+    for key in ("vCards", "vcards"):
+        if isinstance(data.get(key), list):
+            cards.extend(data[key])
+    cards.append(data.get("vcard"))
+    names = []
+    for card in cards:
+        if not isinstance(card, str):
+            continue
+        match = re.search(r"^FN[;:][^\r\n]*?:?([^:\r\n]+)$", card, re.M)
+        if match and match.group(1).strip():
+            names.append(match.group(1).strip())
+    return ", ".join(names) or None
+
+
+def _location_detail(data: dict[str, Any]) -> str | None:
+    loc = _dict(data.get("location")) or data
+    lat = _num(loc.get("latitude", loc.get("lat")))
+    lng = _num(loc.get("longitude", loc.get("lng", loc.get("lon"))))
+    parts = []
+    if lat and lng:
+        parts.append(f"{lat},{lng}")
+    place = _first_str(loc, "name", "address", "description") or _str(data.get("body"))
+    if place:
+        parts.append(place)
+    return " ".join(parts) or None
+
+
+def _poll_detail(data: dict[str, Any]) -> str | None:
+    poll = _dict(data.get("poll"))
+    return _first_str(poll, "name", "question", "title") or _first_str(
+        data, "pollName", "question", "body"
+    )
+
+
+def _list_or_order_detail(data: dict[str, Any], kind: str) -> str | None:
+    nested = _dict(data.get(kind.lower()))
+    return _first_str(nested, "title", "name", "message") or _first_str(
+        data, "title", "orderTitle", "body"
+    )
+
+
+def _rich_detail(kind: str, data: dict[str, Any]) -> str | None:
+    if kind == "Contact":
+        return _contact_detail(data)
+    if kind == "Location":
+        return _location_detail(data)
+    if kind == "Poll":
+        return _poll_detail(data)
+    return _list_or_order_detail(data, kind)
+
+
 def _message_text(data: dict[str, Any]) -> str | None:
+    """Text for a message. Rich-kind field names (vCards, location, poll, list,
+    order) are guesses from the OpenWA docs, not verified against live payloads;
+    anything unexpected degrades to the bare `[[Attached <kind>]]` label."""
     body = _str(data.get("body"))
     type_ = str(data.get("type") or "").lower()
+    rich = _RICH_KINDS.get(type_)
+    if rich is not None:
+        try:
+            detail = _rich_detail(rich, data)
+        except (TypeError, ValueError, AttributeError):
+            detail = None
+        return f"[[Attached {rich}]] {detail}" if detail else f"[[Attached {rich}]]"
     label = _MEDIA_LABELS.get(type_)
     if label is None:
         return body
-    raw_media = data.get("media")
-    media: dict[str, Any] = raw_media if isinstance(raw_media, dict) else {}
+    media = _dict(data.get("media"))
     caption = body or (_str(media.get("filename")) if type_ == "document" else None)
-    return f"[[Attached {label}]] {caption}" if caption else None
+    return f"[[Attached {label}]] {caption}" if caption else f"[[Attached {label}]]"
 
 
 def _media_ref(data: dict[str, Any], chat_id: str, message_id: str) -> str | None:
