@@ -40,6 +40,7 @@ export function DialogContent({
       <DialogPrimitive.Overlay data-dialog-overlay="" className={overlay} />
       <DialogPrimitive.Content
         {...(description ? {} : { "aria-describedby": undefined })}
+        aria-modal="true"
         {...props}
         // Caller handlers run first; closeDisabled then still blocks every way of closing.
         onEscapeKeyDown={(e) => {

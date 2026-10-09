@@ -2,7 +2,7 @@ import { ChevronDown } from "lucide-react";
 import {
   cloneElement,
   useId,
-  type InputHTMLAttributes,
+  type ComponentPropsWithRef,
   type ReactElement,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -12,7 +12,7 @@ import { cn } from "../../lib/cn";
 const control =
   "min-h-11 min-w-0 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base md:text-sm text-foreground placeholder:text-muted-foreground disabled:opacity-60";
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: ComponentPropsWithRef<"input">) {
   return <input className={cn(control, className)} {...props} />;
 }
 

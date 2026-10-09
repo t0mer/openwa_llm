@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Users } from "lucide-react";
 import { api } from "../api";
 import { confirm, toast } from "../alerts";
+import EditGroupDialog, { LanguageOptions, toLanguage } from "../components/EditGroupDialog";
 import SchedulesDialog from "../components/SchedulesDialog";
-import TagInput from "../components/TagInput";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
 import { Input, Select } from "../components/ui/field";
@@ -13,16 +13,10 @@ import { PageHeader } from "../components/ui/page-header";
 import { Skeleton } from "../components/ui/skeleton";
 import { Switch } from "../components/ui/switch";
 import { MD_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
-import type { Group, GroupPatch, GroupSort, SummaryLanguage } from "../types";
+import type { Group, GroupPatch, GroupSort } from "../types";
 import { useErrorToast, useLoad } from "../useLoad";
 
 const PAGE = 50;
-
-const LANGUAGES: { value: SummaryLanguage; label: string }[] = [
-  { value: "he", label: "HE" },
-  { value: "en", label: "EN" },
-  { value: "ru", label: "RU" },
-];
 
 type Managed = "all" | "managed" | "unmanaged";
 const FILTERS: { value: Managed; label: string }[] = [
@@ -31,25 +25,18 @@ const FILTERS: { value: Managed; label: string }[] = [
   { value: "unmanaged", label: "Disabled" },
 ];
 
-/** Select value ("" = Auto) to API value. */
-function toLanguage(value: string): SummaryLanguage | null {
-  return LANGUAGES.find((l) => l.value === value)?.value ?? null;
-}
-
-function LanguageOptions() {
-  return (
-    <>
-      <option value="">Auto</option>
-      {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
-    </>
-  );
-}
-
 function fmt(ts: string): string {
   return new Date(ts).toLocaleString();
 }
 
 const groupLabel = (g: Group) => g.display_name || g.group_name || g.group_jid;
+
+/**
+ * Dialog openers carry a stable key, so focus can return to the opener even when the table/cards
+ * swap (a viewport resize while a dialog is open) replaced the element that opened it.
+ */
+type OpenerKind = "edit" | "schedules";
+const openerKey = (kind: OpenerKind, g: Group) => `${kind}:${g.group_jid}`;
 
 /** Everything a row or card needs to act on one group. */
 interface RowProps {
@@ -110,10 +97,10 @@ function GroupTableRow(p: RowProps) {
       <td className="px-3 py-1.5">
         <span className="inline-flex items-center gap-2">
           <span className="schedule-count tabular">{g.schedule_count}</span>
-          <Button size="sm" onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
+          <Button size="sm" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
         </span>
       </td>
-      <td className="px-3 py-1.5 text-end"><Button size="sm" onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button></td>
+      <td className="px-3 py-1.5 text-end"><Button size="sm" data-opener={openerKey("edit", g)} onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button></td>
     </tr>
   );
 }
@@ -148,8 +135,8 @@ function GroupCard(p: RowProps) {
         </div>
       </dl>
       <div className="flex items-center gap-2">
-        <Button size="lg" className="flex-1" onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
-        <Button size="lg" className="flex-1" onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button>
+        <Button size="lg" className="flex-1" data-opener={openerKey("schedules", g)} onClick={() => p.onSchedules(g)} aria-label={`Schedules for ${groupLabel(g)}`}>Schedules</Button>
+        <Button size="lg" className="flex-1" data-opener={openerKey("edit", g)} onClick={() => p.onEdit(g)} aria-label={`Edit ${g.group_jid}`}>Edit</Button>
       </div>
     </li>
   );
@@ -177,6 +164,13 @@ export default function Groups() {
   const [scheduling, setScheduling] = useState<Group | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [savingJid, setSavingJid] = useState<string | null>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+
+  /** Focus the current opener of a closed dialog, or the search box if the group left the list. */
+  function returnFocus(key: string) {
+    const opener = Array.from(document.querySelectorAll<HTMLElement>("[data-opener]")).find((el) => el.dataset.opener === key);
+    (opener ?? searchInput.current)?.focus();
+  }
 
   const { data, error, loading, reload } = useLoad(
     () =>
@@ -248,7 +242,7 @@ export default function Groups() {
       <PageHeader title="Groups" description="Choose where the bot replies, how summaries are written and when they are sent." />
       <form role="search" aria-label="Group filters" className="flex flex-col gap-3" onSubmit={onSearch}>
         <div className="flex flex-wrap gap-2">
-          <Input className="min-w-0 flex-1 basis-56" placeholder="Search name, topic or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search groups" />
+          <Input ref={searchInput} className="min-w-0 flex-1 basis-56" placeholder="Search name, topic or JID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search groups" />
           <Button type="submit" variant="primary" size="lg">Search</Button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -269,6 +263,12 @@ export default function Groups() {
         </div>
         <p aria-live="polite" className="text-sm text-muted-foreground">{total} groups</p>
       </form>
+      {/*
+        A stable wrapper around everything that swaps (error, loading, empty, table <-> cards). An open
+        modal dialog hides the page from assistive tech when it opens; elements created later inside
+        this wrapper (e.g. the cards after a resize) inherit that, instead of appearing un-hidden.
+      */}
+      <div className="flex flex-col gap-5">
       {error && <InlineError>{error}</InlineError>}
       {loading && !data ? (
         <LoadingRows desktop={desktop} />
@@ -299,6 +299,7 @@ export default function Groups() {
         <Button size="lg" className="md:min-h-9" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</Button>
         <Button size="lg" className="md:min-h-9" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</Button>
       </div>
+      </div>
       {scheduling && (
         <SchedulesDialog
           group={{ group_jid: scheduling.group_jid, label: label(scheduling), managed: scheduling.managed }}
@@ -307,8 +308,9 @@ export default function Groups() {
         />
       )}
       {editing && (
-        <EditGroup
+        <EditGroupDialog
           group={editing}
+          returnFocus={() => returnFocus(openerKey("edit", editing))}
           error={dialogError}
           saving={savingJid === editing.group_jid}
           onCancel={() => { setDialogError(null); setEditing(null); }}
@@ -317,104 +319,6 @@ export default function Groups() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function EditGroup({ group, error, saving, onCancel, onSave }: { group: Group; error: string | null; saving: boolean; onCancel: () => void; onSave: (patch: GroupPatch) => Promise<void> }) {
-  const [displayName, setDisplayName] = useState(group.display_name ?? "");
-  const [keys, setKeys] = useState<string[]>(group.community_keys);
-  const [language, setLanguage] = useState<string>(group.summary_language ?? "");
-  const nameInput = useRef<HTMLInputElement>(null);
-  const backdrop = useRef<HTMLDivElement>(null);
-  const savingRef = useRef(saving);
-  savingRef.current = saving;
-  const cancel = () => {
-    if (!savingRef.current) onCancel();
-  };
-  const cancelRef = useRef(cancel);
-  cancelRef.current = cancel;
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    nameInput.current?.focus();
-    // Make everything outside the dialog inert while it is open.
-    const inerted: Element[] = [];
-    for (let node: Element | null = backdrop.current; node && node !== document.body; node = node.parentElement) {
-      for (const sib of Array.from(node.parentElement?.children ?? [])) {
-        if (sib !== node && !sib.hasAttribute("inert")) {
-          sib.setAttribute("inert", "");
-          inerted.push(sib);
-        }
-      }
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") cancelRef.current();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      for (const el of inerted) el.removeAttribute("inert");
-      opener?.focus?.();
-    };
-  }, []);
-
-  function trapTab(e: React.KeyboardEvent<HTMLFormElement>) {
-    if (e.key !== "Tab") return;
-    const focusable = Array.from(
-      e.currentTarget.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])"),
-    ).filter((el) => !(el as HTMLButtonElement).disabled);
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || !e.currentTarget.contains(active))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && (active === last || !e.currentTarget.contains(active))) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    const patch: GroupPatch = {};
-    if (displayName.trim() !== (group.display_name ?? "")) patch.display_name = displayName.trim() || null;
-    if (JSON.stringify(keys) !== JSON.stringify(group.community_keys)) patch.community_keys = keys;
-    if (language !== (group.summary_language ?? "")) patch.summary_language = toLanguage(language);
-    if (Object.keys(patch).length === 0) return onCancel();
-    void onSave(patch);
-  }
-
-  return (
-    <div ref={backdrop} className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) cancel(); }}>
-      <form className="modal" role="dialog" aria-modal="true" aria-label="Edit group" onSubmit={submit} onKeyDown={trapTab}>
-        <h2><bdi>{group.group_name || group.group_jid}</bdi></h2>
-        <p className="muted">WhatsApp name, topic and owner come from WhatsApp and cannot be edited here.</p>
-        {group.group_topic && <p className="muted">Topic: {group.group_topic}</p>}
-        <p className="muted">Owner: {group.owner_jid ?? "unknown"}</p>
-        <label>
-          Display name
-          <input ref={nameInput} value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={255} />
-        </label>
-        <label>
-          Summary language
-          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-            <LanguageOptions />
-          </select>
-        </label>
-        <div>
-          <strong>Community keys</strong>
-          <p className="muted">Groups that share a key also receive each other&apos;s summaries and knowledge.</p>
-          <TagInput value={keys} onChange={setKeys} label="Community keys" />
-        </div>
-        {error && <p role="alert" className="inline-error">{error}</p>}
-        <div className="toolbar">
-          <button type="submit" className="primary" disabled={saving}>Save</button>
-          <button type="button" onClick={onCancel}>Cancel</button>
-        </div>
-      </form>
     </div>
   );
 }
