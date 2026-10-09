@@ -162,6 +162,7 @@ class KnowledgeBaseAnswers(BaseHandler):
         sender_display = opt_out_map.get(sender_user, f"@{sender_user}")
 
         prompt_template = f"""
+        # Request:
         {sender_display}: {query}
         
         # Recent chat history:

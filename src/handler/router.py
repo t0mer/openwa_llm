@@ -109,7 +109,7 @@ class Router(BaseHandler):
         sender_display = opt_out_map.get(sender_user, f"@{sender_user}")
 
         response = await agent.run(
-            f"{sender_display}: {message.text}\n\n # History:\n {chat2text(list(messages), opt_out_map)}"
+            f"# Request:\n{sender_display}: {message.text}\n\n # History:\n {chat2text(list(messages), opt_out_map)}"
         )
         await self.send_message(
             message.chat_jid,
