@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 import uuid
 from pathlib import Path
 
@@ -29,22 +30,35 @@ async def _admin_sql(uri: str, sql: str) -> None:
     await engine.dispose()
 
 
-@pytest.fixture
-def fresh_db_uri():
-    base = _admin_uri()
+def _fresh_db(base: str):
     name = f"test_mig_{uuid.uuid4().hex[:8]}"
     asyncio.run(_admin_sql(base, f'CREATE DATABASE "{name}"'))
-    uri = make_url(base).set(database=name)
-    asyncio.run(
-        _admin_sql(
-            uri.render_as_string(hide_password=False),
-            "CREATE EXTENSION IF NOT EXISTS vector",
-        )
-    )
-    try:
-        yield uri.render_as_string(hide_password=False)
+    try:  # everything after CREATE must be inside, so DROP always runs
+        uri = make_url(base).set(database=name).render_as_string(hide_password=False)
+        asyncio.run(_admin_sql(uri, "CREATE EXTENSION IF NOT EXISTS vector"))
+        yield uri
     finally:
         asyncio.run(_admin_sql(base, f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+
+
+@pytest.fixture
+def fresh_db_uri():
+    yield from _fresh_db(_admin_uri())
+
+
+def test_fresh_db_is_dropped_when_extension_step_fails(monkeypatch):
+    calls: list[str] = []
+
+    async def fake_admin_sql(uri: str, sql: str) -> None:
+        calls.append(sql)
+        if sql.startswith("CREATE EXTENSION"):
+            raise RuntimeError("pgvector not available")
+
+    monkeypatch.setattr(sys.modules[__name__], "_admin_sql", fake_admin_sql)
+    with pytest.raises(RuntimeError, match="pgvector"):
+        next(_fresh_db("postgresql+asyncpg://u:p@h/test_base"))
+    assert calls[0].startswith("CREATE DATABASE")
+    assert calls[-1].startswith("DROP DATABASE IF EXISTS")
 
 
 def _config(uri: str) -> Config:
