@@ -27,8 +27,8 @@ const messages = (v: number) => {
   return `${n.toLocaleString()} ${n === 1 ? "message" : "messages"}`;
 };
 
-/** The JID's user part ("972501234567" from "972501234567@s.whatsapp.net"), used when there is no name. */
-const jidUser = (jid: string) => jid.split("@")[0] || jid;
+/** A name, or the JID's user part ("972501234567" from "972501234567@s.whatsapp.net") when it is null or empty. */
+const nameOrJid = (name: string | null, jid: string) => name || jid.split("@")[0] || jid;
 
 /** Date formatters in the server time zone (buckets are computed there); browser zone if it is unknown. */
 function formatters(timeZone: string) {
@@ -124,12 +124,19 @@ function Charts({ s, wide }: { s: Stats; wide: boolean }) {
   const series: Bar[] = points.map((p) => ({ label: p.short, value: p.value, title: `${p.long}: ${messages(p.value)}` }));
 
   const hh = (h: number) => String(h).padStart(2, "0");
-  const hourNames = s.by_hour.map((_, h) => `${hh(h)}:00–${hh((h + 1) % 24)}:00`);
-  const hours: Bar[] = s.by_hour.map((v, h) => ({ label: hh(h), value: v, title: `${hourNames[h]}: ${messages(v)}` }));
-  const days: Bar[] = s.by_weekday.map((v, d) => ({ label: WEEKDAYS[d]!.slice(0, 3), value: v, title: `${WEEKDAYS[d]}: ${messages(v)}` }));
+  // Fixed slots: 24 hours and 7 days (missing entries count as 0, extras are ignored).
+  const hourNames = Array.from({ length: 24 }, (_, h) => `${hh(h)}:00–${hh((h + 1) % 24)}:00`);
+  const hours: Bar[] = hourNames.map((name, h) => {
+    const v = s.by_hour[h] ?? 0;
+    return { label: hh(h), value: v, title: `${name}: ${messages(v)}` };
+  });
+  const days: Bar[] = WEEKDAYS.map((name, d) => {
+    const v = s.by_weekday[d] ?? 0;
+    return { label: name.slice(0, 3), value: v, title: `${name}: ${messages(v)}` };
+  });
 
-  const groups = s.top_groups.map((g) => ({ key: g.group_jid, label: g.name ?? jidUser(g.group_jid), value: g.count }));
-  const senders = s.top_senders.map((g) => ({ key: g.sender_jid, label: g.name ?? jidUser(g.sender_jid), value: g.count }));
+  const groups = s.top_groups.map((g) => ({ key: g.group_jid, label: nameOrJid(g.name, g.group_jid), value: g.count }));
+  const senders = s.top_senders.map((g) => ({ key: g.sender_jid, label: nameOrJid(g.name, g.sender_jid), value: g.count }));
 
   const split = [
     { label: "Text", value: s.split.text, color: "var(--chart-1)" },
@@ -218,18 +225,21 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
 
-  const load = useCallback(async () => {
+  /** Resolves true when this request's result was applied. */
+  const load = useCallback(async (): Promise<boolean> => {
     // Presets are anchored on the moment of each request, so every refresh moves the window.
     const params = resolveRange(key, new Date(), key === "custom" ? { from: cFrom, to: cTo } : undefined);
-    if ("error" in params) return; // the URL parser only yields valid ranges
+    if ("error" in params) return false; // the URL parser only yields valid ranges
     const id = ++seq.current;
     setBusy(true);
     try {
       const stats = await api.getStats(params);
-      if (id !== seq.current) return; // a newer request (or range) owns the page now
+      if (id !== seq.current) return false; // a newer request (or range) owns the page now
       setResult({ range: rangeId, stats, error: null });
+      setBusy(false);
+      return true;
     } catch (e) {
-      if (id !== seq.current) return;
+      if (id !== seq.current) return false;
       // 401 is handled by the session layer (redirect to login), like useLoad.
       if (!(e instanceof ApiError && e.status === 401)) {
         const error = e instanceof Error ? e.message : String(e);
@@ -237,6 +247,7 @@ export default function Dashboard() {
       }
     }
     setBusy(false);
+    return false;
   }, [key, cFrom, cTo, rangeId]);
 
   useEffect(() => {
@@ -248,14 +259,18 @@ export default function Dashboard() {
     // Relative presets refresh every minute while the tab is visible; a tick missed while it was
     // hidden is made up once when it is shown again. Custom and All time are fixed windows.
     let missed = false;
-    const timer = setInterval(() => {
+    const tick = () => {
       if (document.visibilityState === "visible") void load();
       else missed = true;
-    }, REFRESH_MS);
+    };
+    let timer = setInterval(tick, REFRESH_MS);
     const onVisibility = () => {
       if (document.visibilityState === "visible" && missed) {
         missed = false;
         void load();
+        // Restart the minute from the catch-up, so a scheduled tick does not follow right behind it.
+        clearInterval(timer);
+        timer = setInterval(tick, REFRESH_MS);
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -266,25 +281,44 @@ export default function Dashboard() {
     };
   }, [load, key]);
 
+  const page = useRef<HTMLDivElement>(null);
+  const [retrying, setRetrying] = useState(false);
+  async function retry() {
+    setRetrying(true);
+    const ok = await load();
+    setRetrying(false);
+    // The Retry button disappears with the error; move focus to the heading instead of <body>.
+    const h1 = ok ? page.current?.querySelector("h1") : null;
+    if (h1) {
+      h1.tabIndex = -1;
+      h1.focus();
+    }
+  }
+
   const current = result?.range === rangeId ? result : null;
   const stats = current?.stats ?? null;
   // First-load failures render inline with Retry; a failed refresh is toasted and the numbers stay.
   const inlineError = useLoadError(current?.error ?? null, stats !== null);
 
   return (
-    <div className="flex flex-col gap-5">
+    <div ref={page} className="flex flex-col gap-5">
       <PageHeader title="Dashboard" description="Activity across the groups and chats the bot can see." />
       <div className="flex flex-col gap-2">
         <DateRangeFilter rangeKey={key} custom={custom} onChange={setRange} />
         {stats && <p className="text-xs text-muted-foreground">Times in {stats.timezone}</p>}
       </div>
       {inlineError ? (
-        <div className="flex flex-col items-start gap-3">
+        <div aria-busy={retrying || undefined} className="flex flex-col items-start gap-3">
           <InlineError className="w-full">{inlineError}</InlineError>
-          <Button onClick={() => void load()} aria-disabled={busy || undefined}>
-            <RotateCw aria-hidden="true" />
-            Retry
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button onClick={() => void retry()} aria-disabled={busy || undefined}>
+              <RotateCw aria-hidden="true" />
+              Retry
+            </Button>
+            <span role="status" className="text-sm text-muted-foreground">
+              {retrying ? "Loading…" : ""}
+            </span>
+          </div>
         </div>
       ) : !stats ? (
         <Loading />

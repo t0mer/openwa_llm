@@ -94,11 +94,8 @@ async function loaded() {
   await flush();
 }
 
-/** A chart card, found from its heading (ChartCard sections carry no accessible name of their own). */
-function chart(title: string) {
-  const h = screen.getByRole("heading", { level: 2, name: title });
-  return h.closest("section") as HTMLElement;
-}
+/** A chart card: a region named by its heading. */
+const chart = (title: string) => screen.getByRole("region", { name: title });
 
 /** The value text shown in a stat tile, found from its label. */
 function tile(label: string) {
@@ -279,6 +276,20 @@ describe("Dashboard auto-refresh", () => {
     expect(api.getStats).toHaveBeenCalledTimes(1);
   });
 
+  it("restarts the minute after a catch-up, so no tick follows right behind it", async () => {
+    renderAt();
+    await loaded();
+    setVisibility("hidden");
+    await act(async () => void vi.advanceTimersByTime(110_000)); // tick at 60 s missed
+    setVisibility("visible");
+    await flush();
+    expect(api.getStats).toHaveBeenCalledTimes(2); // catch-up at 110 s
+    await act(async () => void vi.advanceTimersByTime(10_000)); // 120 s: the old schedule's tick
+    expect(api.getStats).toHaveBeenCalledTimes(2);
+    await act(async () => void vi.advanceTimersByTime(50_000)); // 170 s: a minute after the catch-up
+    expect(api.getStats).toHaveBeenCalledTimes(3);
+  });
+
   it("pauses while the tab is hidden and catches up once when it is shown", async () => {
     renderAt();
     await loaded();
@@ -338,6 +349,9 @@ describe("Dashboard content", () => {
   });
 
   it("labels day buckets in the server time zone", async () => {
+    // test-setup pins the browser zone to UTC, where 2026-10-14T00:00+03:00 is still 13 Oct:
+    // only server-zone formatting yields "Wed 14 Oct".
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe("UTC");
     renderAt();
     await loaded();
     const series = chart("Messages over time");
@@ -380,6 +394,34 @@ describe("Dashboard content", () => {
       "Friday: 6 messages",
       "Saturday: 7 messages",
     ]);
+  });
+
+  it("falls back to the JID user part for an empty name", async () => {
+    vi.mocked(api.getStats).mockResolvedValue(
+      stats({
+        top_groups: [{ group_jid: "120363@g.us", name: "", count: 4 }],
+        top_senders: [{ sender_jid: "972501111111@s.whatsapp.net", name: "", count: 3 }],
+      }),
+    );
+    renderAt();
+    await loaded();
+    expect(within(chart("Top 5 groups")).getByText("120363")).toBeInTheDocument();
+    expect(within(chart("Top senders")).getByText("972501111111")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["too few", [5, 4, 3, 2, 1], ["5", "4", "3", "2", "1", "0", "0"]],
+    ["too many", [1, 2, 3, 4, 5, 6, 7, 8, 9], ["1", "2", "3", "4", "5", "6", "7"]],
+  ])("keeps seven weekday bars when by_weekday has %s entries", async (_n, by_weekday, counts) => {
+    vi.mocked(api.getStats).mockResolvedValue(stats({ by_weekday }));
+    renderAt();
+    await loaded();
+    const labels = within(chart("Activity by weekday")).getAllByRole("img").map((b) => b.getAttribute("aria-label"));
+    expect(labels).toEqual(
+      ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map(
+        (d, i) => `${d}: ${counts[i]} ${counts[i] === "1" ? "message" : "messages"}`,
+      ),
+    );
   });
 
   it("lists top groups and senders, falling back to the JID user part", async () => {
@@ -444,6 +486,33 @@ describe("Dashboard states", () => {
     renderAt();
     expect(screen.getByRole("status", { name: "Loading the dashboard" })).toBeInTheDocument();
     expect(screen.queryByRole("term")).not.toBeInTheDocument();
+  });
+
+  it("shows Loading… while a retry runs and then moves focus to the page heading", async () => {
+    const retry = deferred<Stats>();
+    vi.mocked(api.getStats).mockRejectedValueOnce(new Error("Server unavailable")).mockReturnValueOnce(retry.promise);
+    renderAt();
+    await loaded();
+    const button = screen.getByRole("button", { name: "Retry" });
+    button.focus();
+    await user().click(button);
+    expect(screen.getByText("Loading…")).toHaveAttribute("role", "status");
+    expect(button.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
+    await act(async () => retry.resolve(stats()));
+    expect(screen.getByText("1,234")).toBeInTheDocument();
+    const h1 = screen.getByRole("heading", { level: 1, name: "Dashboard" });
+    expect(h1).toHaveFocus();
+    expect(h1).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("keeps focus on Retry when the retry fails again", async () => {
+    vi.mocked(api.getStats).mockRejectedValueOnce(new Error("Server unavailable")).mockRejectedValueOnce(new Error("Still down"));
+    renderAt();
+    await loaded();
+    await user().click(screen.getByRole("button", { name: "Retry" }));
+    await loaded();
+    expect(screen.getByRole("alert")).toHaveTextContent("Still down");
+    expect(screen.getByRole("button", { name: "Retry" })).toHaveFocus();
   });
 
   it("shows an inline error with Retry, and recovers", async () => {
