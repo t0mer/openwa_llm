@@ -1,7 +1,8 @@
 import userEvent from "@testing-library/user-event";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mockViewport } from "./hooks/mockViewport";
 import { api } from "./api";
 import App from "./App";
 
@@ -16,6 +17,7 @@ function stubSession(status: number, body: unknown = {}) {
   );
 }
 
+beforeEach(() => mockViewport(1024));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("App auth routing", () => {
@@ -35,6 +37,15 @@ describe("App auth routing", () => {
     stubSession(200, { authenticated: true });
     render(<MemoryRouter initialEntries={["/groups"]}><App /></MemoryRouter>);
     await waitFor(() => expect(screen.getByRole("link", { name: "Contacts" })).toBeInTheDocument());
+  });
+
+  it("shows the shell on phones too and logs out from the More sheet", async () => {
+    mockViewport(375);
+    stubSession(200, { authenticated: true });
+    render(<MemoryRouter initialEntries={["/groups"]}><App /></MemoryRouter>);
+    await userEvent.click(await screen.findByRole("button", { name: "More" }));
+    await userEvent.click(screen.getByRole("button", { name: "Log out" }));
+    expect(await screen.findByRole("heading", { name: /admin login/i })).toBeInTheDocument();
   });
 
   it("logs in and lands on the groups page", async () => {

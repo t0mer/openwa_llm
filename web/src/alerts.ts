@@ -1,5 +1,6 @@
-import Swal from "sweetalert2";
+import Swal, { type SweetAlertOptions, type SweetAlertResult } from "sweetalert2";
 import { describeResult } from "./results";
+import { buttonVariants } from "./components/ui/button-variants";
 import type { GroupActionResult } from "./types";
 
 /*
@@ -13,9 +14,10 @@ const classes = {
   popup: "swal-popup",
   title: "swal-title",
   htmlContainer: "swal-body",
-  confirmButton: "btn primary",
-  cancelButton: "btn secondary",
-  denyButton: "btn danger",
+  // The same classes the Button component uses, so popups match the rest of the UI in both themes.
+  confirmButton: buttonVariants({ variant: "primary" }),
+  cancelButton: buttonVariants({ variant: "outline" }),
+  denyButton: buttonVariants({ variant: "danger" }),
 };
 
 const baseOptions = {
@@ -32,6 +34,14 @@ let activeModals = 0;
 let modalChain: Promise<unknown> = Promise.resolve();
 const MAX_DEFERRED = 3;
 const pendingToasts: { icon: "success" | "error" | "info"; message: string }[] = [];
+
+/** Resolves once every queued modal has fully closed (exposed for tests). */
+export async function modalsIdle(close: () => void): Promise<void> {
+  while (activeModals > 0) {
+    close();
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
 
 /** Messages of toasts currently deferred behind a modal (exposed for tests). */
 export const deferredToasts = () => pendingToasts.map((t) => t.message);
@@ -59,6 +69,22 @@ function modal<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/**
+ * Fire a modal and settle only once SweetAlert has fully torn it down. `Swal.fire` resolves when
+ * the hide animation STARTS; SweetAlert restores the aria-hidden it recorded on the <body>
+ * children only when the animation ends. A caller that closes a Radix dialog in between (whose
+ * aria-hidden SweetAlert recorded) would get the whole app hidden again. `didDestroy` runs after
+ * that restore, and also when a popup is replaced or closed programmatically.
+ */
+function fireModal(options: SweetAlertOptions): Promise<SweetAlertResult> {
+  return new Promise((resolve) => {
+    let result: SweetAlertResult = { isConfirmed: false, isDenied: false, isDismissed: true };
+    void Swal.fire({ ...options, didDestroy: () => resolve(result) }).then((r) => {
+      result = r;
+    });
+  });
+}
+
 export interface ConfirmOptions {
   title: string;
   text?: string;
@@ -69,9 +95,9 @@ export interface ConfirmOptions {
 /** Ask the user to confirm an action. Resolves true only on explicit confirmation. */
 export function confirm({ title, text, confirmText = "Confirm", danger = false }: ConfirmOptions): Promise<boolean> {
   return modal(async () => {
-  const result = await Swal.fire({
+  const result = await fireModal({
     ...baseOptions,
-    customClass: { ...classes, confirmButton: danger ? "btn danger-solid" : "btn primary" },
+    customClass: { ...classes, confirmButton: buttonVariants({ variant: danger ? "danger" : "primary" }) },
     icon: "warning",
     titleText: title,
     text,
@@ -88,7 +114,7 @@ export function confirm({ title, text, confirmText = "Confirm", danger = false }
 const toaster = Swal.mixin({
   ...baseOptions,
   toast: true,
-  position: "top-end",
+  position: "top-end", // toast containers are excluded from the backdrop rule in index.css,
   showConfirmButton: false,
   showCloseButton: true,
   timer: 4000,
@@ -114,7 +140,7 @@ export const toast = {
 /** Modal error dialog for failures the user must acknowledge. */
 export function errorDialog(title: string, message: string): Promise<void> {
   return modal(async () => {
-    await Swal.fire({ ...baseOptions, icon: "error", titleText: title, text: message, confirmButtonText: "Close" });
+    await fireModal({ ...baseOptions, icon: "error", titleText: title, text: message, confirmButtonText: "Close" });
   });
 }
 
@@ -143,18 +169,18 @@ export function showSummaryResults(results: GroupActionResult[], message?: strin
     const li = document.createElement("li");
     li.className = `swal-result swal-result-${r.status}`;
     const badge = document.createElement("span");
-    badge.className = `badge ${r.status === "sent" ? "ok" : r.status === "failed" ? "bad" : "warn"}`;
+    badge.className = `swal-result-badge swal-result-badge-${r.status}`;
     badge.textContent = r.status;
     const name = document.createElement("strong");
     name.textContent = r.group_name;
     const detail = document.createElement("div");
-    detail.className = "muted";
+    detail.className = "swal-result-detail";
     detail.textContent = describeResult(r);
     li.append(badge, " ", name, detail);
     list.append(li);
   }
   root.append(head, list);
-  await Swal.fire({
+  await fireModal({
     ...baseOptions,
     icon: summaryIcon(counts, results.length),
     titleText: "Summary results",

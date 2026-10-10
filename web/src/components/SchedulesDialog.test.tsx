@@ -34,6 +34,20 @@ function open(items: Schedule[], group = grp) {
   return { onClose, onChanged };
 }
 
+const user = userEvent.setup({ pointerEventsCheck: 0 }); // Radix sets pointer-events:none on <body>
+const overlay = () => document.querySelector<HTMLElement>("[data-dialog-overlay]")!;
+/** [header X, footer Close]: both close the dialog. */
+const closeButtons = () => screen.getAllByRole("button", { name: "Close" });
+/**
+ * Row Save/Delete stay focusable when unavailable (aria-disabled, clicks ignored) so a focused
+ * button that becomes unavailable while saving does not drop focus to <body>.
+ */
+const expectOff = (b: HTMLElement) => {
+  expect(b).toHaveAttribute("aria-disabled", "true");
+  expect(b).not.toHaveAttribute("disabled");
+};
+const expectOn = (b: HTMLElement) => expect(b).not.toHaveAttribute("aria-disabled", "true");
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(confirm).mockResolvedValue(true);
@@ -52,7 +66,7 @@ describe("SchedulesDialog", () => {
     expect(within(row).getByLabelText("Hour")).toHaveValue("9");
     expect(within(row).getByLabelText("Minute")).toHaveValue("30");
     expect(within(row).getByLabelText("AM or PM")).toHaveValue("AM");
-    expect(within(row).getByRole("checkbox", { name: "Enabled" })).toBeChecked();
+    expect(within(row).getByRole("switch", { name: "Enabled" })).toBeChecked();
     expect(within(row).getByLabelText("Hour").querySelectorAll("option")).toHaveLength(12);
     expect(within(row).getByLabelText("Minute").querySelectorAll("option")).toHaveLength(60);
     expect(within(row).getByText("Never run")).toBeInTheDocument();
@@ -61,7 +75,7 @@ describe("SchedulesDialog", () => {
   it("renders the last run with badge, friendly reason and message count", async () => {
     open([sched({ last_run_at: "2026-10-01T08:00:00Z", last_status: "skipped", last_reason: "not_enough_messages", last_message_count: 4 })]);
     const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
-    expect(within(row).getByText("skipped")).toHaveClass("badge", "warn");
+    expect(within(row).getByText("skipped")).toHaveClass("text-warning", "bg-warning-soft");
     expect(row).toHaveTextContent("Not enough new messages");
     expect(row).toHaveTextContent("4 messages");
     expect(describeReason("lock_timeout")).toMatch(/still running/);
@@ -126,14 +140,14 @@ describe("SchedulesDialog", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Friends")));
     expect(onChanged).toHaveBeenCalledTimes(1);
     // now a saved row: patching is possible and Save is disabled until something changes
-    expect(screen.getByRole("button", { name: "Save schedule at 9:30 AM" })).toBeDisabled();
+    expectOff(screen.getByRole("button", { name: "Save schedule at 9:30 AM" }));
   });
 
   it("patches only the changed fields", async () => {
     open([sched()]);
     vi.mocked(api.patchSchedule).mockResolvedValue(sched({ enabled: false }));
     const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
-    await userEvent.click(within(row).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(row).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" }));
     await waitFor(() => expect(api.patchSchedule).toHaveBeenCalledWith("1@g.us", "s1", { enabled: false }));
     expect(toast.success).toHaveBeenCalled();
@@ -164,11 +178,11 @@ describe("SchedulesDialog", () => {
     open([sched()]);
     vi.mocked(api.patchSchedule).mockRejectedValue(new Error("boom"));
     const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
-    await userEvent.click(within(row).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(row).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
-    expect(within(row).getByRole("checkbox", { name: "Enabled" })).not.toBeChecked();
-    expect(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" })).toBeEnabled();
+    expect(within(row).getByRole("switch", { name: "Enabled" })).not.toBeChecked();
+    expectOn(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" }));
   });
 
   it("disables the row controls and blocks closing while saving", async () => {
@@ -176,14 +190,20 @@ describe("SchedulesDialog", () => {
     let release!: (s: Schedule) => void;
     vi.mocked(api.patchSchedule).mockReturnValue(new Promise((r) => { release = r; }));
     const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
-    await userEvent.click(within(row).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(row).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" }));
-    expect(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" })).toBeDisabled();
+    const saveBtn = within(row).getByRole("button", { name: "Save schedule at 9:30 AM" });
+    expectOff(saveBtn);
+    // the clicked Save keeps focus (a disabled button would drop it to <body>)
+    expect(saveBtn).toHaveFocus();
+    await userEvent.click(saveBtn);
+    expect(api.patchSchedule).toHaveBeenCalledTimes(1);
     expect(within(row).getByLabelText("Hour")).toBeDisabled();
     expect(within(row).getByRole("checkbox", { name: "Mon" })).toBeDisabled();
-    expect(within(row).getByRole("button", { name: "Delete schedule at 9:30 AM" })).toBeDisabled();
+    expectOff(within(row).getByRole("button", { name: "Delete schedule at 9:30 AM" }));
+    for (const b of closeButtons()) expect(b).toBeDisabled();
     await userEvent.keyboard("{Escape}");
-    await userEvent.pointer({ keys: "[MouseLeft]", target: screen.getByRole("dialog").parentElement! });
+    await user.pointer({ keys: "[MouseLeft]", target: overlay() });
     expect(onClose).not.toHaveBeenCalled();
     release(sched({ enabled: false }));
     await waitFor(() => expect(within(row).getByLabelText("Hour")).toBeEnabled());
@@ -240,7 +260,7 @@ describe("SchedulesDialog", () => {
     expect(screen.getByRole("button", { name: "Add schedule" })).toBeDisabled();
   });
 
-  it("is a modal: focuses the first control, closes on Escape, traps Tab and makes the page inert", async () => {
+  it("is a modal: focuses the first control, closes on Escape, loops Tab and hides the page", async () => {
     const sibling = document.createElement("div");
     document.body.appendChild(sibling);
     const { onClose } = open([sched()]);
@@ -249,16 +269,20 @@ describe("SchedulesDialog", () => {
     expect(dialog).toHaveAccessibleName(/Friends/);
     const sun = await within(dialog).findByRole("checkbox", { name: "Sun" });
     await waitFor(() => expect(sun).toHaveFocus());
+    expect(sibling).toHaveAttribute("aria-hidden", "true");
     expect(sibling).toHaveAttribute("inert");
-    const close = within(dialog).getByRole("button", { name: "Close" });
-    close.focus();
+    const [first, last] = closeButtons();
+    last.focus();
     await userEvent.tab();
-    expect(sun).toHaveFocus();
+    expect(first).toHaveFocus();
     await userEvent.tab({ shift: true });
-    expect(close).toHaveFocus();
+    expect(last).toHaveFocus();
     await userEvent.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(1);
+    await userEvent.click(last);
+    expect(onClose).toHaveBeenCalledTimes(2);
     cleanup();
+    expect(sibling).not.toHaveAttribute("aria-hidden");
     expect(sibling).not.toHaveAttribute("inert");
     sibling.remove();
   });
@@ -307,22 +331,23 @@ describe("SchedulesDialog", () => {
     open([sched()]);
     vi.mocked(api.patchSchedule).mockReturnValue(new Promise(() => {}));
     const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
-    await userEvent.click(within(row).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(row).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" }));
     const dialog = screen.getByRole("dialog");
     const add = within(dialog).getByRole("button", { name: "Add schedule" });
     add.focus();
     await userEvent.tab();
-    // Close is disabled while saving, so Add is the only enabled control: Tab must stay inside.
+    // Both Close buttons are disabled while saving, Add is the last focusable control: Tab wraps
+    // to the first focusable one (the saving row's Delete, still focusable) and stays inside.
     expect(dialog.contains(document.activeElement)).toBe(true);
-    expect(document.activeElement).toBe(add);
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Delete schedule at 9:30 AM" }));
   });
 
   it("drops the row, toasts info and notifies the parent when the schedule is gone (404 on PATCH)", async () => {
     const { onChanged } = open([sched()]);
     vi.mocked(api.patchSchedule).mockRejectedValue(new ApiError(404, "schedule not found"));
     const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
-    await userEvent.click(within(row).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(row).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(row).getByRole("button", { name: "Save schedule at 9:30 AM" }));
     await waitFor(() => expect(toast.info).toHaveBeenCalledWith("This schedule no longer exists"));
     expect(screen.queryByRole("group", { name: "Schedule at 9:30 AM" })).not.toBeInTheDocument();
@@ -354,10 +379,16 @@ describe("SchedulesDialog", () => {
 
   it("loads the list under React.StrictMode", async () => {
     vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [sched()] });
-    render(<StrictMode><SchedulesDialog group={grp} onClose={vi.fn()} onChanged={vi.fn()} /></StrictMode>);
+    const returnFocus = vi.fn();
+    render(<StrictMode><SchedulesDialog group={grp} onClose={vi.fn()} onChanged={vi.fn()} returnFocus={returnFocus} /></StrictMode>);
     expect(await screen.findByRole("group", { name: "Schedule at 9:30 AM" })).toBeInTheDocument();
     expect(screen.getAllByRole("group", { name: /Schedule at/ })).toHaveLength(1);
     expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+    // StrictMode's simulated unmount must not count as closing: focus stays in the dialog.
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Sun" })).toHaveFocus());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(returnFocus).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox", { name: "Sun" })).toHaveFocus();
   });
 
   const three = () => [
@@ -372,14 +403,14 @@ describe("SchedulesDialog", () => {
     const a = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
     const b = screen.getByRole("group", { name: "Schedule at 10:30 AM" });
     const c = screen.getByRole("group", { name: "Schedule at 11:30 AM" });
-    await userEvent.click(within(a).getByRole("checkbox", { name: "Enabled" }));
-    await userEvent.click(within(b).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(a).getByRole("switch", { name: "Enabled" }));
+    await userEvent.click(within(b).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(b).getByRole("button", { name: "Save schedule at 10:30 AM" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("conflict"));
     await waitFor(() => expect(api.listSchedules).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(within(b).getByRole("checkbox", { name: "Enabled" })).toBeEnabled());
+    await waitFor(() => expect(within(b).getByRole("switch", { name: "Enabled" })).toBeEnabled());
     expect(screen.getByRole("group", { name: "Schedule at 9:30 AM" })).toBe(a);
-    expect(within(a).getByRole("checkbox", { name: "Enabled" })).not.toBeChecked();
+    expect(within(a).getByRole("switch", { name: "Enabled" })).not.toBeChecked();
     expect(screen.getByRole("group", { name: "Schedule at 11:30 AM" })).toBe(c);
   });
 
@@ -392,9 +423,9 @@ describe("SchedulesDialog", () => {
     });
     const a = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
     const b = screen.getByRole("group", { name: "Schedule at 10:30 AM" });
-    await userEvent.click(within(a).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(a).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(a).getByRole("button", { name: "Save schedule at 9:30 AM" }));
-    await userEvent.click(within(b).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(b).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(b).getByRole("button", { name: "Save schedule at 10:30 AM" }));
     await waitFor(() => expect(api.listSchedules).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
@@ -404,7 +435,7 @@ describe("SchedulesDialog", () => {
     release(sched({ id: "a", hour: 9, hour12: 9, enabled: false }));
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
     expect(within(a).getByLabelText("Hour")).toBeEnabled();
-    expect(within(a).getByRole("checkbox", { name: "Enabled" })).not.toBeChecked();
+    expect(within(a).getByRole("switch", { name: "Enabled" })).not.toBeChecked();
   });
 
   it("does not duplicate a row whose create is in flight when a reload already contains it", async () => {
@@ -432,7 +463,7 @@ describe("SchedulesDialog", () => {
     open([sched({ id: "a" }), sched({ id: "b", hour: 10, hour12: 10 })]);
     vi.mocked(api.patchSchedule).mockRejectedValue(new ApiError(404, "gone"));
     const a = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
-    await userEvent.click(within(a).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(a).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(a).getByRole("button", { name: "Save schedule at 9:30 AM" }));
     const b = await screen.findByRole("group", { name: "Schedule at 10:30 AM" });
     await waitFor(() => expect(within(b).getByRole("checkbox", { name: "Sun" })).toHaveFocus());
@@ -443,14 +474,20 @@ describe("SchedulesDialog", () => {
     vi.mocked(api.patchSchedule).mockReturnValue(new Promise(() => {}));
     const a = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
     const b = screen.getByRole("group", { name: "Schedule at 10:30 AM" });
-    await userEvent.click(within(a).getByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(within(a).getByRole("switch", { name: "Enabled" }));
     await userEvent.click(within(a).getByRole("button", { name: "Save schedule at 9:30 AM" }));
     expect(within(a).getByRole("checkbox", { name: "Sun" })).toBeDisabled();
     const add = screen.getByRole("button", { name: "Add schedule" });
     add.focus();
-    await userEvent.tab(); // last enabled -> first enabled
+    // the saving row's disabled checkboxes/selects are skipped; its Delete stays focusable
+    await userEvent.tab(); // last focusable -> first focusable
+    expect(within(a).getByRole("button", { name: "Delete schedule at 9:30 AM" })).toHaveFocus();
+    await userEvent.tab(); // the disabled controls of row a are skipped
+    expect(within(a).getByRole("button", { name: "Save schedule at 9:30 AM" })).toHaveFocus();
+    await userEvent.tab();
     expect(within(b).getByRole("checkbox", { name: "Sun" })).toHaveFocus();
-    await userEvent.tab({ shift: true }); // first enabled -> last enabled
+    within(a).getByRole("button", { name: "Delete schedule at 9:30 AM" }).focus();
+    await userEvent.tab({ shift: true }); // first focusable -> last focusable
     expect(add).toHaveFocus();
   });
 
@@ -491,9 +528,9 @@ describe("SchedulesDialog", () => {
 
   it("closes on backdrop click", async () => {
     const { onClose } = open([]);
-    const dialog = await screen.findByRole("dialog");
-    await userEvent.pointer({ keys: "[MouseLeft]", target: dialog.parentElement! });
-    expect(onClose).toHaveBeenCalled();
+    await screen.findByRole("dialog");
+    await user.pointer({ keys: "[MouseLeft]", target: overlay() });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it("renders group names as text, never HTML", async () => {
@@ -503,18 +540,99 @@ describe("SchedulesDialog", () => {
     expect(dialog.querySelector("img")).toBeNull();
     expect(dialog).toHaveTextContent(evil);
     vi.mocked(api.patchSchedule).mockResolvedValue(sched({ enabled: false }));
-    await userEvent.click(await screen.findByRole("checkbox", { name: "Enabled" }));
+    await userEvent.click(await screen.findByRole("switch", { name: "Enabled" }));
     await userEvent.click(screen.getByRole("button", { name: "Save schedule at 9:30 AM" }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining(evil)));
     await userEvent.click(screen.getByRole("button", { name: "Delete schedule at 9:30 AM" }));
     expect(vi.mocked(confirm).mock.calls[0][0]).toMatchObject({ text: expect.stringContaining(evil) });
   });
 
-  it("uses the stacked-card markup classes", async () => {
+  it("is a wide bottom sheet on phones, centred from md, with each schedule as a stacked card", async () => {
     open([sched()]);
     const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
-    expect(row).toHaveClass("schedule-row");
-    expect(row.closest(".modal")).toHaveClass("modal-wide");
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveClass("bottom-0", "rounded-t-xl", "md:top-1/2", "md:max-w-3xl");
+    expect(row.tagName).toBe("LI");
+    expect(row).toHaveClass("flex-col", "rounded-lg", "border");
+  });
+
+  it("keeps 44px touch targets until lg (day chips, time selects, row buttons, footer buttons)", async () => {
+    open([sched()]);
+    const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+    const dialog = screen.getByRole("dialog");
+    const chip = within(row).getByRole("checkbox", { name: "Mon" }).closest("label")!;
+    expect(chip).toHaveClass("min-h-11", "lg:min-h-9");
+    for (const sel of within(row).getAllByRole("combobox")) expect(sel).toHaveClass("lg:min-h-9");
+    for (const name of ["Save schedule at 9:30 AM", "Delete schedule at 9:30 AM"]) {
+      expect(within(row).getByRole("button", { name })).toHaveClass("min-h-11", "lg:min-h-9");
+    }
+    expect(within(dialog).getByRole("button", { name: /Add schedule/ })).toHaveClass("min-h-11", "lg:min-h-10");
+    expect(dialog.innerHTML).not.toMatch(/\bmd:min-h-9\b/);
+  });
+
+  describe("closing with unsaved changes", () => {
+    const dirty = async () => {
+      const row = await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+      await userEvent.click(within(row).getByRole("switch", { name: "Enabled" }));
+    };
+    const ways: [string, () => Promise<void>][] = [
+      ["the footer Close", async () => { await user.click(closeButtons()[1]); }],
+      ["the header X", async () => { await user.click(closeButtons()[0]); }],
+      ["Escape", async () => { await user.keyboard("{Escape}"); }],
+      ["an overlay click", async () => { await user.pointer({ keys: "[MouseLeft]", target: overlay() }); }],
+    ];
+
+    it.each(ways)("%s asks before discarding an edited row and closes on confirm", async (_n, act) => {
+      const { onClose } = open([sched()]);
+      await dirty();
+      await act();
+      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(confirm).mock.calls[0][0]).toMatchObject({ title: "Discard unsaved changes?", confirmText: "Discard", danger: true });
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    });
+
+    it.each(ways)("%s keeps the dialog and the draft when discarding is declined", async (_n, act) => {
+      vi.mocked(confirm).mockResolvedValue(false);
+      const { onClose } = open([sched()]);
+      await dirty();
+      await act();
+      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole("switch", { name: "Enabled" })).not.toBeChecked();
+    });
+
+    it("asks for an unsaved new row too", async () => {
+      const { onClose } = open([]);
+      await userEvent.click(await screen.findByRole("button", { name: "Add schedule" }));
+      await user.click(closeButtons()[1]);
+      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    });
+
+    it.each(ways)("%s closes immediately when nothing is unsaved", async (_n, act) => {
+      const { onClose } = open([sched()]);
+      await screen.findByRole("group", { name: "Schedule at 9:30 AM" });
+      await act();
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+      expect(confirm).not.toHaveBeenCalled();
+    });
+  });
+
+  it("leaves no inert attribute behind after StrictMode mounting and unmounting", async () => {
+    vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [] });
+    const { unmount } = render(<StrictMode><SchedulesDialog group={grp} onClose={vi.fn()} onChanged={vi.fn()} /></StrictMode>);
+    await screen.findByText("No schedules yet.");
+    expect(document.querySelectorAll("[inert]").length).toBeGreaterThan(0);
+    expect(screen.getByRole("dialog").closest("[inert]")).toBeNull();
+    unmount();
+    expect(document.querySelectorAll("[inert]")).toHaveLength(0);
+  });
+
+  it("shows the server time zone line", async () => {
+    open([sched()]);
+    const zone = await screen.findByText("Asia/Jerusalem");
+    expect(zone.closest("p")).toHaveTextContent("Times use the server time zone: Asia/Jerusalem");
   });
 });
 
@@ -531,8 +649,9 @@ describe("Groups integration", () => {
     vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [] });
     vi.mocked(api.createSchedule).mockResolvedValue(sched());
     render(<Groups />);
-    const opener = await screen.findByRole("button", { name: "Schedules for WA" });
-    expect(document.querySelector('td[data-label="Schedules"] .schedule-count')).toHaveTextContent("0");
+    const opener = await screen.findByRole("button", { name: "Schedules 0 for WA" });
+    const count = () => opener.closest("tr, li")!.querySelector(".schedule-count");
+    expect(count()).toHaveTextContent("0");
     await userEvent.click(opener);
     expect(api.listSchedules).toHaveBeenCalledWith("1@g.us");
     expect(await screen.findByText("Schedules only run for managed groups.")).toBeInTheDocument();
@@ -541,9 +660,11 @@ describe("Groups integration", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: "Sun" }));
     await userEvent.click(screen.getByRole("button", { name: "Save new schedule" }));
     await waitFor(() => expect(vi.mocked(api.listGroups).mock.calls.length).toBeGreaterThan(before));
-    await userEvent.click(screen.getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(document.querySelector('td[data-label="Schedules"] .schedule-count')).toHaveTextContent("1"));
+    expect(document.body).toHaveAttribute("data-scroll-locked");
+    await userEvent.click(closeButtons()[1]);
+    await waitFor(() => expect(count()).toHaveTextContent("1"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(opener).toHaveFocus();
+    expect(document.body).not.toHaveAttribute("data-scroll-locked");
+    await waitFor(() => expect(opener).toHaveFocus());
   });
 });

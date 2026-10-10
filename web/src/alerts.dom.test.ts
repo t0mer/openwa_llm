@@ -1,7 +1,8 @@
 // Unmocked SweetAlert2: attacker-controlled names must never become DOM elements.
 import Swal from "sweetalert2";
+import { waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { confirm, deferredToasts, errorDialog, showSummaryResults, toast } from "./alerts";
+import { confirm, deferredToasts, errorDialog, showSummaryResults, toast, modalsIdle } from "./alerts";
 
 // jsdom has no matchMedia, which SweetAlert2 uses when rendering icons.
 window.matchMedia ??= ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as never;
@@ -14,8 +15,7 @@ const EVIL = "<img src=x onerror=alert(1)>";
 
 afterEach(async () => {
   await flush();
-  Swal.close();
-  await flush();
+  await modalsIdle(() => Swal.close());
   await flush();
 });
 
@@ -59,14 +59,13 @@ describe("alerts never render data as HTML", () => {
     expect(settled).toBeUndefined();
     expect(document.querySelector(".swal2-container:not(.swal2-top-end) .swal2-confirm")).not.toBeNull();
     Swal.clickConfirm();
-    await flush();
-    expect(settled).toBe(true);
+    // confirm settles once SweetAlert has fully closed the popup
+    await waitFor(() => expect(settled).toBe(true));
     // the queued results modal now shows; close it, then the deferred toast appears
-    expect(document.body.textContent).toContain("No groups were processed.");
+    await waitFor(() => expect(document.body.textContent).toContain("No groups were processed."));
+    expect(document.querySelector(".swal-toast")).toBeNull(); // still deferred behind the modal
     Swal.clickConfirm();
-    await flush();
-    await flush();
-    expect(document.querySelector(".swal-toast")).not.toBeNull();
+    await waitFor(() => expect(document.querySelector(".swal-toast")).not.toBeNull());
   });
 
   it("keeps a small FIFO of deferred toasts, dropping the oldest", async () => {

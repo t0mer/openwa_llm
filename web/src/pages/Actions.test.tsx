@@ -108,10 +108,42 @@ describe("Actions page", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("shows load errors as a toast", async () => {
+  it("shows a failed first load inline only, without a toast", async () => {
     vi.mocked(api.getActions).mockRejectedValue(new ApiError(500, "server down"));
     render(<Actions />);
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("server down"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("server down");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("still shows both cards with an Unknown state and usable Run buttons when the first load fails", async () => {
+    vi.mocked(api.getActions).mockRejectedValue(new ApiError(500, "server down"));
+    vi.mocked(api.runAction).mockResolvedValue(undefined as never);
+    render(<Actions />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("server down");
+    for (const title of ["Group summaries", "Knowledge base"]) {
+      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    }
+    expect(screen.getAllByText("Unknown")).toHaveLength(2);
+    const run = screen.getByRole("button", { name: "Run summaries now" });
+    expect(run).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Load knowledge base topics" })).toBeEnabled();
+    await userEvent.click(run);
+    await waitFor(() => expect(api.runAction).toHaveBeenCalledWith("summarize"));
+  });
+
+  it("toasts, without an inline error, when a poll fails while statuses are shown", async () => {
+    vi.mocked(api.getActions).mockResolvedValueOnce(statuses()).mockRejectedValue(new ApiError(500, "poll failed"));
+    vi.useFakeTimers();
+    try {
+      render(<Actions />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(toast.error).toHaveBeenCalledWith("poll failed");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Run summaries now" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   const results = [

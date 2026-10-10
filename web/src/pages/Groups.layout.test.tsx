@@ -1,0 +1,397 @@
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import Groups from "./Groups";
+import { api } from "../api";
+import { mockViewport } from "../hooks/mockViewport";
+import type { Group } from "../types";
+
+vi.mock("../api", async (orig) => {
+  const actual = await orig<typeof import("../api")>();
+  return { ...actual, api: { listGroups: vi.fn(), patchGroup: vi.fn(), listSchedules: vi.fn() } };
+});
+vi.mock("../alerts");
+import { confirm, toast } from "../alerts";
+
+const base: Group = {
+  group_jid: "1@g.us", group_name: "WA name", display_name: null, group_topic: null,
+  owner_jid: null, managed: false, notify_on_spam: false, summary_language: null,
+  community_keys: ["fam"], last_summary_sync: "2026-01-02T03:04:05", last_ingest: "2026-01-02T03:04:05",
+  message_count: 12, schedule_count: 2,
+};
+
+function setup(groups: Group[]) {
+  vi.mocked(api.listGroups).mockResolvedValue({ items: groups, total: groups.length });
+  vi.mocked(api.patchGroup).mockImplementation(async (jid, patch) => ({ ...groups.find((g) => g.group_jid === jid)!, ...patch }) as Group);
+  return render(<Groups />);
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(confirm).mockResolvedValue(true);
+});
+
+describe("Groups toolbar (table, from 1280px)", () => {
+  beforeEach(() => void mockViewport(1280));
+
+  it("searches on submit with the trimmed text and resets the offset", async () => {
+    setup([base]);
+    await screen.findByRole("table", { name: "Groups" });
+    await userEvent.type(screen.getByRole("textbox", { name: "Search groups" }), "  fam  ");
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() => expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ search: "fam", offset: 0 })));
+  });
+
+  it("filters with chips, exposing the active one with aria-pressed", async () => {
+    setup([base]);
+    await screen.findByRole("table");
+    const group = screen.getByRole("group", { name: "Filter" });
+    const chip = (n: string) => within(group).getByRole("button", { name: n });
+    expect(chip("All")).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(chip("Enabled"));
+    await waitFor(() => expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ managed: true })));
+    expect(chip("Enabled")).toHaveAttribute("aria-pressed", "true");
+    expect(chip("All")).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(chip("Disabled"));
+    await waitFor(() => expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ managed: false })));
+    await userEvent.click(chip("All"));
+    await waitFor(() => expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ managed: undefined })));
+  });
+
+  it("announces the count politely so filter results are heard", async () => {
+    setup([base]);
+    const count = await screen.findByText("1 groups");
+    expect(count).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("shows the total count", async () => {
+    vi.mocked(api.listGroups).mockResolvedValue({ items: [base], total: 7 });
+    render(<Groups />);
+    expect(await screen.findByText("7 groups")).toBeInTheDocument();
+  });
+
+  it("renders Respond and Spam notice as named switches reflecting state", async () => {
+    setup([{ ...base, managed: true }]);
+    expect(await screen.findByRole("switch", { name: "Respond in 1@g.us" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Spam notice in 1@g.us" })).not.toBeChecked();
+  });
+
+  it("disables the switches and the language select while saving", async () => {
+    setup([base]);
+    let release!: () => void;
+    vi.mocked(api.patchGroup).mockReturnValueOnce(new Promise((r) => { release = () => r(base); }));
+    await userEvent.click(await screen.findByRole("switch", { name: /spam/i }));
+    expect(screen.getByRole("switch", { name: /spam/i })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: /respond/i })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: /summary language/i })).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.getByRole("switch", { name: /spam/i })).toBeEnabled());
+  });
+
+  it("does not enable the bot when the confirm is declined, and confirms with the last summary time", async () => {
+    vi.mocked(confirm).mockResolvedValue(false);
+    setup([base]);
+    await userEvent.click(await screen.findByRole("switch", { name: /respond/i }));
+    expect(vi.mocked(confirm).mock.calls[0][0]).toMatchObject({ confirmText: "Enable bot" });
+    expect(api.patchGroup).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("renders Hebrew names inside bdi and lets the text direction follow the content", async () => {
+    setup([{ ...base, display_name: "קבוצת בדיקה", group_topic: "נושא" }]);
+    const name = await screen.findByText("קבוצת בדיקה");
+    expect(name.tagName).toBe("BDI");
+    expect(name.parentElement).toHaveAttribute("dir", "auto");
+    expect(screen.getByText("נושא").tagName).toBe("BDI");
+    expect(screen.getByText("1@g.us").tagName).toBe("BDI");
+  });
+
+  it("shows loading skeleton rows, then the table", async () => {
+    let resolve!: (v: { items: Group[]; total: number }) => void;
+    vi.mocked(api.listGroups).mockReturnValue(new Promise((r) => { resolve = r; }));
+    render(<Groups />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    resolve({ items: [base], total: 1 });
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty state with an icon", async () => {
+    setup([]);
+    const msg = await screen.findByText("No groups match.");
+    expect(msg.parentElement?.querySelector("svg")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("shows a failed first load only inline: no toast, no empty table", async () => {
+    vi.mocked(api.listGroups).mockRejectedValue(new Error("server down"));
+    render(<Groups />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("server down");
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("toasts only when a refresh fails while rows are on screen", async () => {
+    setup([base]);
+    await screen.findByRole("table", { name: "Groups" });
+    vi.mocked(api.listGroups).mockRejectedValue(new Error("refresh failed"));
+    await userEvent.click(screen.getByRole("button", { name: "Enabled" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("refresh failed"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Groups" })).toBeInTheDocument();
+  });
+});
+
+describe("Groups on tablets", () => {
+  it("shows cards with 44px controls below 1280px (the table does not fit beside the sidebar)", async () => {
+    mockViewport(800);
+    setup([base]);
+    expect(await screen.findByRole("button", { name: "Edit 1@g.us" })).toHaveClass("min-h-11");
+    expect(screen.getByRole("button", { name: "Schedules 2 for WA name" })).toHaveClass("min-h-11");
+    expect(screen.getByRole("combobox", { name: /summary language/i })).toHaveClass("min-h-11");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    const lang = screen.getByRole("combobox", { name: /summary language/i });
+    const edit = screen.getByRole("button", { name: "Edit 1@g.us" });
+    expect(edit.parentElement!.contains(lang)).toBe(false); // the select has its own full-width row
+  });
+});
+
+describe("Groups at phone width", () => {
+  beforeEach(() => void mockViewport(390));
+
+  it("renders cards instead of a table, with the same accessible names and no duplicates", async () => {
+    setup([{ ...base, display_name: "My alias" }]);
+    const list = await screen.findByRole("list", { name: "Groups" });
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getAllByRole("switch", { name: /respond in 1@g\.us/i })).toHaveLength(1);
+    expect(screen.getAllByRole("combobox", { name: "Summary language for My alias" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Schedules 2 for My alias" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Edit 1@g.us" })).toHaveLength(1);
+    for (const label of ["Respond", "Spam notice", "Language"]) {
+      expect(within(list).getByText(label)).toBeInTheDocument();
+    }
+    expect(list).toHaveTextContent("Community keys: fam");
+    expect(list).toHaveTextContent("12 messages");
+    expect(list).toHaveTextContent("Last summary:");
+    expect(list).toHaveTextContent("fam");
+  });
+
+  it("shows the schedule count inside the labelled Schedules button", async () => {
+    setup([base]);
+    const li = (await screen.findAllByRole("listitem"))[0];
+    const btn = within(li).getByRole("button", { name: "Schedules 2 for WA name" });
+    expect(btn).toHaveTextContent("Schedules");
+    expect(btn.querySelector(".schedule-count")).toHaveTextContent("2");
+  });
+
+  it("puts the switches in one row, the language select in its own row, and the two buttons together", async () => {
+    setup([base]);
+    const li = (await screen.findAllByRole("listitem"))[0];
+    const respond = within(li).getByRole("switch", { name: /respond/i });
+    const spam = within(li).getByRole("switch", { name: /spam/i });
+    expect(respond.closest("div")).toBe(spam.closest("div"));
+    const lang = within(li).getByRole("combobox");
+    const edit = within(li).getByRole("button", { name: /^Edit/ });
+    const schedules = within(li).getByRole("button", { name: /^Schedules \d+ for/ });
+    expect(edit.parentElement).toBe(schedules.parentElement);
+    expect(edit.parentElement!.contains(lang)).toBe(false);
+    expect(lang.closest("div")!.contains(edit)).toBe(false);
+  });
+
+  it("names the Schedules button starting with its visible text and count", async () => {
+    setup([{ ...base, schedule_count: 1 }]);
+    const btn = await screen.findByRole("button", { name: "Schedules 1 for WA name" });
+    expect(btn).toHaveTextContent("Schedules 1");
+  });
+
+  it("pluralises the message count and isolates the date in bdi", async () => {
+    setup([{ ...base, message_count: 1 }, { ...base, group_jid: "2@g.us", group_name: "Two", message_count: 2 }]);
+    const items = await screen.findAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("1 message");
+    expect(items[0]).not.toHaveTextContent("1 messages");
+    expect(items[1]).toHaveTextContent("2 messages");
+    expect(within(items[0]).getByText(new Date(base.last_summary_sync).toLocaleString()).tagName).toBe("BDI");
+  });
+
+  it("shows card-shaped skeletons while loading on phones", async () => {
+    vi.mocked(api.listGroups).mockReturnValue(new Promise(() => {}));
+    render(<Groups />);
+    const status = screen.getByRole("status");
+    expect(status.className).toContain("grid-cols-1");
+    expect(status.className).toContain("md:grid-cols-2");
+    expect(status.querySelectorAll("div[aria-hidden]")).toHaveLength(4);
+  });
+
+  it("uses cards below 1280px, including tablet widths", async () => {
+    mockViewport(1024);
+    setup([base]);
+    expect(await screen.findByRole("list", { name: "Groups" })).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("keeps meta in the Group cell of the table and only six columns", async () => {
+    mockViewport(1280);
+    setup([base]);
+    const headers = (await screen.findAllByRole("columnheader")).map((h) => h.textContent);
+    expect(headers).toEqual(["Group", "Respond", "Spam notice", "Summary language", "Schedules", "Actions"]);
+    const row = screen.getByRole("row", { name: /WA name/ });
+    expect(row).toHaveTextContent("Community keys: fam");
+    expect(row).toHaveTextContent("12 messages");
+    expect(row).toHaveTextContent("Last summary:");
+  });
+
+  it("keeps list semantics (role=list) on the card list", async () => {
+    setup([base]);
+    expect(await screen.findByRole("list", { name: "Groups" })).toHaveAttribute("role", "list");
+  });
+
+  it("keeps the behaviour: confirm then PATCH, language revert on failure", async () => {
+    setup([base]);
+    await userEvent.click(await screen.findByRole("switch", { name: /respond/i }));
+    await waitFor(() => expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { managed: true }));
+    vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("boom"));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /summary language/i }), "ru");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: /summary language/i })).toHaveValue(""));
+  });
+
+  it("gives touch controls a 44px target and the actions full-width buttons", async () => {
+    setup([base]);
+    const li = (await screen.findAllByRole("listitem"))[0];
+    expect(within(li).getByRole("combobox")).toHaveClass("min-h-11");
+    expect(within(li).getByRole("button", { name: /^Edit/ })).toHaveClass("min-h-11");
+    expect(within(li).getByRole("button", { name: /^Schedules \d+ for/ })).toHaveClass("min-h-11");
+    expect(within(li).getByRole("switch", { name: /respond/i }).className).toContain("after:-inset-2.5");
+    expect(screen.getByRole("button", { name: "Next" })).toHaveClass("min-h-11");
+    for (const n of ["All", "Enabled", "Disabled"]) {
+      expect(screen.getByRole("button", { name: n })).toHaveClass("min-h-11");
+    }
+  });
+
+  it("shows the empty state, not the card list, when nothing matches", async () => {
+    setup([]);
+    expect(await screen.findByText("No groups match.")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Groups" })).not.toBeInTheDocument();
+  });
+
+  it("renders Hebrew names inside bdi on cards", async () => {
+    setup([{ ...base, display_name: "קבוצה" }]);
+    expect((await screen.findByText("קבוצה")).tagName).toBe("BDI");
+  });
+});
+
+describe("Groups across a viewport resize", () => {
+  const controls = () => ({
+    respond: screen.getAllByRole("switch", { name: /respond in 1@g\.us/i }),
+    lang: screen.getAllByRole("combobox", { name: /summary language/i }),
+    edit: screen.getAllByRole("button", { name: "Edit 1@g.us" }),
+  });
+
+  it("swaps table and cards without duplicating controls or losing state", async () => {
+    const vp = mockViewport(1280);
+    // A short page (3 rows) of a larger total keeps Next/Previous meaningful without rendering 50 rows twice.
+    const many = Array.from({ length: 3 }, (_, i) => ({ ...base, group_jid: i === 0 ? "1@g.us" : `${i + 100}@g.us` }));
+    vi.mocked(api.listGroups).mockResolvedValue({ items: many, total: 120 });
+    render(<Groups />);
+    await screen.findByRole("table");
+    // one change event instead of one per typed character
+    fireEvent.change(screen.getByRole("textbox", { name: "Search groups" }), { target: { value: "draft" } });
+    await userEvent.click(screen.getByRole("button", { name: "Disabled" }));
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(api.listGroups).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50, managed: false })));
+
+    vp.setWidth(600);
+    expect(await screen.findByRole("list", { name: "Groups" })).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(controls().respond).toHaveLength(1);
+    expect(controls().edit).toHaveLength(1);
+    expect(controls().lang).toHaveLength(many.length);
+    expect(screen.getByRole("textbox", { name: "Search groups" })).toHaveValue("draft");
+    expect(screen.getByRole("button", { name: "Disabled" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
+
+    vp.setWidth(1280);
+    expect(await screen.findByRole("table", { name: "Groups" })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Groups" })).not.toBeInTheDocument();
+    expect(controls().respond).toHaveLength(1);
+    expect(controls().edit).toHaveLength(1);
+    expect(controls().lang).toHaveLength(many.length);
+    expect(screen.getByRole("textbox", { name: "Search groups" })).toHaveValue("draft");
+    expect(screen.getByRole("button", { name: "Disabled" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
+  });
+
+  it("keeps a pending save in its saving state across a resize", async () => {
+    const vp = mockViewport(1280);
+    setup([base]);
+    let release!: () => void;
+    vi.mocked(api.patchGroup).mockReturnValueOnce(new Promise((r) => { release = () => r(base); }));
+    await userEvent.click(await screen.findByRole("switch", { name: /spam/i }));
+    expect(screen.getByRole("switch", { name: /spam/i })).toBeDisabled();
+    vp.setWidth(600);
+    expect(await screen.findByRole("list", { name: "Groups" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: /spam/i })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: /summary language/i })).toBeDisabled();
+    await act(async () => release());
+    await waitFor(() => expect(screen.getByRole("switch", { name: /spam/i })).toBeEnabled());
+  });
+});
+
+describe("Groups dialogs across the table/cards swap", () => {
+  const user = userEvent.setup({ pointerEventsCheck: 0 }); // Radix sets pointer-events:none on <body>
+
+  async function expectModal(dialog: HTMLElement) {
+    // The page behind stays hidden from assistive tech and out of the Tab order after the swap.
+    expect(screen.queryByRole("list", { name: "Groups", hidden: false })).not.toBeInTheDocument();
+    const list = screen.getByRole("list", { name: "Groups", hidden: true });
+    expect(list.closest("[aria-hidden=true]")).not.toBeNull();
+    expect(screen.queryByRole("table", { hidden: true })).not.toBeInTheDocument();
+    for (let i = 0; i < 15; i++) {
+      await user.tab();
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+    for (let i = 0; i < 5; i++) {
+      await user.tab({ shift: true });
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+  }
+
+  it.each([
+    ["Edit", "Edit 1@g.us", "Edit group"],
+    ["Schedules", "Schedules 2 for WA name", /Schedules/],
+  ] as const)("%s: stays modal and keeps its state when the table becomes cards", async (_n, opener, title) => {
+    const vp = mockViewport(1280);
+    vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [] });
+    setup([base]);
+    await user.click(await screen.findByRole("button", { name: opener }));
+    const dialog = await screen.findByRole("dialog", { name: title });
+    if (_n === "Edit") await user.type(within(dialog).getByLabelText("Display name"), "Draft");
+    else await screen.findByText("No schedules yet.");
+    vp.setWidth(600);
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    if (_n === "Edit") expect(within(dialog).getByLabelText("Display name")).toHaveValue("Draft");
+    await expectModal(dialog);
+  });
+
+  it.each([
+    ["Edit", "Edit 1@g.us"],
+    ["Schedules", "Schedules 2 for WA name"],
+  ] as const)("%s: returns focus to the new opener when the old one was removed by the swap", async (_n, opener) => {
+    const vp = mockViewport(1280);
+    vi.mocked(api.listSchedules).mockResolvedValue({ timezone: "UTC", items: [] });
+    setup([base]);
+    const old = await screen.findByRole("button", { name: opener });
+    await user.click(old);
+    await screen.findByRole("dialog");
+    vp.setWidth(600);
+    expect(old.isConnected).toBe(false);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const fresh = screen.getByRole("button", { name: opener });
+    expect(fresh.closest("li")).not.toBeNull();
+    await waitFor(() => expect(fresh).toHaveFocus());
+    vp.setWidth(1280);
+  });
+});

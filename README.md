@@ -161,7 +161,13 @@ A web admin UI (served at `/admin`) lets you manage the bot without touching the
 - **Messages**: read-only message browser with search and filters.
 - **Bot actions**: run group summaries or load the knowledge base on demand. After a summary run, a per-group result list shows which groups were sent, skipped (for example "9 of 15 messages needed") or failed, and why.
 
-The UI is responsive and mobile friendly: on narrow screens the navigation collapses behind a menu button and tables turn into stacked cards. Confirmations, errors and success messages are shown with SweetAlert2 dialogs and toasts, in light or dark theme following your system setting (or the Theme toggle).
+The UI follows the Iris design language: Rubik (bundled with the app, no external font requests), a violet primary colour, soft borders and rounded cards.
+
+- **Theme:** System, Light or Dark. Pick it in the account menu (sidebar footer) or in the **More** sheet on phones. The choice is remembered in the browser; System follows the OS setting live.
+- **Navigation:** a sidebar on desktop (labels from 1024px wide, icon-only on tablets from 768px) and, on phones, a header with a bottom tab bar (Groups, Contacts, Messages, Bot actions) plus a **More** sheet (Opt-outs, theme, log out).
+- **Responsive Groups:** a compact table from 1280px, cards below that (two columns from 768px, one column on phones). Contacts, Opt-outs and Messages turn into stacked cards on phones, and dialogs (Edit group, Schedules) become bottom sheets.
+- **Confirmations, errors and toasts** use SweetAlert2, themed to match light or dark.
+- **Accessibility:** a "Skip to content" link is the first tab stop, everything works from the keyboard, dialogs trap focus and return it to the control that opened them, and group names and JIDs render correctly for right-to-left (Hebrew) text.
 
 #### Enabling it
 
@@ -220,6 +226,22 @@ Fields: `weekdays` (non-empty list of integers, 0 = Sunday to 6 = Saturday), the
 ![Groups](assets/screenshots/admin-groups-light.png)
 ![Groups (dark)](assets/screenshots/admin-groups-dark.png)
 
+At about 900px the sidebar collapses to icons and Groups shows cards:
+
+![Groups with the icon-only sidebar](assets/screenshots/admin-sidebar-collapsed-light.png)
+
+The account menu holds the theme switch (System / Light / Dark) and log out:
+
+![Account menu](assets/screenshots/admin-account-menu-light.png)
+
+Between 768px and 1279px Groups shows cards; the full sidebar appears from 1024px:
+
+![Groups on a 1024px tablet](assets/screenshots/admin-groups-tablet-light.png)
+
+Toasts (SweetAlert2) appear in the top-right corner:
+
+![Toast](assets/screenshots/admin-toast-light.png)
+
 #### Schedules
 The Schedules dialog of a group, in light and dark:
 
@@ -229,8 +251,9 @@ The Schedules dialog of a group, in light and dark:
 Editing a group (display name, summary language and community keys):
 
 ![Edit group](assets/screenshots/admin-groups-edit-light.png)
+![Edit group (dark)](assets/screenshots/admin-groups-edit-dark.png)
 
-Enabling the bot asks for confirmation (SweetAlert2), in light and dark:
+Enabling the bot asks for confirmation (SweetAlert2):
 
 ![Enable bot confirmation](assets/screenshots/admin-groups-confirm-light.png)
 ![Enable bot confirmation (dark)](assets/screenshots/admin-groups-confirm-dark.png)
@@ -258,13 +281,16 @@ Summary results per group after a run:
 
 #### Mobile
 <p>
-<img src="assets/screenshots/admin-mobile-groups-light.png" alt="Groups on mobile" width="220">
-<img src="assets/screenshots/admin-mobile-schedules-light.png" alt="Schedules dialog on mobile" width="220">
-<img src="assets/screenshots/admin-mobile-schedules-dark.png" alt="Schedules dialog on mobile (dark)" width="220">
-<img src="assets/screenshots/admin-mobile-menu-light.png" alt="Mobile navigation menu" width="220">
-<img src="assets/screenshots/admin-mobile-messages-light.png" alt="Messages on mobile" width="220">
-<img src="assets/screenshots/admin-mobile-actions-light.png" alt="Bot actions on mobile" width="220">
-<img src="assets/screenshots/admin-mobile-groups-dark.png" alt="Groups on mobile (dark)" width="220">
+<img src="assets/screenshots/admin-mobile-groups-light.png" alt="Groups on mobile (light)" width="180">
+<img src="assets/screenshots/admin-mobile-groups-dark.png" alt="Groups on mobile (dark)" width="180">
+<img src="assets/screenshots/admin-mobile-messages-light.png" alt="Messages on mobile (light)" width="180">
+<img src="assets/screenshots/admin-mobile-messages-dark.png" alt="Messages on mobile (dark)" width="180">
+<img src="assets/screenshots/admin-mobile-actions-light.png" alt="Bot actions on mobile (light)" width="180">
+<img src="assets/screenshots/admin-mobile-actions-dark.png" alt="Bot actions on mobile (dark)" width="180">
+<img src="assets/screenshots/admin-mobile-schedules-light.png" alt="Schedules dialog on mobile (light)" width="180">
+<img src="assets/screenshots/admin-mobile-schedules-dark.png" alt="Schedules dialog on mobile (dark)" width="180">
+<img src="assets/screenshots/admin-mobile-more-light.png" alt="More sheet on mobile (light)" width="180">
+<img src="assets/screenshots/admin-mobile-more-dark.png" alt="More sheet on mobile (dark)" width="180">
 </p>
 
 ### 6. API usage
@@ -344,7 +370,7 @@ The `check` command runs formatting first, then executes linting, type checking,
 
 ### Frontend (admin UI)
 
-The admin UI is a React + Vite SPA in `web/` (Node 20):
+The admin UI is a React 19 + Vite SPA in `web/` (Node 20) styled with Tailwind CSS 4, Radix UI primitives, lucide icons and SweetAlert2. Design tokens (colours, radii, fonts) for light and dark live in `web/src/index.css`:
 
 ```bash
 cd web

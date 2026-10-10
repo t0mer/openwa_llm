@@ -1,0 +1,317 @@
+@layer theme, base, components, utilities;
+
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens (the Iris palette). Neutrals are tinted toward violet. Colour only ever carries
+ * state together with an icon and a word. Dark mode is the `.dark` class on <html>.
+ */
+:root {
+  color-scheme: light;
+  --background: #f4f3fa;
+  --surface: #ffffff;
+  --surface-2: #ecebf6;
+  --foreground: #14122b;
+  --muted-foreground: #5b577a;
+  --border: #dcd9ee;
+  --border-strong: #bdb8dc;
+  --primary: #5e4cc2;
+  --primary-foreground: #ffffff;
+  --primary-soft: #e7e3fa;
+  --ring: #5e4cc2;
+  --danger: #b8383a;
+  --danger-soft: #fbe5e4;
+  --warning: #8d5a0f;
+  --warning-soft: #fbefd5;
+  --success: #25735a;
+  --success-soft: #dcf1e8;
+  --shadow: 0 10px 30px -12px rgb(20 18 43 / 0.35);
+}
+
+:root.dark {
+  color-scheme: dark;
+  --background: #100e24;
+  --surface: #1a1838;
+  --surface-2: #231f47;
+  --foreground: #eceaf8;
+  --muted-foreground: #a6a2c8;
+  --border: #2e2a58;
+  --border-strong: #433e7a;
+  --primary: #a89bf2;
+  --primary-foreground: #14122b;
+  --primary-soft: #2c2761;
+  --ring: #c4baf7;
+  --danger: #f08682;
+  --danger-soft: #45202a;
+  --warning: #eab45c;
+  --warning-soft: #3d2f17;
+  --success: #62c9a5;
+  --success-soft: #173a31;
+  --shadow: 0 10px 30px -12px rgb(0 0 0 / 0.7);
+}
+
+@theme inline {
+  --font-sans: "Rubik Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --shadow-overlay: var(--shadow);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+  }
+  * {
+    border-color: var(--border);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  button,
+  [role="button"],
+  a,
+  select,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  /* Keep identifiers (JIDs, numbers) left-to-right inside RTL text. */
+  .jid {
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* SweetAlert2 theme.
+ * SweetAlert2 injects its own unlayered stylesheet, so these rules are
+ * unlayered too and read only the design tokens: popups follow the light/dark class on <html>
+ * with no per-theme rules. Buttons get their look from the Button classes set in alerts.ts.
+ */
+.swal2-container {
+  font-family: var(--font-sans);
+  /* A Radix modal dialog sets pointer-events:none on <body>; a confirm opened from it must stay
+     clickable. Toast containers keep SweetAlert's own pointer-events:none (more specific rule). */
+  pointer-events: auto;
+}
+/* Modal backdrop only: toasts (container .swal2-top-end, see alerts.ts) must not blur or tint the page behind them. */
+.swal2-container.swal2-backdrop-show:not(.swal2-top-end) {
+  background: rgb(20 18 43 / 0.6);
+  backdrop-filter: blur(2px);
+}
+.swal-popup.swal2-popup,
+.swal2-popup.swal2-toast.swal-popup {
+  --swal2-background: var(--surface);
+  --swal2-color: var(--foreground);
+  --swal2-border: 1px solid var(--border);
+  --swal2-toast-border: 1px solid var(--border);
+  --swal2-border-radius: var(--radius-lg);
+  --swal2-timer-progress-bar-background: var(--primary);
+  --swal2-close-button-color: var(--muted-foreground);
+  --swal2-confirm-button-box-shadow: none;
+  --swal2-cancel-button-box-shadow: none;
+  --swal2-deny-button-box-shadow: none;
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  font-size: 15px;
+  max-width: calc(100vw - 24px);
+}
+.swal-popup .swal2-title {
+  color: var(--foreground);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.swal-popup .swal2-html-container,
+.swal-popup .swal2-html-container p {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.swal-popup .swal2-actions {
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.swal-popup .swal2-actions button {
+  margin: 0;
+  min-height: 2.5rem;
+}
+.swal-popup .swal2-actions button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.swal-popup .swal2-close {
+  color: var(--muted-foreground);
+  border-radius: var(--radius-md);
+}
+.swal-popup .swal2-close:hover {
+  color: var(--foreground);
+  background: var(--surface-2);
+}
+.swal-popup .swal2-close:focus-visible {
+  outline: 2px solid var(--ring);
+  box-shadow: none;
+}
+.swal-popup .swal2-timer-progress-bar {
+  background: var(--primary);
+}
+.swal2-popup.swal2-toast.swal-popup {
+  padding: 0.75rem 1rem;
+  align-items: center;
+  max-width: min(380px, calc(100vw - 24px));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+.swal2-popup.swal2-toast .swal2-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin: 0 0.75rem;
+  text-align: start;
+}
+/* Icon colours are hard-coded in SweetAlert2: recolour them with tokens. */
+.swal-popup .swal2-icon.swal2-success {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+}
+.swal-popup .swal2-icon.swal2-success [class^="swal2-success-line"] {
+  background-color: var(--success);
+}
+.swal-popup .swal2-icon.swal2-success .swal2-success-ring {
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+}
+.swal-popup .swal2-icon.swal2-success [class^="swal2-success-circular-line"],
+.swal-popup .swal2-icon.swal2-success .swal2-success-fix {
+  background-color: var(--surface) !important;
+}
+.swal-popup .swal2-icon.swal2-error {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.swal-popup .swal2-icon.swal2-error [class^="swal2-x-mark-line"] {
+  background-color: var(--danger);
+}
+.swal-popup .swal2-icon.swal2-warning {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+.swal-popup .swal2-icon.swal2-info,
+.swal-popup .swal2-icon.swal2-question {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+@media (max-width: 767px) {
+  .swal-popup.swal2-popup:not(.swal2-toast) {
+    width: calc(100vw - 24px);
+    padding: 1rem;
+  }
+  .swal-popup:not(.swal2-toast) .swal2-actions {
+    flex-direction: column-reverse;
+    width: 100%;
+  }
+  .swal-popup:not(.swal2-toast) .swal2-actions button {
+    width: 100%;
+    min-height: 2.75rem;
+  }
+}
+
+/* Bot actions results dialog (built as DOM in alerts.ts; unlayered like the other swal rules). */
+.swal-results {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  text-align: start;
+  max-height: 50vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.5rem;
+}
+.swal-result {
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  overflow-wrap: anywhere;
+}
+.swal-result strong {
+  color: var(--foreground);
+}
+.swal-result-detail {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+.swal-result-badge {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  color: var(--muted-foreground);
+  background: var(--surface);
+}
+.swal-result-badge-sent {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+.swal-result-badge-skipped {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+.swal-result-badge-failed {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}

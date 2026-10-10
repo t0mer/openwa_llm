@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import OptOuts from "./OptOuts";
+import { mockViewport } from "../hooks/mockViewport";
 import { ApiError, api } from "../api";
 
 vi.mock("../api", async (orig) => {
@@ -14,6 +15,7 @@ import { confirm, toast } from "../alerts";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockViewport(1024);
   vi.mocked(api.listOptOuts).mockResolvedValue([
     { jid: "1@s.whatsapp.net", push_name: "Dana", created_at: "2026-01-01T00:00:00Z" },
   ]);

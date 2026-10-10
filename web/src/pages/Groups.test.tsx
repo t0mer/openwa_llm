@@ -1,9 +1,11 @@
+import { StrictMode } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Groups from "./Groups";
 import { api } from "../api";
 import type { Group } from "../types";
+import { mockViewport } from "../hooks/mockViewport";
 
 vi.mock("../api", async (orig) => {
   const actual = await orig<typeof import("../api")>();
@@ -28,6 +30,7 @@ function setup(groups: Group[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockViewport(1280);
   vi.mocked(confirm).mockResolvedValue(true);
 });
 
@@ -40,7 +43,7 @@ describe("Groups page", () => {
 
   it("asks for confirmation before enabling managed and shows last_summary_sync", async () => {
     setup([base]);
-    await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /respond.*1@g\.us/i }));
     expect(confirm).toHaveBeenCalledTimes(1);
     const opts = vi.mocked(confirm).mock.calls[0][0] as { title: string; text: string };
     expect(opts.title).toContain("WA name");
@@ -51,15 +54,15 @@ describe("Groups page", () => {
   it("does not enable managed when the confirmation is declined", async () => {
     vi.mocked(confirm).mockResolvedValue(false);
     setup([base]);
-    await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /respond.*1@g\.us/i }));
     expect(api.patchGroup).not.toHaveBeenCalled();
-    expect(screen.getByRole("checkbox", { name: /respond.*1@g\.us/i })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: /respond.*1@g\.us/i })).not.toBeChecked();
   });
 
   it("disabling managed and toggling the spam notice do not ask for confirmation", async () => {
     setup([{ ...base, managed: true }]);
-    await userEvent.click(await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i }));
-    await userEvent.click(screen.getByRole("checkbox", { name: /spam.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /respond.*1@g\.us/i }));
+    await userEvent.click(screen.getByRole("switch", { name: /spam.*1@g\.us/i }));
     expect(confirm).not.toHaveBeenCalled();
     expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { managed: false });
     expect(api.patchGroup).toHaveBeenCalledWith("1@g.us", { notify_on_spam: true });
@@ -79,28 +82,28 @@ describe("Groups page", () => {
 
   it("toasts success after a save", async () => {
     setup([{ ...base, managed: true }]);
-    await userEvent.click(await screen.findByRole("checkbox", { name: /spam.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /spam.*1@g\.us/i }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("WA name")));
   });
 
   it("toasts the error and keeps the old value when saving fails", async () => {
     setup([base]);
     vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("boom"));
-    await userEvent.click(await screen.findByRole("checkbox", { name: /spam.*1@g\.us/i }));
+    await userEvent.click(await screen.findByRole("switch", { name: /spam.*1@g\.us/i }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /spam.*1@g\.us/i })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: /spam.*1@g\.us/i })).not.toBeChecked();
   });
 
   it("failed list save toasts, reloads, and reflects server state", async () => {
     setup([base]);
     vi.mocked(api.patchGroup).mockRejectedValueOnce(new Error("nope"));
-    const box = await screen.findByRole("checkbox", { name: /respond.*1@g\.us/i });
+    const box = await screen.findByRole("switch", { name: /respond.*1@g\.us/i });
     const before = vi.mocked(api.listGroups).mock.calls.length;
     await userEvent.click(box);
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("nope"));
     await waitFor(() => expect(vi.mocked(api.listGroups).mock.calls.length).toBeGreaterThan(before));
-    expect(screen.getByRole("checkbox", { name: /respond.*1@g\.us/i })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: /respond.*1@g\.us/i })).not.toBeChecked();
   });
 
   it("keeps the dialog open with edits and an inner alert on failure, closes on retry success", async () => {
@@ -159,48 +162,135 @@ describe("Groups page", () => {
     expect(await screen.findByText("No groups match.")).toBeInTheDocument();
   });
 
-  it("edit dialog is modal, focuses the name field, closes on Escape and backdrop click", async () => {
+  const user = userEvent.setup({ pointerEventsCheck: 0 }); // Radix sets pointer-events:none on <body>
+  const overlay = () => document.querySelector<HTMLElement>("[data-dialog-overlay]")!;
+  const editBtn = () => screen.getByRole("button", { name: /edit 1@g\.us/i });
+
+  it("edit dialog is modal, focuses the name field, closes on Escape and overlay click, returns focus", async () => {
     setup([base]);
-    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
-    const dialog = screen.getByRole("dialog");
+    await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog", { name: "Edit group" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(within(dialog).getByLabelText("Display name")).toHaveFocus();
-    await userEvent.keyboard("{Escape}");
+    await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /edit 1@g\.us/i }));
-    await userEvent.pointer({ keys: "[MouseLeft]", target: screen.getByRole("dialog").parentElement! });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(editBtn()).toHaveFocus());
+    await user.click(editBtn());
+    await user.pointer({ keys: "[MouseLeft]", target: overlay() });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(editBtn()).toHaveFocus());
   });
 
-  it("traps Tab inside the edit dialog and makes the page inert", async () => {
+  it("traps Tab inside the edit dialog and hides the page from assistive tech", async () => {
     setup([base]);
-    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
     const dialog = screen.getByRole("dialog");
-    const cancelBtn = within(dialog).getByRole("button", { name: "Cancel" });
     const name = within(dialog).getByLabelText("Display name");
     expect(name).toHaveFocus();
-    await userEvent.tab({ shift: true });
-    expect(cancelBtn).toHaveFocus();
-    await userEvent.tab();
-    expect(name).toHaveFocus();
-    expect(document.querySelector("section > .toolbar")).toHaveAttribute("inert");
-    await userEvent.click(cancelBtn);
-    expect(document.querySelector("section > .toolbar")).not.toHaveAttribute("inert");
+    for (let i = 0; i < 12; i++) {
+      await user.tab();
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+    await user.tab({ shift: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    // Radix hides the rest of the page from assistive tech (only the polite live count stays exposed).
+    const search = screen.getByRole("textbox", { name: "Search groups", hidden: true });
+    expect(search.closest("[aria-hidden=true]")).not.toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Search groups" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(document.body).toHaveAttribute("data-scroll-locked");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(search.closest("[aria-hidden=true]")).toBeNull();
+    expect(document.body).not.toHaveAttribute("data-scroll-locked");
+    await waitFor(() => expect(editBtn()).toHaveFocus());
   });
 
-  it("ignores Escape and backdrop clicks while saving", async () => {
+  it("ignores Escape, overlay clicks, Close and Cancel while saving", async () => {
     setup([base]);
     let release!: () => void;
     vi.mocked(api.patchGroup).mockReturnValueOnce(new Promise((r) => { release = () => r(base); }));
-    await userEvent.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
     const dialog = screen.getByRole("dialog");
-    await userEvent.type(within(dialog).getByLabelText("Display name"), "X");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-    await userEvent.keyboard("{Escape}");
-    await userEvent.pointer({ keys: "[MouseLeft]", target: dialog.parentElement! });
+    await user.type(within(dialog).getByLabelText("Display name"), "X");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    const saveBtn = within(dialog).getByRole("button", { name: "Save" });
+    // Save stays focusable (aria-disabled) so focus is not dropped to <body> while saving
+    expect(saveBtn).toHaveAttribute("aria-disabled", "true");
+    expect(saveBtn).not.toHaveAttribute("disabled");
+    expect(saveBtn).toHaveFocus();
+    await user.click(saveBtn);
+    await user.keyboard("{Enter}");
+    expect(api.patchGroup).toHaveBeenCalledTimes(1);
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    await user.pointer({ keys: "[MouseLeft]", target: overlay() });
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     release();
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(editBtn()).toHaveFocus());
+  });
+
+  it("makes the app root inert while the edit dialog is open, and not after it closes", async () => {
+    setup([base]);
+    for (let i = 0; i < 2; i++) {
+      await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+      const dialog = screen.getByRole("dialog");
+      const search = screen.getByRole("textbox", { name: "Search groups", hidden: true });
+      expect(search.closest("[inert]")).not.toBeNull();
+      expect(dialog.closest("[inert]")).toBeNull();
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(document.querySelectorAll("[inert]")).toHaveLength(0);
+      // focus returns once the page is interactive again
+      await waitFor(() => expect(editBtn()).toHaveFocus());
+    }
+  });
+
+  it("leaves no inert attribute behind under StrictMode", async () => {
+    vi.mocked(api.listGroups).mockResolvedValue({ items: [base], total: 1 });
+    render(<StrictMode><Groups /></StrictMode>);
+    await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    expect(screen.getByRole("textbox", { name: "Search groups", hidden: true }).closest("[inert]")).not.toBeNull();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(document.querySelectorAll("[inert]")).toHaveLength(0);
+    await waitFor(() => expect(editBtn()).toHaveFocus());
+  });
+
+  it("shows the read-only WhatsApp name, topic and owner inside bdi", async () => {
+    setup([{ ...base, group_name: "קבוצה", group_topic: "נושא" }]);
+    await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    for (const t of ["קבוצה", "נושא", "9725@s.whatsapp.net"]) {
+      expect(within(dialog).getByText(t).tagName).toBe("BDI");
+    }
+    expect(within(dialog).queryByRole("textbox", { name: /owner|topic|whatsapp name/i })).not.toBeInTheDocument();
+  });
+
+  it("renders a group name with markup as text in the dialog", async () => {
+    const evil = '<img src=x onerror="alert(1)">';
+    setup([{ ...base, group_name: evil }]);
+    await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.querySelector("img")).toBeNull();
+    expect(dialog).toHaveTextContent(evil);
+  });
+
+  it("is a bottom sheet on phones and a centred dialog from md", async () => {
+    setup([base]);
+    await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    expect(screen.getByRole("dialog")).toHaveClass("bottom-0", "rounded-t-xl", "md:top-1/2", "md:max-w-md");
+  });
+
+  it("returns focus to the search box when the group left the list after saving", async () => {
+    setup([base]);
+    await user.click(await screen.findByRole("button", { name: /edit 1@g\.us/i }));
+    vi.mocked(api.listGroups).mockResolvedValue({ items: [], total: 0 });
+    await user.type(within(screen.getByRole("dialog")).getByLabelText("Display name"), "Gone");
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await screen.findByText("No groups match.");
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Search groups" })).toHaveFocus());
   });
 
   describe("summary language", () => {
@@ -264,10 +354,8 @@ describe("Groups page", () => {
   it("shows the schedule count and a Schedules button naming the group", async () => {
     setup([{ ...base, display_name: "My alias", schedule_count: 3 }]);
     expect(await screen.findByRole("columnheader", { name: "Schedules" })).toBeInTheDocument();
-    const cell = document.querySelector('td[data-label="Schedules"]')!;
-    expect(cell.children).toHaveLength(1);
-    expect(cell.children[0]).toHaveClass("cell-value");
-    expect(cell).toHaveTextContent("3");
-    expect(within(cell as HTMLElement).getByRole("button", { name: "Schedules for My alias" })).toHaveTextContent("Schedules");
+    const row = screen.getByRole("row", { name: /My alias/ });
+    expect(row).toHaveTextContent("3");
+    expect(within(row).getByRole("button", { name: "Schedules 3 for My alias" })).toHaveTextContent("Schedules");
   });
 });
