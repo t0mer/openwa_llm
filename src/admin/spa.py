@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 from typing import Annotated
 
@@ -22,8 +23,28 @@ SECURITY_HEADERS = {
 }
 
 
+# Explicit table so Content-Type does not depend on the system mime database
+# (python:slim lacks fonts etc.; with nosniff a text/plain font is rejected).
+MEDIA_TYPES = {
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".css": "text/css",
+    ".svg": "image/svg+xml",
+    ".json": "application/json",
+    ".map": "application/json",
+    ".webmanifest": "application/manifest+json",
+    ".ico": "image/x-icon",
+}
+
+
+def _media_type(path: Path) -> str | None:
+    return MEDIA_TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path)[0]
+
+
 def _asset(path: Path) -> FileResponse:
-    return FileResponse(path, headers=SECURITY_HEADERS)
+    return FileResponse(path, media_type=_media_type(path), headers=SECURITY_HEADERS)
 
 
 def _index(path: Path) -> FileResponse:

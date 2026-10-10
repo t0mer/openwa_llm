@@ -153,3 +153,44 @@ def test_all_spa_responses_carry_security_headers(dist):
 def test_404s_do_not_get_spa_headers(dist):
     resp = make_client().get("/admin/assets/missing.js")
     assert resp.status_code == 404 and "cache-control" not in resp.headers
+
+
+@pytest.mark.parametrize(
+    ("name", "content_type"),
+    [
+        ("font.woff2", "font/woff2"),
+        ("font.woff", "font/woff"),
+        ("app.js", "text/javascript"),
+        ("app.css", "text/css"),
+        ("icon.svg", "image/svg+xml"),
+        ("data.json", "application/json"),
+        ("site.webmanifest", "application/manifest+json"),
+        ("favicon.ico", "image/x-icon"),
+        ("app.js.map", "application/json"),
+    ],
+)
+def test_asset_content_types_do_not_depend_on_system_mime_db(
+    dist, monkeypatch, name, content_type
+):
+    # Simulate python:slim, whose mimetypes knows none of these.
+    monkeypatch.setattr(spa.mimetypes, "guess_type", lambda *a, **k: (None, None))
+    (dist / "assets" / name).write_bytes(b"x")
+    resp = make_client().get(f"/admin/assets/{name}")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].split(";")[0] == content_type
+    assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+def test_wrong_system_type_is_overridden(dist, monkeypatch):
+    monkeypatch.setattr(
+        spa.mimetypes, "guess_type", lambda *a, **k: ("text/plain", None)
+    )
+    (dist / "assets" / "font.woff2").write_bytes(b"x")
+    resp = make_client().get("/admin/assets/font.woff2")
+    assert resp.headers["content-type"] == "font/woff2"
+
+
+def test_unknown_extension_falls_back_to_system_guess(dist):
+    (dist / "assets" / "page.html").write_text("<p>x</p>")
+    resp = make_client().get("/admin/assets/page.html")
+    assert resp.headers["content-type"].startswith("text/html")
