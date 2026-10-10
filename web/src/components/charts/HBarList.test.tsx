@@ -59,4 +59,19 @@ describe("HBarList", () => {
     expect(screen.getByText("No data")).toBeInTheDocument();
     expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
   });
+
+  it("treats negative and non-finite values as 0 in the bar and the count", () => {
+    const { container } = render(
+      <HBarList
+        items={[
+          { key: "a", label: "A", value: -3 },
+          { key: "b", label: "B", value: Number.NaN },
+          { key: "c", label: "C", value: Number.POSITIVE_INFINITY },
+          { key: "d", label: "D", value: 10 },
+        ]}
+      />,
+    );
+    expect(fills(container)).toEqual(["0%", "0%", "0%", "100%"]);
+    expect(screen.getAllByRole("listitem").map((r) => r.querySelector(".tabular")!.textContent)).toEqual(["0", "0", "0", "10"]);
+  });
 });

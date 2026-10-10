@@ -1,3 +1,5 @@
+import { count } from "./values";
+
 export interface DonutSegment {
   label: string;
   value: number;
@@ -8,10 +10,15 @@ const R = 48;
 const STROKE = 14;
 export const RING_CIRCUMFERENCE = 2 * Math.PI * R;
 
+/** Rounded share; shares under 1% / over 99% show as "<1%" / ">99%", so a non-zero share never
+ * reads "0%" and "100%" appears only when no other share is non-zero. */
 function percent(value: number, total: number) {
   if (total <= 0 || value <= 0) return "0%";
+  if (value >= total) return "100%";
   const p = (value / total) * 100;
-  return p < 1 ? "<1%" : `${Math.round(p)}%`;
+  if (p < 1) return "<1%";
+  if (p > 99) return ">99%";
+  return `${Math.round(p)}%`;
 }
 
 /**
@@ -19,7 +26,7 @@ function percent(value: number, total: number) {
  * (colour never carries the meaning alone). All-zero data draws an empty ring marked "No data".
  */
 export function Donut({ segments }: { segments: DonutSegment[] }) {
-  const values = segments.map((s) => Math.max(s.value, 0));
+  const values = segments.map((s) => count(s.value)); // negative or non-finite -> 0
   const total = values.reduce((a, b) => a + b, 0);
   let start = 0;
   const arcs = segments.flatMap((s, i) => {

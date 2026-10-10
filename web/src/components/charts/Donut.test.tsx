@@ -66,4 +66,37 @@ describe("Donut", () => {
     expect(label).toHaveAttribute("dir", "auto");
     expect(container.querySelector("img")).toBeNull();
   });
+
+  const pcts = () => screen.getAllByRole("listitem").map((r) => r.lastElementChild!.textContent);
+  const two = (a: number, b: number) => [
+    { label: "A", value: a, color: "var(--chart-1)" },
+    { label: "B", value: b, color: "var(--chart-2)" },
+  ];
+
+  it.each([
+    [999, 1, [">99%", "<1%"]],
+    [995, 5, [">99%", "<1%"]],
+    [990, 10, ["99%", "1%"]],
+    [5, 0, ["100%", "0%"]],
+  ])("shows %i / %i as %j, never 100%% beside a non-zero share", (a, b, expected) => {
+    render(<Donut segments={two(a, b)} />);
+    expect(pcts()).toEqual(expected);
+  });
+
+  it("treats negative and non-finite values as 0 in the ring, the total and the legend", () => {
+    const { container } = render(
+      <Donut
+        segments={[
+          { label: "Neg", value: -3, color: "var(--chart-1)" },
+          { label: "NaN", value: Number.NaN, color: "var(--chart-2)" },
+          { label: "Inf", value: Number.POSITIVE_INFINITY, color: "var(--chart-3)" },
+          { label: "Ok", value: 4, color: "var(--chart-4)" },
+        ]}
+      />,
+    );
+    expect(arcLengths(container)).toHaveLength(1);
+    expect(screen.getByTestId("donut-total")).toHaveTextContent("4");
+    expect(screen.getAllByRole("listitem").map((r) => r.textContent)).toEqual(["Neg00%", "NaN00%", "Inf00%", "Ok4100%"]);
+    expect(container.innerHTML).not.toMatch(/NaN%|Infinity|∞/);
+  });
 });
