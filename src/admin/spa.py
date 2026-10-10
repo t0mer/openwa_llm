@@ -68,8 +68,11 @@ def _file_or_index(path: str) -> FileResponse:
     return _index(index)
 
 
-@router.get("/admin")
-@router.get("/admin/{path:path}")
+# GET and HEAD are registered explicitly: a HEAD request against a GET-only
+# route is only a *partial* match, which makes the OpenTelemetry/logfire FastAPI
+# instrumentation read `.path` off FastAPI's `_IncludedRouter` and crash (500).
+@router.api_route("/admin", methods=["GET", "HEAD"])
+@router.api_route("/admin/{path:path}", methods=["GET", "HEAD"])
 async def serve_admin(
     settings: Annotated[Settings, Depends(get_settings)],
     path: str = "",
