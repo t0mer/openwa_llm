@@ -1,11 +1,13 @@
 import { useRef, useState, type KeyboardEvent } from "react";
 import { useWidth } from "./useWidth";
+import { count } from "./values";
 
 export interface Bar {
   /** Short x-axis label ("14 Oct", "09"). */
   label: string;
   value: number;
-  /** Full sentence for the bar's aria-label and tooltip ("Tue 14 Oct: 42 messages"). */
+  /** Full sentence for the bar's aria-label and tooltip ("Tue 14 Oct: 42 messages"). Build it from
+   * `count(value)` so it states the same number the bar and the table show. */
   title: string;
 }
 
@@ -38,7 +40,8 @@ export function niceMax(n: number): number {
  * A single-series SVG bar chart. Width follows the container; x labels thin out as bars get
  * narrow (never below `xLabelEvery`). The chart is one tab stop: arrow keys, Home and End move
  * between bars, and each bar carries its `title` as aria-label and as the hover/focus tooltip.
- * Nothing animates, so reduced motion needs no special case.
+ * Hover wins over keyboard focus; when the pointer leaves, the focused bar's tooltip returns.
+ * Values that are negative or not finite are drawn as 0 (see `count`). Nothing animates, so reduced motion needs no special case.
  */
 export function BarChart({
   data,
@@ -50,11 +53,14 @@ export function BarChart({
   xLabelEvery?: number;
 }) {
   const [ref, width] = useWidth();
-  const [active, setActive] = useState<number | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
+  const [focused, setFocused] = useState<number | null>(null);
+  const active = hovered ?? focused;
   const [stop, setStop] = useState(0);
   const hits = useRef<(SVGGElement | null)[]>([]);
 
-  const max = niceMax(Math.max(0, ...data.map((d) => d.value)));
+  const values = data.map((d) => count(d.value));
+  const max = niceMax(Math.max(0, ...values));
   const ticks = [0, max / 2, max];
   const padLeft = Math.max(24, max.toLocaleString().length * CHAR_W + 10);
   const plotW = Math.max(width - padLeft - PAD_RIGHT, 10);
@@ -108,7 +114,8 @@ export function BarChart({
           </g>
         ))}
         {data.map((d, i) => {
-          const h = d.value > 0 ? Math.max((d.value / max) * PLOT_H, 1) : 0;
+          const v = values[i]!;
+          const h = v > 0 ? Math.max((v / max) * PLOT_H, 1) : 0;
           return (
             <g
               key={i}
@@ -121,11 +128,11 @@ export function BarChart({
               tabIndex={i === tabStop ? 0 : -1}
               onFocus={() => {
                 setStop(i);
-                setActive(i);
+                setFocused(i);
               }}
-              onBlur={() => setActive(null)}
-              onMouseEnter={() => setActive(i)}
-              onMouseLeave={() => setActive(null)}
+              onBlur={() => setFocused(null)}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}
               onKeyDown={(e) => onKeyDown(e, i)}
               className="outline-none [&:focus-visible_.hit]:stroke-ring"
             >

@@ -192,4 +192,56 @@ describe("BarChart", () => {
     const cells = screen.getAllByRole("cell").map((c) => c.textContent);
     expect(cells).toEqual(data.map((d) => d.value.toLocaleString()));
   });
+
+  it("keeps the focused bar's tooltip after the mouse leaves another bar", async () => {
+    setWidth(640);
+    const user = userEvent.setup();
+    const { container } = render(<BarChart data={bars([3, 7, 9])} />);
+    const hits = container.querySelectorAll("[data-bar-hit]");
+    await user.tab();
+    expect(screen.getByText("D0: 3 messages")).toBeInTheDocument();
+    fireEvent.mouseEnter(hits[2]!);
+    expect(screen.getByText("D2: 9 messages")).toBeInTheDocument();
+    expect(screen.queryByText("D0: 3 messages")).not.toBeInTheDocument();
+    fireEvent.mouseLeave(hits[2]!);
+    expect(screen.getByText("D0: 3 messages")).toBeInTheDocument();
+    await user.tab();
+    expect(screen.queryByText(/messages$/)).not.toBeInTheDocument();
+  });
+
+  it("draws negative and non-finite values as zero", () => {
+    setWidth(640);
+    const data = [
+      { label: "a", value: -5, title: "a" },
+      { label: "b", value: Number.NaN, title: "b" },
+      { label: "c", value: Number.POSITIVE_INFINITY, title: "c" },
+      { label: "d", value: 8, title: "d" },
+    ];
+    const { container } = render(<BarChart data={data} />);
+    expect(heights(container)).toEqual([160]);
+    expect(yTicks(container)).toEqual(["0", "4", "8"]);
+    expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
+    expect(container.querySelectorAll("[data-bar-hit]")).toHaveLength(4);
+  });
+
+  it("links each bar's aria-label to the table cell at the same index", async () => {
+    setWidth(640);
+    const user = userEvent.setup();
+    const data = bars([5, 0, 42, 7]);
+    const { container } = render(
+      <ChartCard title="M" summary="S" table={{ columns: ["Day", "Messages"], rows: data.map((d) => [d.label, d.value]) }}>
+        <BarChart data={data} />
+      </ChartCard>,
+    );
+    const fromLabels = [...container.querySelectorAll("[data-bar-hit]")].map((b) => {
+      const [day, rest] = b.getAttribute("aria-label")!.split(": ");
+      return [day, rest!.split(" ")[0]];
+    });
+    await user.click(screen.getByRole("button", { name: "Show as table" }));
+    const fromTable = screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((r) => [r.querySelector("th")!.textContent, r.querySelector("td")!.textContent]);
+    expect(fromTable).toEqual(fromLabels);
+  });
 });
