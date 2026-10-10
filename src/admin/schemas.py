@@ -349,3 +349,54 @@ class ScheduleOut(BaseModel):
 class ScheduleList(BaseModel):
     timezone: str
     items: list[ScheduleOut]
+
+
+StatsBucket = Literal["hour", "day", "week", "month"]
+
+
+class StatsGroups(BaseModel):
+    total: int
+    managed: int
+
+
+class StatsSplit(BaseModel):
+    text: int
+    media: int
+    other: int
+
+
+class StatsPoint(BaseModel):
+    start: datetime
+    count: int
+
+
+class StatsTopGroup(BaseModel):
+    group_jid: str
+    name: str | None
+    count: int
+
+
+class StatsTopSender(BaseModel):
+    sender_jid: str
+    name: str | None
+    count: int
+
+
+class StatsOut(BaseModel):
+    from_: datetime = Field(serialization_alias="from")
+    to: datetime
+    timezone: str
+    bucket: StatsBucket
+    bot_excluded: bool
+    groups: StatsGroups
+    chats: int
+    messages: int
+    active_senders: int
+    reactions: int
+    kb_topics: int
+    split: StatsSplit
+    series: list[StatsPoint]
+    top_groups: list[StatsTopGroup]
+    top_senders: list[StatsTopSender]
+    by_hour: list[int] = Field(min_length=24, max_length=24)
+    by_weekday: list[int] = Field(min_length=7, max_length=7)
