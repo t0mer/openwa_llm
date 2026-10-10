@@ -1,6 +1,6 @@
 import type {
   ActionName, Actions, Contact, Group, GroupPatch, GroupSort, MessagePage,
-  OptOutItem, Page, Schedule, ScheduleCreate, ScheduleList, SchedulePatch,
+  OptOutItem, Page, Schedule, ScheduleCreate, ScheduleList, SchedulePatch, Stats,
 } from "./types";
 
 const BASE = "/api/v1/admin";
@@ -53,6 +53,8 @@ function qs(params: Record<string, string | number | boolean | undefined | null>
 }
 
 export const api = {
+  getStats: (p: { from?: string; to?: string }) => request<Stats>("GET", `/stats${qs(p)}`),
+
   session: () => request<{ authenticated: boolean }>("GET", "/auth/session"),
   login: (password: string) => request<void>("POST", "/auth/login", { password }),
   logout: () => request<void>("POST", "/auth/logout"),

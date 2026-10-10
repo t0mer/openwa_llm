@@ -125,3 +125,33 @@ export interface ScheduleCreate {
 }
 
 export type SchedulePatch = Partial<ScheduleCreate>;
+
+export type StatsBucket = "hour" | "day" | "week" | "month";
+
+export interface StatsPoint {
+  start: string;
+  count: number;
+}
+
+export interface Stats {
+  from: string;
+  to: string;
+  timezone: string;
+  bucket: StatsBucket;
+  bot_excluded: boolean;
+  groups: { total: number; managed: number };
+  chats: number;
+  messages: number;
+  active_senders: number;
+  reactions: number;
+  kb_topics: number;
+  split: { text: number; media: number; other: number };
+  /** Week bucket starts are Mondays (ISO). */
+  series: StatsPoint[];
+  top_groups: { group_jid: string; name: string | null; count: number }[];
+  top_senders: { sender_jid: string; name: string | null; count: number }[];
+  /** 24 hourly counts, index = hour of day. */
+  by_hour: number[];
+  /** 7 counts, 0 = Sunday .. 6 = Saturday. */
+  by_weekday: number[];
+}

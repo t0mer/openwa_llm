@@ -87,3 +87,20 @@ describe("api client", () => {
     await expect(api.listOptOuts()).rejects.toThrow("HTTP 502");
   });
 });
+
+describe("getStats", () => {
+  it("sends from/to as query params and skips missing ones", async () => {
+    const fetchMock = mockFetch(200, { messages: 1 });
+    await api.getStats({ from: "2026-10-01T00:00:00.000Z", to: "2026-10-08T00:00:00.000Z" });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/admin/stats?from=2026-10-01T00%3A00%3A00.000Z&to=2026-10-08T00%3A00%3A00.000Z",
+    );
+    await api.getStats({});
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/admin/stats");
+  });
+
+  it("surfaces errors", async () => {
+    mockFetch(422, { detail: "from must be before to" });
+    await expect(api.getStats({ from: "x" })).rejects.toMatchObject({ status: 422, message: "from must be before to" });
+  });
+});
