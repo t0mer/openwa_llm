@@ -55,7 +55,11 @@ export function BarChart({
   const [ref, width] = useWidth();
   const [hovered, setHovered] = useState<number | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
-  const active = hovered ?? focused;
+  // Indices left over from bars the data no longer has are cleared (not just ignored), so a ghost
+  // tooltip never comes back when the data grows again.
+  if (hovered !== null && hovered >= data.length) setHovered(null);
+  if (focused !== null && focused >= data.length) setFocused(null);
+  const active = [hovered, focused].find((i) => i !== null && i < data.length) ?? null;
   const [stop, setStop] = useState(0);
   const hits = useRef<(SVGGElement | null)[]>([]);
 

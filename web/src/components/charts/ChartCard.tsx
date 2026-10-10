@@ -8,6 +8,7 @@ export interface ChartTable {
   rows: (string | number)[][];
 }
 
+/** Numeric cells are counts: negative or non-finite values show as 0 (see `count`). */
 function cell(v: string | number) {
   return typeof v === "number" ? count(v).toLocaleString() : v;
 }

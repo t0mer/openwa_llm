@@ -244,4 +244,48 @@ describe("BarChart", () => {
       .map((r) => [r.querySelector("th")!.textContent, r.querySelector("td")!.textContent]);
     expect(fromTable).toEqual(fromLabels);
   });
+
+  const dimmed = (c: HTMLElement) => c.querySelectorAll('rect[data-bar][opacity="0.55"]').length;
+
+  it("drops a hovered bar that the data no longer has, and does not bring it back", () => {
+    setWidth(640);
+    const { container, rerender } = render(<BarChart data={bars([3, 7, 9])} />);
+    fireEvent.mouseEnter(container.querySelectorAll("[data-bar-hit]")[2]!);
+    expect(screen.getByText("D2: 9 messages")).toBeInTheDocument();
+    rerender(<BarChart data={bars([3, 7])} />);
+    expect(screen.queryByText(/messages$/)).not.toBeInTheDocument();
+    expect(dimmed(container)).toBe(0);
+    rerender(<BarChart data={bars([3, 7, 9])} />);
+    expect(screen.queryByText(/messages$/)).not.toBeInTheDocument();
+    expect(dimmed(container)).toBe(0);
+  });
+
+  it("drops a focused bar that the data no longer has, and does not bring it back", async () => {
+    setWidth(640);
+    const user = userEvent.setup();
+    const { container, rerender } = render(<BarChart data={bars([3, 7, 9])} />);
+    await user.tab();
+    await user.keyboard("{End}");
+    expect(screen.getByText("D2: 9 messages")).toBeInTheDocument();
+    rerender(<BarChart data={bars([3, 7])} />);
+    expect(screen.queryByText(/messages$/)).not.toBeInTheDocument();
+    expect(dimmed(container)).toBe(0);
+    rerender(<BarChart data={bars([3, 7, 9])} />);
+    expect(screen.queryByText(/messages$/)).not.toBeInTheDocument();
+    expect(dimmed(container)).toBe(0);
+  });
+
+  it("measures its width once and does not throw when ResizeObserver is missing", () => {
+    const saved = globalThis.ResizeObserver;
+    // @ts-expect-error simulate an environment without ResizeObserver
+    delete globalThis.ResizeObserver;
+    try {
+      expect(globalThis.ResizeObserver).toBeUndefined();
+      setWidth(320);
+      const { container } = render(<BarChart data={bars([1, 2])} />);
+      expect(container.querySelector("svg")).toHaveAttribute("width", "320");
+    } finally {
+      globalThis.ResizeObserver = saved;
+    }
+  });
 });
