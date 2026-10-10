@@ -337,5 +337,62 @@ async def test_huge_range_uses_month_buckets(admin_client, db_sessionmaker, bot)
     assert resp.status_code == 200
     body = resp.json()
     assert body["bucket"] == "month"
-    assert len(body["series"]) <= 130 * 12 + 1
+    assert len(body["series"]) == 130 * 12  # 1970-01 .. 2099-12
+    first = datetime.fromisoformat(body["series"][0]["start"]).astimezone(TZ)
+    assert (first.year, first.month, first.day, first.hour) == (1970, 1, 1, 0)
     assert body["messages"] == 6
+
+
+async def test_month_buckets_for_a_known_range(admin_client, bot):
+    params = {"from": "2020-01-15T00:00:00", "to": "2023-12-31T23:59:59"}
+    body = (await admin_client.get(BASE, params=params)).json()
+    assert body["bucket"] == "month"
+    local = [datetime.fromisoformat(p["start"]).astimezone(TZ) for p in body["series"]]
+    assert len(local) == 48
+    assert local[0] == datetime(2020, 1, 1, tzinfo=TZ)
+    assert all(d.day == 1 and d.hour == 0 for d in local)
+
+
+async def test_week_buckets_are_monday_midnights_and_zero_filled(
+    admin_client, db_sessionmaker, bot
+):
+    await _add(
+        db_sessionmaker,
+        _msg("w1", datetime(2026, 1, 8, 10, 0, tzinfo=UTC), A),  # Thu, week of 01-05
+        _msg("w2", datetime(2026, 3, 5, 10, 0, tzinfo=UTC), A),  # Thu, week of 03-02
+        groups=[Group(group_jid=G1)],
+    )
+    params = {"from": "2026-01-07T00:00:00", "to": "2026-06-10T00:00:00"}
+    body = (await admin_client.get(BASE, params=params)).json()
+    assert body["bucket"] == "week"
+    local = [datetime.fromisoformat(p["start"]).astimezone(TZ) for p in body["series"]]
+    assert local[0] == datetime(2026, 1, 5, tzinfo=TZ)  # precedes "from"
+    assert all(d.weekday() == 0 and d.hour == 0 for d in local)  # Monday 00:00
+    assert all((b.date() - a.date()).days == 7 for a, b in zip(local, local[1:]))
+    counts = {d.date().isoformat(): p["count"] for d, p in zip(local, body["series"])}
+    assert counts["2026-01-05"] == 1 and counts["2026-03-02"] == 1
+    assert counts["2026-02-02"] == 0
+    assert sum(counts.values()) == 2
+
+
+async def test_naive_bounds_are_range_checked_in_the_configured_zone(admin_client, bot):
+    # 1970-01-01 00:00 in Jerusalem is 1969-12-31 22:00 UTC.
+    early = await admin_client.get(BASE, params={"from": "1970-01-01T00:00:00"})
+    assert early.status_code == 422
+    # 2100-01-01 01:00 in Jerusalem is 2099-12-31 23:00 UTC.
+    late = await admin_client.get(BASE, params={"to": "2100-01-01T01:00:00"})
+    assert late.status_code == 200
+
+
+async def test_day_buckets_survive_a_dst_jump_at_midnight(
+    admin_client, db_sessionmaker, bot
+):
+    # Jerusalem skipped 1974-07-07 00:00 -> 01:00; later days start at 00:00 again.
+    msg = datetime(1974, 7, 8, 9, 0, tzinfo=UTC)  # 12:00 local
+    await _add(db_sessionmaker, _msg("old", msg, A), groups=[Group(group_jid=G1)])
+    params = {"from": "1974-07-05T00:00:00", "to": "1974-07-09T23:59:59"}
+    body = (await admin_client.get(BASE, params=params)).json()
+    local = [datetime.fromisoformat(p["start"]).astimezone(TZ) for p in body["series"]]
+    assert [d.day for d in local] == [5, 6, 7, 8, 9]
+    assert [d.hour for d in local] == [0, 0, 1, 0, 0]
+    assert [p["count"] for p in body["series"]] == [0, 0, 0, 1, 0]

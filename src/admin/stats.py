@@ -18,7 +18,7 @@ from models import Group, KBTopic, Message, Reaction, Sender
 from whatsapp import WhatsAppGateway
 from whatsapp.identity import get_bot_identity
 
-from .messages import _check_bound
+from .messages import check_bound
 from .schemas import (
     StatsBucket,
     StatsGroups,
@@ -81,11 +81,13 @@ async def get_stats(
     from_: Annotated[datetime | None, Query(alias="from")] = None,
     to: datetime | None = None,
 ) -> StatsOut:
-    _check_bound(from_, "from")
-    _check_bound(to, "to")
     tz = settings.timezone
     zone = ZoneInfo(tz)
-    end = localize(to, zone) if to else datetime.now(timezone.utc)
+    from_ = localize(from_, zone) if from_ else None
+    to = localize(to, zone) if to else None
+    check_bound(from_, "from")
+    check_bound(to, "to")
+    end = to or datetime.now(timezone.utc)
 
     bot_ids = await _bot_ids(whatsapp)
     msg_where: list = [col(Message.timestamp) <= end]
@@ -95,7 +97,7 @@ async def get_stats(
         reaction_where.append(col(Reaction.sender_jid).not_in(bot_ids))
 
     if from_ is not None:
-        start = localize(from_, zone)
+        start = from_
     else:
         earliest = await session.scalar(
             select(func.min(Message.timestamp)).where(*msg_where)
@@ -107,6 +109,8 @@ async def get_stats(
     reaction_where.append(col(Reaction.timestamp) >= start)
     bucket = pick_bucket(start, end)
 
+    # Separate queries without a shared snapshot: rows arriving meanwhile can
+    # make the numbers drift slightly, which is fine for a dashboard.
     totals = (
         await session.execute(
             sa_select(
@@ -124,19 +128,32 @@ async def get_stats(
     ).one()
     messages, chats, senders, text, media = (int(v) for v in totals)
 
-    # Series: zero-filled slots in the configured zone (DST-aware, PG 16+).
+    # Series: zero-filled slots in the configured zone. Postgres
+    # date_trunc('week') starts weeks on Monday (ISO), unlike by_weekday where
+    # 0 = Sunday, and the first slot can start before `from`.
     slot = func.date_trunc(bucket, Message.timestamp, tz)
     counts = await _counts_by(session, slot, msg_where)
-    slots = await session.scalars(
-        select(
+    step = cast(literal(f"1 {bucket}"), INTERVAL)
+    if bucket == "hour":
+        # Absolute hours: no gaps or duplicates around DST changes.
+        slots_stmt = select(
             func.generate_series(
                 func.date_trunc(bucket, literal(start), tz),
                 func.date_trunc(bucket, literal(end), tz),
-                cast(literal(f"1 {bucket}"), INTERVAL),
-                tz,
+                step,
             )
         )
-    )
+    else:
+        # Step through local wall-clock dates, then map each one to an instant
+        # the same way date_trunc(..., tz) does, so a DST jump at midnight
+        # cannot shift later slots away from the message buckets.
+        local = func.generate_series(
+            func.date_trunc(bucket, func.timezone(tz, literal(start))),
+            func.date_trunc(bucket, func.timezone(tz, literal(end))),
+            step,
+        ).column_valued("local")
+        slots_stmt = select(func.timezone(tz, local))
+    slots = await session.scalars(slots_stmt)
     series = [
         StatsPoint(start=s.astimezone(zone), count=counts.get(s, 0)) for s in slots
     ]
