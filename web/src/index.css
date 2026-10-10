@@ -27,6 +27,11 @@
   --warning-soft: #fbefd5;
   --success: #25735a;
   --success-soft: #dcf1e8;
+  --chart-1: #5e4cc2;
+  --chart-2: #0f7a8c;
+  --chart-3: #b5530f;
+  --chart-4: #a3307a;
+  --chart-5: #4a7a1f;
   --shadow: 0 10px 30px -12px rgb(20 18 43 / 0.35);
 }
 
@@ -49,6 +54,11 @@
   --warning-soft: #3d2f17;
   --success: #62c9a5;
   --success-soft: #173a31;
+  --chart-1: #a89bf2;
+  --chart-2: #4cc3d9;
+  --chart-3: #f0a35e;
+  --chart-4: #e58bc4;
+  --chart-5: #9ed26a;
   --shadow: 0 10px 30px -12px rgb(0 0 0 / 0.7);
 }
 
@@ -65,6 +75,11 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-soft: var(--primary-soft);
   --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-warning: var(--warning);
