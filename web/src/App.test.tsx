@@ -60,7 +60,7 @@ describe("App auth routing", () => {
     expect(await screen.findByRole("heading", { name: /admin login/i })).toBeInTheDocument();
   });
 
-  it("logs in and lands on the groups page", async () => {
+  it("logs in and lands on the Dashboard", async () => {
     const fetchMock = vi.fn(async (url: string) =>
       url.endsWith("/auth/login")
         ? new Response(null, { status: 204 })
@@ -72,7 +72,7 @@ describe("App auth routing", () => {
     render(<MemoryRouter initialEntries={["/login"]}><App /></MemoryRouter>);
     await userEvent.type(await screen.findByLabelText(/password/i), "pw");
     await userEvent.click(screen.getByRole("button", { name: /log in/i }));
-    expect(await screen.findByRole("heading", { name: "Groups" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
   });
 
   it("returns to the login page when an API call gets a 401", async () => {
