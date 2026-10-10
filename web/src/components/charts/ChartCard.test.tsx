@@ -87,6 +87,18 @@ const TABLE = {
 };
 
 describe("ChartCard", () => {
+  it("is a region named by its heading, in both chart and table views", async () => {
+    render(
+      <ChartCard title="Top senders" summary="s" table={{ columns: ["A", "B"], rows: [["x", 1]] }}>
+        <p>chart</p>
+      </ChartCard>,
+    );
+    const region = screen.getByRole("region", { name: "Top senders" });
+    expect(within(region).getByRole("heading", { name: "Top senders" })).toBeInTheDocument();
+    await userEvent.click(within(region).getByRole("button", { name: "Show as table" }));
+    expect(screen.getByRole("region", { name: "Top senders" })).toBe(region);
+  });
+
   it("shows a titled card with the chart as one labelled group", () => {
     render(
       <ChartCard title="Messages over time" description="Per day" summary="1,234 messages over 2 days" table={TABLE}>

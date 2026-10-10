@@ -35,11 +35,14 @@ export function ChartCard({
 }) {
   const [asTable, setAsTable] = useState(false);
   const bodyId = useId();
+  const titleId = useId();
   return (
-    <section className={cn("flex min-w-0 flex-col gap-3 rounded-lg border bg-surface p-4", className)}>
+    <section aria-labelledby={titleId} className={cn("flex min-w-0 flex-col gap-3 rounded-lg border bg-surface p-4", className)}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <h2 className="text-base font-semibold">{title}</h2>
+          <h2 id={titleId} className="text-base font-semibold">
+            {title}
+          </h2>
           {description && <p className="text-sm text-muted-foreground">{description}</p>}
         </div>
         <button
