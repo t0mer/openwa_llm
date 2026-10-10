@@ -61,12 +61,39 @@ describe("AppShell breakpoints", () => {
     expect(screen.getByRole("link", { name: "Groups" })).not.toHaveAttribute("aria-current");
   });
 
-  it("phone tabs are Groups, Contacts, Messages, Bot actions and More (no Opt-outs tab)", () => {
+  it("marks Dashboard active only on the exact root path", () => {
+    const first = setup(1024, "/");
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+    first.unmount();
+    setup(1024, "/groups");
+    expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "Groups" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("lists the sidebar links in order", () => {
+    setup(1024);
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual([
+      "Dashboard", "Groups", "Messages", "Bot actions", "Contacts", "Opt-outs",
+    ]);
+  });
+
+  it("phone tabs are Dashboard, Groups, Messages, Bot actions and More (Contacts and Opt-outs inside More)", async () => {
     setup(375, "/messages");
     const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Groups", "Contacts", "Messages", "Bot actions"]);
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Dashboard", "Groups", "Messages", "Bot actions"]);
     expect(within(nav).getByRole("button", { name: "More" })).toBeInTheDocument();
+    await userEvent.click(within(nav).getByRole("button", { name: "More" }));
+    const sheet = screen.getByRole("dialog", { name: "More" });
+    expect(within(sheet).getByRole("link", { name: "Contacts" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("link", { name: "Opt-outs" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
     expect(within(nav).getByRole("link", { name: "Messages" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("highlights More on the Contacts page", () => {
+    setup(375, "/contacts");
+    expect(screen.getByRole("button", { name: "More" })).toHaveClass("text-primary");
   });
 
   it("keeps content clear of the fixed tab bar on phones", () => {

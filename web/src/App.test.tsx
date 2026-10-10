@@ -39,6 +39,18 @@ describe("App auth routing", () => {
     await waitFor(() => expect(screen.getByRole("link", { name: "Contacts" })).toBeInTheDocument());
   });
 
+  it("shows the Dashboard at the root path", async () => {
+    stubSession(200, { authenticated: true });
+    render(<MemoryRouter initialEntries={["/"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+  });
+
+  it("sends unknown paths to the Dashboard", async () => {
+    stubSession(200, { authenticated: true });
+    render(<MemoryRouter initialEntries={["/nope"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+  });
+
   it("shows the shell on phones too and logs out from the More sheet", async () => {
     mockViewport(375);
     stubSession(200, { authenticated: true });
