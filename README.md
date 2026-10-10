@@ -153,6 +153,7 @@ Earlier versions used [go-whatsapp-web-multidevice](https://github.com/aldinokem
 
 A web admin UI (served at `/admin`) lets you manage the bot without touching the database:
 
+- **Dashboard**: the start page. Statistics and charts for a date range: groups, chats, messages, active senders, reactions, knowledge-base topics, messages over time, top groups and senders, and activity by hour and weekday (see [Dashboard](#dashboard)).
 - **Groups**: turn the bot on/off for a group ("managed"), toggle the spam notice, edit community keys, set a display name and choose the per-group **Summary language**.
   - **Summary language** is `Auto`, `HE`, `EN` or `RU`. `Auto` follows the language of the chat. `HE`, `EN` and `RU` force that language for scheduled and admin-triggered summaries. On-demand summaries (a user asking the bot in the group) follow the language of the request.
 - **Contacts**: view and edit sender names.
@@ -164,7 +165,7 @@ A web admin UI (served at `/admin`) lets you manage the bot without touching the
 The UI follows the Iris design language: Rubik (bundled with the app, no external font requests), a violet primary colour, soft borders and rounded cards.
 
 - **Theme:** System, Light or Dark. Pick it in the account menu (sidebar footer) or in the **More** sheet on phones. The choice is remembered in the browser; System follows the OS setting live.
-- **Navigation:** a sidebar on desktop (labels from 1024px wide, icon-only on tablets from 768px) and, on phones, a header with a bottom tab bar (Groups, Contacts, Messages, Bot actions) plus a **More** sheet (Opt-outs, theme, log out).
+- **Navigation:** a sidebar on desktop (Dashboard, Groups, Messages, Bot actions, Contacts, Opt-outs; labels from 1024px wide, icon-only on tablets from 768px) and, on phones, a header with a bottom tab bar (Dashboard, Groups, Messages, Bot actions) plus a **More** sheet (Contacts, Opt-outs, theme, log out).
 - **Responsive Groups:** a compact table from 1280px, cards below that (two columns from 768px, one column on phones). Contacts, Opt-outs and Messages turn into stacked cards on phones, and dialogs (Edit group, Schedules) become bottom sheets.
 - **Confirmations, errors and toasts** use SweetAlert2, themed to match light or dark.
 - **Accessibility:** a "Skip to content" link is the first tab stop, everything works from the keyboard, dialogs trap focus and return it to the control that opened them, and group names and JIDs render correctly for right-to-left (Hebrew) text.
@@ -182,6 +183,59 @@ ADMIN_SESSION_SECRET=$(openssl rand -hex 32)
 - Login attempts are rate-limited to 5 failures per minute per client IP. The limiter keys on the connecting address, so behind a reverse proxy configure the proxy / uvicorn forwarded-headers handling so clients are not all seen as one address.
 - HTTPS is strongly recommended: terminate TLS at a reverse proxy and set `ADMIN_COOKIE_SECURE=true`.
 - The admin API lives under `/api/v1/admin` (login-protected; see Swagger at `/docs`).
+
+#### Dashboard
+
+`/admin` opens on the Dashboard: an overview of the activity the bot has stored.
+
+- **Date range:** presets 24 hours, 7 days (the default), 30 days, 90 days and All time, plus **Custom** with From and To dates (days in your browser's local time; the To day is included). The range is kept in the URL (`?range=30d`, `?range=custom&from=2026-08-01&to=2026-08-31`), so reloading or sharing the link keeps it. An invalid or reversed custom range shows an error and is not applied.
+- **Auto-refresh:** the relative presets (24 hours to 90 days) reload every 60 seconds while the tab is visible; a refresh missed while the tab was hidden runs when you come back. Custom ranges and All time do not refresh.
+- **Tiles:** Groups (all time, with the number of managed groups), Chats (groups and direct chats with at least one message in the range), Messages, Active senders, Reactions and Knowledge-base topics (topics that start in the range).
+- **Charts:** Messages over time, Top 5 groups, Top senders (top 10), Activity by hour of day, Activity by weekday and Text vs media (text, media and other messages). Messages over time is grouped per hour, day, week (weeks start on Monday) or month depending on the length of the range. Every chart has a **Show as table** toggle that shows the same numbers as a table.
+- **Time zone:** hours, days and weekdays are counted in the server time zone from `TIMEZONE` (default `Asia/Jerusalem`), shown under the range picker.
+- **Bot messages are excluded** from every number (messages and reactions sent by the bot's own WhatsApp account). The bot's identity comes from the live WhatsApp session; if it cannot be looked up, the numbers include the bot and the page says "Bot messages could not be identified and are included".
+- A range without messages shows the tiles with zeros and "No messages in this range" instead of the charts.
+
+![Dashboard showing tiles and charts for the last 7 days](assets/screenshots/admin-dashboard-light.png)
+![Dashboard for the last 7 days (dark)](assets/screenshots/admin-dashboard-dark.png)
+
+The 30 days preset, grouped per day:
+
+![Dashboard for the last 30 days](assets/screenshots/admin-dashboard-30d-light.png)
+
+A custom range with the From and To dates:
+
+![Dashboard with a custom date range](assets/screenshots/admin-dashboard-custom-light.png)
+
+"Show as table" on the weekday chart, and a range with no messages:
+
+![Activity by weekday shown as a table](assets/screenshots/admin-dashboard-table-light.png)
+![Dashboard empty state for a range without messages](assets/screenshots/admin-dashboard-empty-light.png)
+
+On phones the tiles use two columns, the charts stack in one column and the tab bar starts with Dashboard:
+
+<p>
+<img src="assets/screenshots/admin-mobile-dashboard-light.png" alt="Dashboard on mobile (light)" width="180">
+<img src="assets/screenshots/admin-mobile-dashboard-dark.png" alt="Dashboard on mobile (dark)" width="180">
+</p>
+
+The numbers come from `GET /api/v1/admin/stats` (login-protected with the admin session cookie, like the rest of the admin API):
+
+| Parameter | Description |
+| --------- | ----------- |
+| `from`    | Start of the range, ISO 8601. Optional: defaults to the earliest message (or 7 days before `to` when there are no messages). |
+| `to`      | End of the range, ISO 8601, inclusive. Optional: defaults to now. |
+
+Datetimes without an offset are read in `TIMEZONE`. Both must lie between 1970 and 2100, and `from` must not be after `to` (otherwise `422`). Example: `GET /api/v1/admin/stats?from=2026-10-01T00:00:00&to=2026-10-07T23:59:59`.
+
+The response contains:
+
+- `from`, `to` (the resolved range in the configured zone), `timezone` and `bot_excluded` (`false` when the bot could not be identified and its messages are counted).
+- Counts in the range: `messages`, `chats` (distinct chats), `active_senders` (distinct senders), `reactions` and `kb_topics`; `groups` is `{total, managed}` and is not limited to the range.
+- `split`: `{text, media, other}`. Text is a message with text and no media, media is a message with media, other is the rest.
+- `bucket` and `series` (`[{start, count}]`, zero-filled). The bucket is `hour` for ranges up to 48 hours, `day` up to 92 days, `week` up to two years (weeks start on Monday, so the first slot can start before `from`) and `month` beyond that.
+- `top_groups` (up to 5) and `top_senders` (up to 10), each `[{…_jid, name, count}]` ordered by count, then JID. A group's `name` is its display name or WhatsApp name, a sender's is the push name; either can be `null` (the UI then shows the number from the JID).
+- `by_hour` (24 counts, hour 0 to 23) and `by_weekday` (7 counts, 0 = Sunday to 6 = Saturday).
 
 #### Scheduled summaries
 
@@ -301,6 +355,7 @@ Swagger docs available at: `http://localhost:8000/docs`
 
 - <b>/load_new_kbtopic (POST)</b> Loads a new knowledge base topic, prepares content for summarization.
 - <b>/trigger_summarize_and_send_to_groups (POST)</b> Generates & dispatches summaries, Sends summaries to all managed groups
+- <b>/api/v1/admin/stats (GET)</b> Dashboard statistics for a date range, bot messages excluded (admin login required; see [Dashboard](#dashboard)).
 
 ### 7. Opt-Out Feature
 
