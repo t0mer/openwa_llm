@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { Link, MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { DateRangeFilter, useRangeParams } from "./DateRangeFilter";
 import type { CustomRange, RangeKey } from "../lib/dateRange";
 
@@ -96,6 +96,48 @@ describe("DateRangeFilter", () => {
     expect(screen.getByLabelText("To")).toHaveValue("2026-09-30");
   });
 
+  it("says the custom dates are browser-local, linked to both inputs", async () => {
+    renderFilter();
+    await userEvent.click(screen.getByRole("button", { name: "Custom" }));
+    expect(screen.getByText("Dates are in your browser's local time.")).toBeInTheDocument();
+    expect(screen.getByLabelText("From")).toHaveAccessibleDescription("Dates are in your browser's local time.");
+    expect(screen.getByLabelText("To")).toHaveAccessibleDescription("Dates are in your browser's local time.");
+  });
+
+  it("keeps the local-time hint in the description next to an error", async () => {
+    renderFilter();
+    await userEvent.click(screen.getByRole("button", { name: "Custom" }));
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(screen.getByLabelText("From")).toHaveAccessibleDescription(
+      "Dates are in your browser's local time. Enter a valid start and end date.",
+    );
+  });
+
+  it("follows a range changed from outside: closes the panel and resets the draft", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <DateRangeFilter rangeKey="custom" custom={{ from: "2026-09-01", to: "2026-09-30" }} onChange={onChange} />,
+    );
+    await userEvent.clear(screen.getByLabelText("From"));
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    rerender(<DateRangeFilter rangeKey="7d" onChange={onChange} />);
+    expect(screen.queryByLabelText("From")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    rerender(<DateRangeFilter rangeKey="custom" custom={{ from: "2026-08-01", to: "2026-08-02" }} onChange={onChange} />);
+    expect(screen.getByLabelText("From")).toHaveValue("2026-08-01");
+    expect(screen.getByLabelText("To")).toHaveValue("2026-08-02");
+  });
+
+  it("keeps an open draft when the parent re-renders with the same range", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<DateRangeFilter rangeKey="7d" onChange={onChange} />);
+    await userEvent.click(screen.getByRole("button", { name: "Custom" }));
+    await userEvent.type(screen.getByLabelText("From"), "2026-10-01");
+    rerender(<DateRangeFilter rangeKey="7d" onChange={onChange} />);
+    expect(screen.getByLabelText("From")).toHaveValue("2026-10-01");
+  });
+
   it("closes the custom inputs when a preset is picked", async () => {
     renderFilter();
     await userEvent.click(screen.getByRole("button", { name: "Custom" }));
@@ -112,6 +154,7 @@ function Probe() {
   return (
     <>
       <button type="button" onClick={() => void navigate(-1)}>Back</button>
+      <Link to="/">Home</Link>
       <output data-testid="path">{loc.pathname}</output>
       <output data-testid="range">{JSON.stringify(range)}</output>
       <output data-testid="search">{loc.search}</output>
@@ -147,6 +190,15 @@ describe("useRangeParams", () => {
   it("falls back to 7 days for an invalid URL", () => {
     renderAt("/?range=custom&from=2026-09-30&to=2026-09-01");
     expect(screen.getByTestId("range")).toHaveTextContent('{"key":"7d"}');
+  });
+
+  it("closes the custom panel when a link drops the range from the URL", async () => {
+    renderAt("/?range=custom&from=2026-09-01&to=2026-09-30");
+    expect(screen.getByLabelText("From")).toHaveValue("2026-09-01");
+    await userEvent.click(screen.getByRole("link", { name: "Home" }));
+    expect(screen.getByTestId("range")).toHaveTextContent('{"key":"7d"}');
+    expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByLabelText("From")).not.toBeInTheDocument();
   });
 
   it("writes the choice to the URL, replacing the entry", async () => {

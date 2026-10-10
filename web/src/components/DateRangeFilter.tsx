@@ -50,6 +50,19 @@ export function DateRangeFilter({
   const [error, setError] = useState<string | null>(null);
   const panelId = useId();
   const errorId = useId();
+  const hintId = useId();
+
+  // The range can also change from outside (a link to "/" while a custom range is shown): then
+  // the panel follows it, closed unless the new range is custom, with that range as the draft.
+  const applied = `${rangeKey}|${custom?.from ?? ""}|${custom?.to ?? ""}`;
+  const [seen, setSeen] = useState(applied);
+  if (seen !== applied) {
+    setSeen(applied);
+    setOpen(rangeKey === "custom");
+    setDraft(custom ?? { from: "", to: "" });
+    setError(null);
+  }
+  const describedBy = error ? `${hintId} ${errorId}` : hintId;
 
   function pick(key: Exclude<RangeKey, "custom">) {
     setOpen(false);
@@ -99,7 +112,7 @@ export function DateRangeFilter({
                 type="date"
                 value={draft.from}
                 aria-invalid={error ? true : undefined}
-                aria-describedby={error ? errorId : undefined}
+                aria-describedby={describedBy}
                 onChange={(e) => setDraft({ ...draft, from: e.target.value })}
               />
             </Field>
@@ -108,7 +121,7 @@ export function DateRangeFilter({
                 type="date"
                 value={draft.to}
                 aria-invalid={error ? true : undefined}
-                aria-describedby={error ? errorId : undefined}
+                aria-describedby={describedBy}
                 onChange={(e) => setDraft({ ...draft, to: e.target.value })}
               />
             </Field>
@@ -116,6 +129,9 @@ export function DateRangeFilter({
               Apply
             </Button>
           </div>
+          <p id={hintId} className="text-xs text-muted-foreground">
+            Dates are in your browser's local time.
+          </p>
           {error && (
             <div id={errorId}>
               <InlineError>{error}</InlineError>
