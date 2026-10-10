@@ -14,7 +14,14 @@ from config import get_settings
 
 SECRET = "s" * 32
 PREFIX = "/api/v1/admin"
-EXPECTED_PREFIXES = {"/groups", "/contacts", "/opt-outs", "/messages", "/actions"}
+EXPECTED_PREFIXES = {
+    "/groups",
+    "/contacts",
+    "/opt-outs",
+    "/messages",
+    "/actions",
+    "/stats",
+}
 MIN_ROUTES = 12
 
 

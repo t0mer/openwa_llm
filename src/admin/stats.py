@@ -1,13 +1,43 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from .schemas import StatsBucket
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import Integer, and_, cast, func, literal
+from sqlalchemy import select as sa_select
+from sqlalchemy.dialects.postgresql import INTERVAL
+from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from api.deps import get_db_async_session, get_whatsapp
+from config import Settings, get_settings
+from models import Group, KBTopic, Message, Reaction, Sender
+from whatsapp import WhatsAppGateway
+from whatsapp.identity import get_bot_identity
+
+from .messages import _check_bound
+from .schemas import (
+    StatsBucket,
+    StatsGroups,
+    StatsOut,
+    StatsPoint,
+    StatsSplit,
+    StatsTopGroup,
+    StatsTopSender,
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter(tags=["admin-stats"])
 
 HOUR_SPAN = timedelta(hours=48)
 DAY_SPAN = timedelta(days=92)
 WEEK_SPAN = timedelta(days=730)  # two years
+DEFAULT_SPAN = timedelta(days=7)
+TOP_GROUPS = 5
+TOP_SENDERS = 10
 
 
 def pick_bucket(start: datetime, end: datetime) -> StatsBucket:
@@ -25,3 +55,161 @@ def pick_bucket(start: datetime, end: datetime) -> StatsBucket:
 def localize(value: datetime, zone: ZoneInfo) -> datetime:
     """Naive datetimes are wall-clock times in the configured zone."""
     return value if value.tzinfo else value.replace(tzinfo=zone)
+
+
+async def _bot_ids(whatsapp: WhatsAppGateway) -> frozenset[str] | None:
+    try:
+        return (await get_bot_identity(whatsapp)).normalized()
+    except Exception as e:  # stats must still load without a WhatsApp session
+        logger.warning("Bot identity lookup failed, bot not excluded: %s", e)
+        return None
+
+
+async def _counts_by(session: AsyncSession, key: Any, where: list) -> dict[Any, int]:
+    """Message counts grouped by a computed key (grouped via a subquery so the
+    bound time-zone parameters appear only once)."""
+    inner = select(key.label("k")).where(*where).subquery()
+    rows = await session.execute(select(inner.c.k, func.count()).group_by(inner.c.k))
+    return {k: int(n) for k, n in rows.all()}
+
+
+@router.get("", response_model=StatsOut)
+async def get_stats(
+    session: Annotated[AsyncSession, Depends(get_db_async_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
+    from_: Annotated[datetime | None, Query(alias="from")] = None,
+    to: datetime | None = None,
+) -> StatsOut:
+    _check_bound(from_, "from")
+    _check_bound(to, "to")
+    tz = settings.timezone
+    zone = ZoneInfo(tz)
+    end = localize(to, zone) if to else datetime.now(timezone.utc)
+
+    bot_ids = await _bot_ids(whatsapp)
+    msg_where: list = [col(Message.timestamp) <= end]
+    reaction_where: list = [col(Reaction.timestamp) <= end]
+    if bot_ids:
+        msg_where.append(col(Message.sender_jid).not_in(bot_ids))
+        reaction_where.append(col(Reaction.sender_jid).not_in(bot_ids))
+
+    if from_ is not None:
+        start = localize(from_, zone)
+    else:
+        earliest = await session.scalar(
+            select(func.min(Message.timestamp)).where(*msg_where)
+        )
+        start = earliest or end - DEFAULT_SPAN
+    if start > end:
+        raise HTTPException(status_code=422, detail="from must not be after to")
+    msg_where.append(col(Message.timestamp) >= start)
+    reaction_where.append(col(Reaction.timestamp) >= start)
+    bucket = pick_bucket(start, end)
+
+    totals = (
+        await session.execute(
+            sa_select(
+                func.count(),
+                func.count(func.distinct(Message.chat_jid)),
+                func.count(func.distinct(Message.sender_jid)),
+                func.count().filter(
+                    and_(
+                        col(Message.text).is_not(None), col(Message.media_url).is_(None)
+                    )
+                ),
+                func.count().filter(col(Message.media_url).is_not(None)),
+            ).where(*msg_where)
+        )
+    ).one()
+    messages, chats, senders, text, media = (int(v) for v in totals)
+
+    # Series: zero-filled slots in the configured zone (DST-aware, PG 16+).
+    slot = func.date_trunc(bucket, Message.timestamp, tz)
+    counts = await _counts_by(session, slot, msg_where)
+    slots = await session.scalars(
+        select(
+            func.generate_series(
+                func.date_trunc(bucket, literal(start), tz),
+                func.date_trunc(bucket, literal(end), tz),
+                cast(literal(f"1 {bucket}"), INTERVAL),
+                tz,
+            )
+        )
+    )
+    series = [
+        StatsPoint(start=s.astimezone(zone), count=counts.get(s, 0)) for s in slots
+    ]
+
+    local_ts = func.timezone(tz, Message.timestamp)
+    hours = await _counts_by(
+        session, cast(func.extract("hour", local_ts), Integer), msg_where
+    )
+    weekdays = await _counts_by(
+        session, cast(func.extract("dow", local_ts), Integer), msg_where
+    )
+
+    group_count = func.count().label("n")
+    top_groups = await session.execute(
+        select(
+            Message.group_jid,
+            func.coalesce(Group.display_name, Group.group_name),
+            group_count,
+        )
+        .outerjoin(Group, col(Group.group_jid) == col(Message.group_jid))
+        .where(*msg_where, col(Message.group_jid).is_not(None))
+        .group_by(
+            col(Message.group_jid), col(Group.display_name), col(Group.group_name)
+        )
+        .order_by(group_count.desc(), col(Message.group_jid).asc())
+        .limit(TOP_GROUPS)
+    )
+    sender_count = func.count().label("n")
+    top_senders = await session.execute(
+        select(Message.sender_jid, Sender.push_name, sender_count)
+        .outerjoin(Sender, col(Sender.jid) == col(Message.sender_jid))
+        .where(*msg_where)
+        .group_by(col(Message.sender_jid), col(Sender.push_name))
+        .order_by(sender_count.desc(), col(Message.sender_jid).asc())
+        .limit(TOP_SENDERS)
+    )
+
+    reactions = await session.scalar(
+        select(func.count()).select_from(Reaction).where(*reaction_where)
+    )
+    kb_topics = await session.scalar(
+        select(func.count())
+        .select_from(KBTopic)
+        .where(col(KBTopic.start_time) >= start, col(KBTopic.start_time) <= end)
+    )
+    groups_total, groups_managed = (
+        await session.execute(
+            select(func.count(), func.count().filter(col(Group.managed)))
+        )
+    ).one()
+
+    return StatsOut(
+        from_=start.astimezone(zone),
+        to=end.astimezone(zone),
+        timezone=tz,
+        bucket=bucket,
+        bot_excluded=bot_ids is not None,
+        groups=StatsGroups(total=int(groups_total), managed=int(groups_managed)),
+        chats=chats,
+        messages=messages,
+        active_senders=senders,
+        reactions=int(reactions or 0),
+        kb_topics=int(kb_topics or 0),
+        split=StatsSplit(text=text, media=media, other=messages - text - media),
+        series=series,
+        top_groups=[
+            StatsTopGroup(group_jid=jid, name=name, count=int(n))
+            for jid, name, n in top_groups.all()
+        ],
+        top_senders=[
+            StatsTopSender(sender_jid=jid, name=name, count=int(n))
+            for jid, name, n in top_senders.all()
+        ],
+        by_hour=[hours.get(h, 0) for h in range(24)],
+        by_weekday=[weekdays.get(d, 0) for d in range(7)],
+    )

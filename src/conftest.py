@@ -9,11 +9,29 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 import models  # noqa: F401  (register tables)
-from models import Group, GroupSummarySchedule, Message, OptOut, Reaction, Sender
+from models import (
+    Group,
+    GroupSummarySchedule,
+    KBTopic,
+    Message,
+    OptOut,
+    Reaction,
+    Sender,
+)
+from models.kb_topic_message import KBTopicMessage
 
 TABLES = [
     model.__table__  # pyright: ignore[reportAttributeAccessIssue]
-    for model in (Sender, Group, Message, Reaction, OptOut, GroupSummarySchedule)
+    for model in (
+        Sender,
+        Group,
+        Message,
+        Reaction,
+        OptOut,
+        GroupSummarySchedule,
+        KBTopic,
+        KBTopicMessage,
+    )
 ]
 
 
@@ -34,6 +52,7 @@ async def db_sessionmaker():
         pytest.skip("set ADMIN_TEST_DB_URI to a *test* Postgres database")
     engine = create_async_engine(uri)
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(lambda c: SQLModel.metadata.drop_all(c, tables=TABLES))
         await conn.run_sync(lambda c: SQLModel.metadata.create_all(c, tables=TABLES))
         await conn.execute(text("SELECT 1"))
