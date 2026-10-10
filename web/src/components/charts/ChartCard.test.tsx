@@ -1,7 +1,9 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BarChart } from "./BarChart";
 import { ChartCard } from "./ChartCard";
+import { Donut } from "./Donut";
 import { useWidth } from "./useWidth";
 
 type Callback = () => void;
@@ -85,7 +87,7 @@ const TABLE = {
 };
 
 describe("ChartCard", () => {
-  it("shows a titled card with the chart as one labelled image", () => {
+  it("shows a titled card with the chart as one labelled group", () => {
     render(
       <ChartCard title="Messages over time" description="Per day" summary="1,234 messages over 2 days" table={TABLE}>
         <svg data-testid="chart" />
@@ -93,8 +95,9 @@ describe("ChartCard", () => {
     );
     expect(screen.getByRole("heading", { name: "Messages over time" })).toBeInTheDocument();
     expect(screen.getByText("Per day")).toBeInTheDocument();
-    const img = screen.getByRole("img", { name: "1,234 messages over 2 days" });
-    expect(within(img).getByTestId("chart")).toBeInTheDocument();
+    const group = screen.getByRole("group", { name: "1,234 messages over 2 days" });
+    expect(within(group).getByTestId("chart")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "1,234 messages over 2 days" })).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
@@ -106,10 +109,11 @@ describe("ChartCard", () => {
       </ChartCard>,
     );
     const toggle = screen.getByRole("button", { name: "Show as table" });
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(toggle).not.toHaveAttribute("aria-pressed");
 
     await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveAccessibleName("Show chart");
+    expect(toggle).not.toHaveAttribute("aria-pressed");
     expect(screen.queryByTestId("chart")).not.toBeInTheDocument();
     const table = screen.getByRole("table", { name: "1,234 messages over 2 days" });
     const headers = within(table).getAllByRole("columnheader").map((h) => h.textContent);
@@ -119,7 +123,7 @@ describe("ChartCard", () => {
     expect(cells).toEqual([(1234).toLocaleString(), "0"]);
 
     await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(toggle).toHaveAccessibleName("Show as table");
     expect(screen.getByTestId("chart")).toBeInTheDocument();
   });
 
@@ -134,5 +138,32 @@ describe("ChartCard", () => {
     await user.click(screen.getByRole("button", { name: "Show as table" }));
     expect(screen.getByText(evil)).toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("keeps bars and legend items reachable by assistive tech inside the card", () => {
+    render(
+      <ChartCard title="Mixed" summary="Mixed charts" table={TABLE}>
+        <BarChart data={[{ label: "Mon", value: 4, title: "Mon: 4 messages" }]} />
+        <Donut segments={[{ label: "Text", value: 3, color: "var(--chart-1)" }]} />
+      </ChartCard>,
+    );
+    const group = screen.getByRole("group", { name: "Mixed charts" });
+    expect(within(group).getByRole("img", { name: "Mon: 4 messages" })).toBeInTheDocument();
+    expect(within(group).getByRole("listitem")).toHaveTextContent("Text");
+  });
+
+  it("shows negative or non-finite numbers in the table as 0", async () => {
+    const user = userEvent.setup();
+    render(
+      <ChartCard
+        title="T"
+        summary="S"
+        table={{ columns: ["Day", "A", "B", "C"], rows: [["Mon", -3, Number.NaN, Number.POSITIVE_INFINITY]] }}
+      >
+        <div />
+      </ChartCard>,
+    );
+    await user.click(screen.getByRole("button", { name: "Show as table" }));
+    expect(screen.getAllByRole("cell").map((c) => c.textContent)).toEqual(["0", "0", "0"]);
   });
 });

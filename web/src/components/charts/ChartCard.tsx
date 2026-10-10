@@ -1,6 +1,7 @@
-import { Table2 } from "lucide-react";
+import { ChartColumn, Table2 } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
+import { count } from "./values";
 
 export interface ChartTable {
   columns: string[];
@@ -8,12 +9,13 @@ export interface ChartTable {
 }
 
 function cell(v: string | number) {
-  return typeof v === "number" ? v.toLocaleString() : v;
+  return typeof v === "number" ? count(v).toLocaleString() : v;
 }
 
 /**
- * A chart in a card. The chart is one image labelled by `summary`; "Show as table" swaps it for a
- * table of the same numbers (first column as row headers), so nothing is carried by the picture alone.
+ * A chart in a card. The chart is a group labelled by `summary` (a group, not an image, so its
+ * focusable bars and legend stay exposed); "Show as table" swaps it for a table of the same numbers
+ * (first column as row headers), so nothing is carried by the picture alone.
  */
 export function ChartCard({
   title,
@@ -41,16 +43,12 @@ export function ChartCard({
         </div>
         <button
           type="button"
-          aria-pressed={asTable}
           aria-controls={bodyId}
           onClick={() => setAsTable((t) => !t)}
-          className={cn(
-            "inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-primary hover:bg-primary-soft",
-            asTable && "bg-primary-soft",
-          )}
+          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-primary hover:bg-primary-soft"
         >
-          <Table2 aria-hidden="true" className="size-4" />
-          Show as table
+          {asTable ? <ChartColumn aria-hidden="true" className="size-4" /> : <Table2 aria-hidden="true" className="size-4" />}
+          {asTable ? "Show chart" : "Show as table"}
         </button>
       </div>
       <div id={bodyId} className="min-w-0">
@@ -89,7 +87,7 @@ export function ChartCard({
             </table>
           </div>
         ) : (
-          <div role="img" aria-label={summary}>
+          <div role="group" aria-label={summary}>
             {children}
           </div>
         )}
