@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from admin import spa
 from config import get_settings
@@ -25,9 +26,11 @@ def dist(tmp_path, monkeypatch):
     return root
 
 
-def make_client(settings=None):
+def make_client(settings=None, instrument=False):
     app = FastAPI()
     app.include_router(spa.router)
+    if instrument:  # production runs logfire/OTel FastAPI instrumentation
+        FastAPIInstrumentor.instrument_app(app)
     app.dependency_overrides[get_settings] = lambda: settings or enabled()
     return TestClient(app)
 
@@ -153,3 +156,88 @@ def test_all_spa_responses_carry_security_headers(dist):
 def test_404s_do_not_get_spa_headers(dist):
     resp = make_client().get("/admin/assets/missing.js")
     assert resp.status_code == 404 and "cache-control" not in resp.headers
+
+
+@pytest.mark.parametrize(
+    ("name", "content_type"),
+    [
+        ("font.woff2", "font/woff2"),
+        ("font.woff", "font/woff"),
+        ("app.js", "text/javascript"),
+        ("app.css", "text/css"),
+        ("icon.svg", "image/svg+xml"),
+        ("data.json", "application/json"),
+        ("site.webmanifest", "application/manifest+json"),
+        ("favicon.ico", "image/x-icon"),
+        ("app.js.map", "application/json"),
+    ],
+)
+def test_asset_content_types_do_not_depend_on_system_mime_db(
+    dist, monkeypatch, name, content_type
+):
+    # Simulate python:slim, whose mimetypes knows none of these.
+    monkeypatch.setattr(spa.mimetypes, "guess_type", lambda *a, **k: (None, None))
+    (dist / "assets" / name).write_bytes(b"x")
+    resp = make_client().get(f"/admin/assets/{name}")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].split(";")[0] == content_type
+    assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+def test_wrong_system_type_is_overridden(dist, monkeypatch):
+    monkeypatch.setattr(
+        spa.mimetypes, "guess_type", lambda *a, **k: ("text/plain", None)
+    )
+    (dist / "assets" / "font.woff2").write_bytes(b"x")
+    resp = make_client().get("/admin/assets/font.woff2")
+    assert resp.headers["content-type"] == "font/woff2"
+
+
+def test_unknown_extension_falls_back_to_system_guess(dist):
+    (dist / "assets" / "page.html").write_text("<p>x</p>")
+    resp = make_client().get("/admin/assets/page.html")
+    assert resp.headers["content-type"].startswith("text/html")
+
+
+@pytest.mark.parametrize("instrument", [False, True])
+def test_head_matches_get_headers_with_empty_body(dist, instrument):
+    client = make_client(instrument=instrument)
+    for path in ("/admin/assets/app.js", "/admin", "/admin/", "/admin/groups"):
+        got, head = client.get(path), client.head(path)
+        assert head.status_code == 200, path
+        assert head.content == b""
+        for name in ("content-type", "content-length", "cache-control", *SECURITY):
+            assert head.headers.get(name) == got.headers.get(name), (path, name)
+        for name, value in SECURITY.items():
+            assert head.headers[name] == value
+
+
+@pytest.mark.parametrize("instrument", [False, True])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/admin/assets/missing.js",
+        "/admin/assets/missing.woff2",
+        "/admin/..%2f..%2fetc/passwd",
+        "/admin/assets/app.js%00.png",
+        "/admin/%00",
+        "/admin/..%2fsecret.txt",
+    ],
+)
+def test_head_missing_or_hostile_paths_are_not_500(dist, instrument, path):
+    resp = make_client(instrument=instrument).head(path)
+    assert resp.status_code in (200, 404)
+    assert resp.content == b""
+    if resp.status_code == 200:  # only ever the SPA index
+        assert resp.headers["cache-control"] == "no-cache"
+
+
+def test_head_dotted_missing_path_has_no_spa_fallback(dist):
+    assert make_client().head("/admin/assets/missing.js").status_code == 404
+    assert make_client().head("/admin/some.thing").status_code == 404
+
+
+def test_head_404_when_admin_disabled(dist):
+    disabled = SimpleNamespace(admin_password=None, admin_session_secret=None)
+    for path in ("/admin", "/admin/assets/app.js"):
+        assert make_client(disabled, instrument=True).head(path).status_code == 404
