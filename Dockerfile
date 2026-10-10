@@ -1,4 +1,4 @@
-FROM node:20-alpine AS web
+FROM --platform=$BUILDPLATFORM node:20-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
