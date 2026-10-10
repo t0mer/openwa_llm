@@ -1,0 +1,12 @@
+# Development override: build the web-server image from this checkout and run the host's
+# src/ and migrations/ inside it. Build the SPA on the host first (cd web && npm ci && npm run build),
+# because the mounted src/ also supplies src/admin/static/dist.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  web-server:
+    image: openwa_llm-dev
+    build: .
+    pull_policy: never
+    volumes:
+      - ./src:/app/src
+      - ./migrations:/app/migrations
