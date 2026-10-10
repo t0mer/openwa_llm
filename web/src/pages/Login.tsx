@@ -19,7 +19,7 @@ export default function Login() {
     document.title = `Log in · ${APP_NAME}`;
   }, []);
 
-  if (status === "authenticated") return <Navigate to="/groups" replace />;
+  if (status === "authenticated") return <Navigate to="/" replace />;
   if (status === "disabled") return <Notice live>The admin UI is disabled on this server.</Notice>;
 
   async function submit(e: FormEvent) {

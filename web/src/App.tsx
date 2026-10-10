@@ -4,6 +4,7 @@ import { Notice } from "./components/layout/Notice";
 import AppShell from "./components/layout/AppShell";
 import Actions from "./pages/Actions";
 import Contacts from "./pages/Contacts";
+import Dashboard from "./pages/Dashboard";
 import Groups from "./pages/Groups";
 import Login from "./pages/Login";
 import Messages from "./pages/Messages";
@@ -23,7 +24,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route element={<Protected />}>
-          <Route index element={<Navigate to="/groups" replace />} />
+          <Route index element={<Dashboard />} />
           <Route path="/groups" element={<Groups />} />
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/opt-outs" element={<OptOuts />} />

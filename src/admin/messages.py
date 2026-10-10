@@ -32,7 +32,7 @@ def _in_range(value: datetime) -> bool:
         return False
 
 
-def _check_bound(value: datetime | None, name: str) -> None:
+def check_bound(value: datetime | None, name: str) -> None:
     if value is not None and not _in_range(value):
         raise HTTPException(status_code=422, detail=f"{name} is out of range")
 
@@ -75,8 +75,8 @@ async def list_messages(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     before: Annotated[str | None, Query(max_length=600)] = None,
 ) -> MessagePage:
-    _check_bound(from_, "from")
-    _check_bound(to, "to")
+    check_bound(from_, "from")
+    check_bound(to, "to")
     stmt = select(Message)
     if group_jid:
         stmt = stmt.where(Message.group_jid == normalize_jid(group_jid))

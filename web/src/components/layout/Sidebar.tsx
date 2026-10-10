@@ -17,10 +17,11 @@ export function Sidebar() {
     >
       <Brand iconOnly={!wide} className={cn("px-2", !wide && "justify-center px-0")} />
       <nav aria-label="Main" className="flex flex-1 flex-col gap-1">
-        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
+            end={end}
             aria-label={wide ? undefined : label}
             title={wide ? undefined : label}
             className={({ isActive }) =>

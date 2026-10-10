@@ -1,0 +1,102 @@
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { Donut, RING_CIRCUMFERENCE } from "./Donut";
+
+const arcLengths = (c: HTMLElement) =>
+  [...c.querySelectorAll("circle[data-arc]")].map((a) => Number(a.getAttribute("stroke-dasharray")!.split(" ")[0]));
+
+const SEGMENTS = [
+  { label: "Text", value: 75, color: "var(--chart-1)" },
+  { label: "Media", value: 20, color: "var(--chart-2)" },
+  { label: "Other", value: 5, color: "var(--chart-3)" },
+];
+
+describe("Donut", () => {
+  it("splits the ring by value: arcs add up to the whole ring", () => {
+    const { container } = render(<Donut segments={SEGMENTS} />);
+    const lens = arcLengths(container);
+    expect(lens).toHaveLength(3);
+    expect(lens.reduce((a, b) => a + b, 0)).toBeCloseTo(RING_CIRCUMFERENCE, 6);
+    expect(lens[0]! / RING_CIRCUMFERENCE).toBeCloseTo(0.75, 6);
+    expect(lens[2]! / RING_CIRCUMFERENCE).toBeCloseTo(0.05, 6);
+  });
+
+  it("shows the total and a legend with each count and percentage", () => {
+    render(<Donut segments={SEGMENTS} />);
+    expect(screen.getByTestId("donut-total")).toHaveTextContent("100");
+    const rows = screen.getAllByRole("listitem");
+    expect(rows.map((r) => r.textContent)).toEqual(["Text7575%", "Media2020%", "Other55%"]);
+    expect(within(rows[0]!).getByText("75%")).toHaveClass("tabular");
+  });
+
+  it("shows <1% for a tiny non-zero share and skips zero segments in the ring", () => {
+    const { container } = render(
+      <Donut
+        segments={[
+          { label: "Text", value: 999, color: "var(--chart-1)" },
+          { label: "Media", value: 1, color: "var(--chart-2)" },
+          { label: "Other", value: 0, color: "var(--chart-3)" },
+        ]}
+      />,
+    );
+    expect(arcLengths(container)).toHaveLength(2);
+    expect(screen.getByText("<1%")).toBeInTheDocument();
+    expect(screen.getByText((1000).toLocaleString())).toBeInTheDocument();
+  });
+
+  it("shows an empty ring with No data when every value is zero", () => {
+    const { container } = render(
+      <Donut
+        segments={[
+          { label: "Text", value: 0, color: "var(--chart-1)" },
+          { label: "Media", value: 0, color: "var(--chart-2)" },
+        ]}
+      />,
+    );
+    expect(arcLengths(container)).toEqual([]);
+    expect(screen.getByText("No data")).toBeInTheDocument();
+    expect(screen.getAllByText("0%")).toHaveLength(2);
+  });
+
+  it("renders labels as text, never as HTML, isolated for RTL", () => {
+    const evil = '<img src=x onerror="alert(1)">';
+    const { container } = render(<Donut segments={[{ label: evil, value: 1, color: "var(--chart-1)" }]} />);
+    const label = screen.getByText(evil);
+    expect(label.tagName).toBe("BDI");
+    expect(label).toHaveAttribute("dir", "auto");
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  const pcts = () => screen.getAllByRole("listitem").map((r) => r.lastElementChild!.textContent);
+  const two = (a: number, b: number) => [
+    { label: "A", value: a, color: "var(--chart-1)" },
+    { label: "B", value: b, color: "var(--chart-2)" },
+  ];
+
+  it.each([
+    [999, 1, [">99%", "<1%"]],
+    [995, 5, [">99%", "<1%"]],
+    [990, 10, ["99%", "1%"]],
+    [5, 0, ["100%", "0%"]],
+  ])("shows %i / %i as %j, never 100%% beside a non-zero share", (a, b, expected) => {
+    render(<Donut segments={two(a, b)} />);
+    expect(pcts()).toEqual(expected);
+  });
+
+  it("treats negative and non-finite values as 0 in the ring, the total and the legend", () => {
+    const { container } = render(
+      <Donut
+        segments={[
+          { label: "Neg", value: -3, color: "var(--chart-1)" },
+          { label: "NaN", value: Number.NaN, color: "var(--chart-2)" },
+          { label: "Inf", value: Number.POSITIVE_INFINITY, color: "var(--chart-3)" },
+          { label: "Ok", value: 4, color: "var(--chart-4)" },
+        ]}
+      />,
+    );
+    expect(arcLengths(container)).toHaveLength(1);
+    expect(screen.getByTestId("donut-total")).toHaveTextContent("4");
+    expect(screen.getAllByRole("listitem").map((r) => r.textContent)).toEqual(["Neg00%", "NaN00%", "Inf00%", "Ok4100%"]);
+    expect(container.innerHTML).not.toMatch(/NaN%|Infinity|∞/);
+  });
+});

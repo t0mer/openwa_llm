@@ -54,6 +54,23 @@ describe.each([
   });
 });
 
+const CHARTS = [1, 2, 3, 4, 5].map((n) => `chart-${n}`);
+
+describe.each([
+  ["light", tokens(":root")],
+  ["dark", tokens(":root.dark")],
+])("chart series colours, %s theme", (_name, t) => {
+  it.each(CHARTS)("%s is at least 3:1 against the surface", (c) => {
+    expect(t[c], c).toMatch(/^#[0-9a-f]{6}$/i);
+    const ratio = contrast(t[c], t.surface);
+    expect(ratio, `${c} ${t[c]} on surface = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(3);
+  });
+  it("are distinct from each other and from the status colours", () => {
+    const all = [...CHARTS.map((c) => t[c]), t.danger, t.warning, t.success];
+    expect(new Set(all).size).toBe(all.length);
+  });
+});
+
 describe("contrast helper", () => {
   it("matches the WCAG reference values", () => {
     expect(contrast("#000000", "#ffffff")).toBeCloseTo(21, 1);

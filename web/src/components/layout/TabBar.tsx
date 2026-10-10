@@ -12,10 +12,11 @@ export function TabBar() {
   const secondaryActive = NAV_ITEMS.some((i) => !i.primary && matchPath({ path: i.to, end: false, caseSensitive: false }, pathname));
   return (
     <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-surface pb-[env(safe-area-inset-bottom)]">
-      {NAV_ITEMS.filter((i) => i.primary).map(({ to, label, icon: Icon }) => (
+      {NAV_ITEMS.filter((i) => i.primary).map(({ to, label, icon: Icon, end }) => (
         <NavLink
           key={to}
           to={to}
+          end={end}
           className={({ isActive }) => cn(tab, isActive ? "text-primary" : "text-muted-foreground")}
         >
           <Icon aria-hidden="true" className="size-6" />

@@ -20,14 +20,26 @@ const LIGHT = {
   "--muted-foreground": "#5b577a", "--border": "#dcd9ee", "--border-strong": "#bdb8dc", "--primary": "#5e4cc2",
   "--primary-foreground": "#ffffff", "--primary-soft": "#e7e3fa", "--ring": "#5e4cc2", "--danger": "#b8383a",
   "--danger-soft": "#fbe5e4", "--warning": "#8d5a0f", "--warning-soft": "#fbefd5", "--success": "#25735a",
-  "--success-soft": "#dcf1e8", "--shadow": "0 10px 30px -12px rgb(20 18 43 / 0.35)",
+  "--success-soft": "#dcf1e8",
+  "--chart-1": "#5e4cc2",
+  "--chart-2": "#0f7a8c",
+  "--chart-3": "#b5530f",
+  "--chart-4": "#a3307a",
+  "--chart-5": "#4a7a1f",
+  "--shadow": "0 10px 30px -12px rgb(20 18 43 / 0.35)",
 };
 const DARK = {
   "--background": "#100e24", "--surface": "#1a1838", "--surface-2": "#231f47", "--foreground": "#eceaf8",
   "--muted-foreground": "#a6a2c8", "--border": "#2e2a58", "--border-strong": "#433e7a", "--primary": "#a89bf2",
   "--primary-foreground": "#14122b", "--primary-soft": "#2c2761", "--ring": "#c4baf7", "--danger": "#f08682",
   "--danger-soft": "#45202a", "--warning": "#eab45c", "--warning-soft": "#3d2f17", "--success": "#62c9a5",
-  "--success-soft": "#173a31", "--shadow": "0 10px 30px -12px rgb(0 0 0 / 0.7)",
+  "--success-soft": "#173a31",
+  "--chart-1": "#a89bf2",
+  "--chart-2": "#4cc3d9",
+  "--chart-3": "#f0a35e",
+  "--chart-4": "#e58bc4",
+  "--chart-5": "#9ed26a",
+  "--shadow": "0 10px 30px -12px rgb(0 0 0 / 0.7)",
 };
 
 describe("index.css tokens", () => {
