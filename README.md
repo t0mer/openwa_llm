@@ -27,7 +27,8 @@ This project includes multiple Docker Compose files for different environments:
 
 | File                           | Purpose                                                                        | Usage                                                  |
 | ------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `docker-compose.yml`           | **Default/Development**. Builds the application from source code.              | `docker compose up -d`                                 |
+| `docker-compose.yml`           | **Default**. Uses the pre-built `techblog/openwa_llm` image from Docker Hub (`amd64` and `arm64`) and `.env`. | `docker compose up -d`                                 |
+| `docker-compose.dev.yml`       | **Development override**. Builds the web server from this checkout and mounts `src/` and `migrations/`. | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` |
 | `docker-compose.prod.yml`      | **Production**. Uses the pre-built `techblog/openwa_llm` image from Docker Hub. Recommended for deployment.   | `docker compose -f docker-compose.prod.yml up -d`      |
 | `docker-compose.local-run.yml` | **Local Execution**. For running the app on host while services run in Docker. | `docker compose -f docker-compose.local-run.yml up -d` |
 | `docker-compose.base.yml`      | **Base Configuration**. Contains shared service definitions.                   | ❌ **Do not use directly**                             |
@@ -85,10 +86,21 @@ cp .env.example .env
 
 ### 3. Starting the Services
 
-**Option A: Development (Build from source)**
+**Option A: Default (pre-built image from Docker Hub)**
 
 ```bash
 docker compose up -d
+```
+
+The web server image is pulled from Docker Hub on every `up`.
+
+**Development (build from source)**
+
+Build the admin UI on the host first, because the mounted `src/` supplies `src/admin/static/dist`:
+
+```bash
+(cd web && npm ci && npm run build)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 **Option B: Production (Use pre-built images)**

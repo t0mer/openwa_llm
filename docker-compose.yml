@@ -10,10 +10,8 @@ services:
       service: whatsapp
 
   web-server:
-    build: .
-    volumes:
-      - ./src:/app/src
-      - ./migrations:/app/migrations
+    image: techblog/openwa_llm:latest
+    pull_policy: always
     env_file:
       - .env
     ports:
