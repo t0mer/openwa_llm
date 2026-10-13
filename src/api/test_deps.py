@@ -1,15 +1,13 @@
+from types import SimpleNamespace
 from typing import Annotated
+from unittest.mock import Mock
 
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from api.deps import (
-    get_session_id,
-    get_webhook_session_id,
-    get_webhook_whatsapp,
-    get_whatsapp,
-)
+from api.deps import build_handler, get_session_id, get_whatsapp
+from handler import MessageHandler
 from whatsapp import WhatsAppGateway
 
 
@@ -35,13 +33,6 @@ def _client(ids: list[str]) -> TestClient:
     @app.get("/gw")
     def gw(whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)]) -> str:
         return str(whatsapp)
-
-    @app.get("/hook")
-    def hook(
-        session_id: Annotated[str | None, Depends(get_webhook_session_id)],
-        whatsapp: Annotated[WhatsAppGateway | None, Depends(get_webhook_whatsapp)],
-    ) -> list[str | None]:
-        return [session_id, None if whatsapp is None else str(whatsapp)]
 
     return TestClient(app)
 
@@ -71,9 +62,15 @@ def test_omitted_session_without_single_active_is_400(ids):
     assert resp.json()["detail"] == "session_id required"
 
 
-def test_webhook_temp_uses_first_active_session():
-    assert _client(["a", "b"]).get("/hook").json() == ["a", "gw-a"]
-
-
-def test_webhook_temp_without_sessions_is_none():
-    assert _client([]).get("/hook").json() == [None, None]
+def test_build_handler_binds_the_sessions_gateway():
+    state = SimpleNamespace(registry=FakeRegistry(["a", "b"]), embedding_client="emb")
+    request = SimpleNamespace(app=SimpleNamespace(state=state))
+    db = Mock()
+    handler = build_handler(request, db, "b", Mock())  # type: ignore[arg-type]
+    assert isinstance(handler, MessageHandler)
+    assert (handler.session, handler.whatsapp, handler.embedding_client) == (
+        db,
+        "gw-b",
+        "emb",
+    )
+    assert handler.session_id == "b"
