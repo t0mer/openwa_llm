@@ -69,18 +69,19 @@ async def _handle(
 ) -> Any:
     body = await _read_body_limited(request)
     registry = get_registry(request)
+    # Verify before revealing anything about which sessions exist; the secret
+    # is shared by every session, so no lookup is needed first.
+    secret = registry.webhook_secret
+    if not secret or not verify_signature(
+        secret, body, request.headers.get("X-OpenWA-Signature")
+    ):
+        raise HTTPException(status_code=401, detail="invalid signature")
+
     ids = registry.ids()
     if session_pk is None:
         if len(ids) != 1:
             raise HTTPException(status_code=404, detail="session not found")
         session_pk = ids[0]
-
-    # Verify before revealing anything about which sessions exist.
-    secret = registry.webhook_secret
-    if secret is None or not verify_signature(
-        secret, body, request.headers.get("X-OpenWA-Signature")
-    ):
-        raise HTTPException(status_code=401, detail="invalid signature")
 
     try:
         envelope = json.loads(body)

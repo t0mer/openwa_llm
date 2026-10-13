@@ -157,3 +157,39 @@ def test_legacy_route_still_requires_signature(ctx):
     client.app.state.registry = StubRegistry(["only"])
     assert _post(client, "/webhook", secret="x" * 16).status_code == 401
     assert handlers == {}
+
+
+def _post_unsigned(client, path):
+    return client.post(
+        path,
+        content=json.dumps(MESSAGE).encode(),
+        headers={"content-type": "application/json"},
+    )
+
+
+@pytest.mark.parametrize("ids", [[], ["a", "b"], ["only"]])
+def test_legacy_route_checks_signature_before_session_count(ctx, ids):
+    """An unauthenticated caller must not learn how many sessions are active."""
+    client, handlers, *_ = ctx
+    client.app.state.registry = StubRegistry(ids)
+    assert _post(client, "/webhook", secret="x" * 16).status_code == 401
+    assert _post_unsigned(client, "/webhook").status_code == 401
+    assert handlers == {}
+
+
+@pytest.mark.parametrize("ids", [[], ["a", "b"], ["only"]])
+def test_legacy_route_without_configured_secret_is_401(ctx, ids):
+    client, handlers, *_ = ctx
+    client.app.state.registry = StubRegistry(ids, secret=None)
+    assert _post(client, "/webhook").status_code == 401
+    client.app.state.registry = StubRegistry(ids, secret="")
+    assert _post(client, "/webhook").status_code == 401
+    assert handlers == {}
+
+
+def test_signed_legacy_route_with_zero_or_two_sessions_is_404(ctx):
+    client, handlers, *_ = ctx
+    for ids in ([], ["a", "b"]):
+        client.app.state.registry = StubRegistry(ids)
+        assert _post(client, "/webhook").status_code == 404
+    assert handlers == {}
