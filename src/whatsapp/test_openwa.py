@@ -340,3 +340,24 @@ async def test_get_my_lid_session_not_ready_is_none_and_cached(
     httpx_mock.add_response(url=SESSION, json={"status": "qr_ready", "phone": None})
     assert await lid_gateway.get_my_lid() is None
     assert await lid_gateway.get_my_lid() is None  # cached: no second session call
+
+
+@pytest.mark.parametrize("status", [401, 409, 500])
+async def test_http_errors_carry_the_status_code(gateway, httpx_mock, status):
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{SESSION}/messages/send-text",
+        status_code=status,
+        text="upstream body",
+    )
+    with pytest.raises(GatewayError) as exc:
+        await gateway.send_text("120363@g.us", "yo")
+    assert exc.value.status_code == status
+
+
+async def test_network_errors_have_no_status_code(gateway, httpx_mock):
+    httpx_mock.add_exception(httpx.ConnectError("down"))
+    with pytest.raises(GatewayError) as exc:
+        await gateway.send_text("120363@g.us", "yo")
+    assert exc.value.status_code is None
+    assert GatewayError("plain").status_code is None

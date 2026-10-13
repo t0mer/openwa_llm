@@ -19,6 +19,9 @@ const STORED = "•••• stored";
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 /** Trimmed, or null when blank: a blank secret keeps the stored one. */
 const orNull = (value: string) => value.trim() || null;
+const REENTER = "Changing the URL requires re-entering the API key and webhook secret";
+/** Same comparison as the server: trimmed, trailing slashes ignored. */
+const sameUrl = (a: string, b: string) => a.trim().replace(/\/+$/, "") === b.trim().replace(/\/+$/, "");
 
 function Loading() {
   return (
@@ -37,6 +40,8 @@ function ConnectionForm({ stored, onSaved }: { stored: ConnectionSettings; onSav
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState<"save" | "test" | null>(null);
   const [test, setTest] = useState<ConnectionTestResult | null>(null);
+  // The server never reuses stored secrets for a different host.
+  const urlChanged = stored.base_url !== "" && !sameUrl(baseUrl, stored.base_url);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -75,7 +80,7 @@ function ConnectionForm({ stored, onSaved }: { stored: ConnectionSettings; onSav
   return (
     <form aria-label="Connection" className="flex flex-col gap-4" onSubmit={save}>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="OpenWA base URL" hint="For example http://openwa:2785">
+        <Field label="OpenWA base URL" hint={urlChanged ? REENTER : "For example http://openwa:2785"}>
           <Input type="url" dir="ltr" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required disabled={busy !== null} />
         </Field>
         <Field label="API key">

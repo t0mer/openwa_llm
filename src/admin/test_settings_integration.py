@@ -89,13 +89,13 @@ async def test_put_with_blank_secrets_keeps_stored_ones(admin_client, db_session
     assert (await _put_connection(admin_client)).status_code == 200
     before = await _connection_row(db_sessionmaker)
     resp = await _put_connection(
-        admin_client, base_url="https://owa.example", api_key=None, webhook_secret=""
+        admin_client, api_key=None, webhook_secret="", webhook_url="http://bot2/hook"
     )
     assert resp.status_code == 200, resp.text
     after = await _connection_row(db_sessionmaker)
     assert after.api_key_enc == before.api_key_enc
     assert after.webhook_secret_enc == before.webhook_secret_enc
-    assert after.base_url == "https://owa.example"
+    assert after.webhook_url == "http://bot2/hook"
     assert resp.json()["api_key_set"] and resp.json()["webhook_secret_set"]
 
 
@@ -173,12 +173,16 @@ async def test_connection_test_reports_gateway_error(
 
     monkeypatch.setattr(settings_api, "OpenWAGateway", factory)
     resp = await admin_client.post(
-        f"{BASE}/connection/test", json={"base_url": " http://other ", "api_key": ""}
+        f"{BASE}/connection/test", json={"base_url": " http://owa:2785 ", "api_key": ""}
     )
     assert resp.status_code == 200
-    assert resp.json() == {"ok": False, "detail": "boom"}
+    assert resp.json() == {"ok": False, "detail": "cannot reach OpenWA (GatewayError)"}
     (gw,) = built
-    assert gw.cfg == ("http://other", API_KEY, "wa-main")  # stored key, first session
+    assert gw.cfg == (
+        "http://owa:2785",
+        API_KEY,
+        "wa-main",
+    )  # stored key, first session
     gw.aclose.assert_awaited_once()
     assert API_KEY not in resp.text
 
@@ -201,8 +205,7 @@ async def test_connection_test_success_with_explicit_values(admin_client, monkey
             "openwa_session_id": " wa-x ",
         },
     )
-    assert resp.json()["ok"] is True
-    assert "WORKING" in resp.json()["detail"]
+    assert resp.json() == {"ok": True, "detail": "connected"}
     assert built[0].cfg == ("http://owa:2785", "explicit-key", "wa-x")
     built[0].aclose.assert_awaited_once()
 
@@ -440,3 +443,238 @@ async def test_validation_errors_never_echo_secrets(admin_client):
     )
     assert resp.status_code == 422
     _no_secrets(resp.text)
+
+
+# --- hardening: connection test, upstream text, link-local, secret reuse -------
+
+UPSTREAM_TEXT = "upstream-body-must-not-leak"
+
+
+async def test_connection_test_with_non_ascii_key_is_not_ok(admin_client):
+    resp = await admin_client.post(
+        f"{BASE}/connection/test",
+        json={
+            "base_url": "http://owa:2785",
+            "api_key": "ключ",
+            "openwa_session_id": "s",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "ok": False,
+        "detail": "cannot reach OpenWA (UnicodeEncodeError)",
+    }
+    assert "ключ" not in resp.text
+
+
+async def test_connection_test_with_unusable_url_is_not_ok(admin_client):
+    resp = await admin_client.post(
+        f"{BASE}/connection/test",
+        json={"base_url": "http://owa:abc", "api_key": "k", "openwa_session_id": "s"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": False, "detail": "cannot reach OpenWA (InvalidURL)"}
+
+
+async def test_connection_test_with_malformed_ipv6_url_is_422(admin_client):
+    resp = await admin_client.post(
+        f"{BASE}/connection/test",
+        json={"base_url": "http://[::1", "api_key": "k", "openwa_session_id": "s"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("error", "detail"),
+    [
+        (
+            GatewayError(f"OpenWA GET /x -> 401: {UPSTREAM_TEXT}", status_code=401),
+            "OpenWA returned HTTP 401",
+        ),
+        (
+            GatewayError(f"failed: {UPSTREAM_TEXT}"),
+            "cannot reach OpenWA (GatewayError)",
+        ),
+        (RuntimeError(UPSTREAM_TEXT), "cannot reach OpenWA (RuntimeError)"),
+    ],
+)
+async def test_connection_test_never_returns_upstream_text(
+    admin_client, monkeypatch, error, detail
+):
+    built: list[FakeGateway] = []
+
+    def factory(base_url, api_key, session_id, **_kw):
+        gw = FakeGateway(base_url, api_key, session_id)
+        gw.get_status = AsyncMock(side_effect=error)
+        built.append(gw)
+        return gw
+
+    monkeypatch.setattr(settings_api, "OpenWAGateway", factory)
+    resp = await admin_client.post(
+        f"{BASE}/connection/test",
+        json={"base_url": "http://owa", "api_key": API_KEY, "openwa_session_id": "s"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": False, "detail": detail}
+    assert UPSTREAM_TEXT not in resp.text and API_KEY not in resp.text
+    built[0].aclose.assert_awaited_once()
+
+
+async def test_register_webhook_failure_never_returns_upstream_text(
+    admin_client, openwa_state
+):
+    await _put_connection(admin_client)
+    pk = await _create_session(admin_client)
+    gw = cast(FakeGateway, openwa_state.registry.get(pk))
+    gw.ensure_webhook = AsyncMock(
+        side_effect=GatewayError(f"-> 400: {UPSTREAM_TEXT}", status_code=400)
+    )
+    resp = await admin_client.post(f"{BASE}/sessions/{pk}/webhook")
+    assert resp.status_code == 502
+    assert resp.json() == {
+        "detail": "webhook registration failed: OpenWA returned HTTP 400"
+    }
+    gw.ensure_webhook = AsyncMock(side_effect=GatewayError(UPSTREAM_TEXT))
+    resp = await admin_client.post(f"{BASE}/sessions/{pk}/webhook")
+    assert resp.json() == {
+        "detail": "webhook registration failed: cannot reach OpenWA (GatewayError)"
+    }
+
+
+LINK_LOCAL = [
+    "http://169.254.169.254",
+    "http://169.254.0.1:2785/api",
+    "http://[fe80::1]",
+    "http://[fe80::1%25eth0]:80",
+    "http://[::ffff:169.254.169.254]",
+    "http://2852039166",  # 169.254.169.254 as a single number
+]
+
+
+@pytest.mark.parametrize("base_url", LINK_LOCAL)
+async def test_link_local_base_url_is_rejected(admin_client, monkeypatch, base_url):
+    monkeypatch.setattr(
+        settings_api, "OpenWAGateway", lambda *a, **k: pytest.fail("must not build")
+    )
+    resp = await _put_connection(admin_client, base_url=base_url)
+    assert resp.status_code == 422
+    msgs = [e["msg"] for e in resp.json()["detail"]]
+    assert any("link-local" in m for m in msgs)
+    assert all(base_url not in m for m in msgs)
+    resp = await admin_client.post(
+        f"{BASE}/connection/test",
+        json={"base_url": base_url, "api_key": "k", "openwa_session_id": "s"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://owa:2785",
+        "http://10.0.0.5",
+        "http://[::1]:2785",
+        "http://169.254.example",
+    ],
+)
+async def test_ordinary_hosts_are_accepted(admin_client, base_url):
+    assert (await _put_connection(admin_client, base_url=base_url)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("missing", "detail"),
+    [
+        ({"api_key": None}, "api_key must be re-entered when base_url changes"),
+        (
+            {"webhook_secret": ""},
+            "webhook_secret must be re-entered when base_url changes",
+        ),
+        (
+            {"api_key": " ", "webhook_secret": None},
+            "api_key and webhook_secret must be re-entered when base_url changes",
+        ),
+    ],
+)
+async def test_put_with_changed_base_url_requires_new_secrets(
+    admin_client, db_sessionmaker, missing, detail
+):
+    assert (await _put_connection(admin_client)).status_code == 200
+    before = await _connection_row(db_sessionmaker)
+    resp = await _put_connection(
+        admin_client, base_url="https://evil.example", **missing
+    )
+    assert resp.status_code == 422
+    assert resp.json() == {"detail": detail}
+    after = await _connection_row(db_sessionmaker)
+    assert after.base_url == "http://owa:2785"
+    assert after.api_key_enc == before.api_key_enc
+
+
+async def test_put_with_changed_base_url_and_new_secrets_is_saved(
+    admin_client, db_sessionmaker, openwa_state
+):
+    assert (await _put_connection(admin_client)).status_code == 200
+    resp = await _put_connection(
+        admin_client,
+        base_url="https://owa.example",
+        api_key="new-key",
+        webhook_secret="new-hook-secret-0123",
+    )
+    assert resp.status_code == 200, resp.text
+    row = await _connection_row(db_sessionmaker)
+    assert row.base_url == "https://owa.example"
+    assert openwa_state.secret_box.decrypt(row.api_key_enc) == "new-key"
+
+
+async def test_put_with_same_base_url_modulo_slash_keeps_secrets(
+    admin_client, db_sessionmaker
+):
+    assert (await _put_connection(admin_client)).status_code == 200
+    before = await _connection_row(db_sessionmaker)
+    resp = await _put_connection(
+        admin_client, base_url=" http://owa:2785/ ", api_key=None, webhook_secret=None
+    )
+    assert resp.status_code == 200, resp.text
+    after = await _connection_row(db_sessionmaker)
+    assert after.api_key_enc == before.api_key_enc
+    assert after.webhook_secret_enc == before.webhook_secret_enc
+
+
+async def test_connection_test_with_changed_base_url_requires_api_key(
+    admin_client, monkeypatch
+):
+    await _put_connection(admin_client)
+    await _create_session(admin_client)
+    monkeypatch.setattr(
+        settings_api, "OpenWAGateway", lambda *a, **k: pytest.fail("must not build")
+    )
+    for api_key in (None, "", "  "):
+        resp = await admin_client.post(
+            f"{BASE}/connection/test",
+            json={"base_url": "http://elsewhere", "api_key": api_key},
+        )
+        assert resp.status_code == 422
+        assert resp.json() == {
+            "detail": "api_key must be re-entered when base_url changes"
+        }
+
+
+async def test_connection_test_with_same_base_url_uses_stored_key(
+    admin_client, monkeypatch
+):
+    await _put_connection(admin_client)
+    await _create_session(admin_client)
+    built: list[FakeGateway] = []
+
+    def factory(base_url, api_key, session_id, **_kw):
+        gw = FakeGateway(base_url, api_key, session_id)
+        built.append(gw)
+        return gw
+
+    monkeypatch.setattr(settings_api, "OpenWAGateway", factory)
+    for base_url in (None, "http://owa:2785/"):
+        resp = await admin_client.post(
+            f"{BASE}/connection/test", json={"base_url": base_url, "api_key": ""}
+        )
+        assert resp.json() == {"ok": True, "detail": "connected"}
+    assert [gw.cfg[1] for gw in built] == [API_KEY, API_KEY]

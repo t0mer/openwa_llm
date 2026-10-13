@@ -305,9 +305,10 @@ Fields: `weekdays` (non-empty list of integers, 0 = Sunday to 6 = Saturday), the
 **Connection** (one for all sessions):
 
 - **OpenWA base URL** (for example `http://whatsapp:2785` inside compose), **API key** (the OpenWA server's `API_MASTER_KEY`), **Webhook URL** and **Webhook secret** (at least 16 characters; OpenWA signs every delivery with it).
-- The API key and webhook secret are stored encrypted and are never shown or returned by the API; the form shows "•••• stored" instead. Leave a secret field blank to keep the stored value.
+- The API key and webhook secret are stored encrypted and are never shown or returned by the API; the form shows "•••• stored" instead. Leave a secret field blank to keep the stored value. Stored secrets are never sent to a different host: when you change the base URL (trailing slashes aside), enter the API key and webhook secret again, otherwise saving fails with `422` (the form says so under the URL).
+- The base URL cannot be a literal link-local or cloud metadata address (`169.254.0.0/16`, `fe80::/10`); host names are not resolved for this check.
 - The webhook URL is a base URL: each session registers `<webhook url>/<session id>` in OpenWA, for example `http://web-server:8000/webhook/<session id>`. Leave it blank to skip webhook registration (for example when you register webhooks yourself).
-- **Save connection** reloads every session and re-registers its webhook. **Test connection** checks OpenWA with the values in the form (blank fields fall back to the stored ones) by reading the status of the first session.
+- **Save connection** reloads every session and re-registers its webhook. **Test connection** checks OpenWA with the values in the form (blank fields fall back to the stored ones; a changed base URL needs the API key typed again) by reading the status of the first session. It reports `connected`, `OpenWA returned HTTP <status>`, or `cannot reach OpenWA (<error type>)`; OpenWA's own response text is never shown.
 
 **Sessions:**
 
@@ -339,13 +340,13 @@ The settings API (login-protected, under `/api/v1/admin/settings`; like every ad
 | Method   | Path                                            | Purpose |
 | -------- | ----------------------------------------------- | ------- |
 | `GET`    | `/api/v1/admin/settings/connection`             | The connection: `base_url`, `webhook_url`, `api_key_set`, `webhook_secret_set` (secrets are never returned) |
-| `PUT`    | `/api/v1/admin/settings/connection`             | Save `base_url`, `webhook_url`, `api_key`, `webhook_secret`. A missing or `null` secret keeps the stored one (both are required the first time). Reloads all sessions and re-registers their webhooks |
-| `POST`   | `/api/v1/admin/settings/connection/test`        | Check OpenWA with optional `base_url`, `api_key` and `openwa_session_id` (fallback: the stored values and the first session). Returns `{ok, detail}` |
+| `PUT`    | `/api/v1/admin/settings/connection`             | Save `base_url`, `webhook_url`, `api_key`, `webhook_secret`. A missing or `null` secret keeps the stored one (both are required the first time, and again whenever `base_url` changes: `422` otherwise). A link-local `base_url` is `422`. Reloads all sessions and re-registers their webhooks |
+| `POST`   | `/api/v1/admin/settings/connection/test`        | Check OpenWA with optional `base_url`, `api_key` and `openwa_session_id` (fallback: the stored values and the first session; a `base_url` different from the stored one needs `api_key`, else `422`). Returns `{ok, detail}`, where `detail` is `connected`, `OpenWA returned HTTP <status>` or `cannot reach OpenWA (<error type>)` |
 | `GET`    | `/api/v1/admin/settings/sessions`               | List sessions: `id`, `label`, `openwa_session_id`, `enabled`, `status`, `error`, `group_count` (the status is refreshed live, 3 seconds at most) |
 | `POST`   | `/api/v1/admin/settings/sessions`               | Add a session: `{label, openwa_session_id}` (`409` if that OpenWA session id is already used) |
 | `PATCH`  | `/api/v1/admin/settings/sessions/{session_id}`  | Change `label`, `openwa_session_id` or `enabled` |
 | `DELETE` | `/api/v1/admin/settings/sessions/{session_id}`  | Delete a session (`409` while it still owns groups or messages) |
-| `POST`   | `/api/v1/admin/settings/sessions/{session_id}/webhook` | Re-register the session's webhook (`409` if the session is not active or no webhook URL is set, `502` if OpenWA refused) |
+| `POST`   | `/api/v1/admin/settings/sessions/{session_id}/webhook` | Re-register the session's webhook (`409` if the session is not active or no webhook URL is set, `502` with the HTTP status or error type if OpenWA refused) |
 
 `{session_id}` is the app's own session id (the `id` field), not the OpenWA session id. The same id is used by the `session_id` query parameter of the other admin endpoints and the cron endpoints, and in the webhook URL.
 

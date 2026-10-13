@@ -11,6 +11,7 @@ from admin.auth import require_admin
 from config import get_settings
 from summarize_and_send_to_groups import GroupSummaryResult
 from test_utils.openwa_session import StubRegistry
+from whatsapp import GatewayError
 
 
 async def test_runner_runs_job_and_reports_success():
@@ -32,6 +33,19 @@ async def test_runner_runs_job_and_reports_success():
     assert status.started_at and status.finished_at
     assert runner.start("summarize", job)  # can run again
     await runner.wait_idle()
+
+
+async def test_runner_never_records_gateway_response_text():
+    runner = ActionRunner()
+
+    async def boom():
+        raise GatewayError("-> 500: upstream-body", status_code=500)
+
+    runner.start("summarize", boom)
+    await runner.wait_idle()
+    status = runner.status()["summarize"]
+    assert status.state == "failed"
+    assert status.error == "OpenWA returned HTTP 500"
 
 
 async def test_runner_records_failure_with_truncated_error():
@@ -303,3 +317,20 @@ async def test_actions_fail_clearly_without_an_active_session(client, monkeypatc
         assert body[name]["state"] == "failed"
         assert "no active OpenWA session" in body[name]["error"]
     loader.load_topics_for_all_groups.assert_not_awaited()
+
+
+async def test_session_failure_never_includes_gateway_response_text(
+    client, monkeypatch
+):
+    _two_sessions(client)
+    monkeypatch.setattr(
+        actions_module,
+        "summarize_and_send_to_groups",
+        AsyncMock(side_effect=GatewayError("-> 400: upstream-body", status_code=400)),
+    )
+    await client.post("/actions/summarize")
+    await actions_module.runner.wait_idle()
+    s = (await client.get("/actions")).json()["summarize"]
+    assert s["state"] == "failed"
+    assert "upstream-body" not in s["error"]
+    assert "s1: OpenWA returned HTTP 400" in s["error"]

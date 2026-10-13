@@ -15,6 +15,9 @@ from summarize_and_send_to_groups import (
     summarize_and_send_to_groups,
 )
 
+from whatsapp import GatewayError
+from whatsapp.gateway import describe_gateway_failure
+
 from .schemas import ActionStarted, ActionStatus, ActionSummary, GroupActionResult
 
 logger = logging.getLogger(__name__)
@@ -69,7 +72,7 @@ class ActionRunner:
                 state="failed",
                 started_at=started,
                 finished_at=_now(),
-                error=f"{type(e).__name__}: {e}"[:_MAX_ERROR_LEN],
+                error=_error_text(e)[:_MAX_ERROR_LEN],
             )
         else:
             summary, results = outcome if outcome else (None, [])
@@ -102,7 +105,14 @@ def _active_sessions(app: Any) -> list[str]:
 
 def _session_error(session_id: str, exc: Exception) -> str:
     logger.error("Admin action failed for session %s", session_id, exc_info=exc)
-    return f"{session_id}: {type(exc).__name__}: {exc}"[:_MAX_ERROR_LEN]
+    return f"{session_id}: {_error_text(exc)}"[:_MAX_ERROR_LEN]
+
+
+def _error_text(exc: BaseException) -> str:
+    # A gateway error's message can carry OpenWA's response body: never shown.
+    if isinstance(exc, GatewayError):
+        return describe_gateway_failure(exc)
+    return f"{type(exc).__name__}: {exc}"
 
 
 @router.get("", response_model=dict[str, ActionStatus])

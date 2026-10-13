@@ -24,6 +24,7 @@ from openwa_settings.crypto import SecretBox
 from openwa_settings.registry import GatewayRegistry
 from openwa_settings.store import list_sessions, load_connection, webhook_url_for
 from whatsapp import GatewayError, OpenWAGateway
+from whatsapp.gateway import describe_gateway_failure
 from whatsapp.webhook_registration import WEBHOOK_EVENTS
 
 from .schemas import (
@@ -75,11 +76,16 @@ def _check_secret(name: str, value: str | None, *, min_len: int) -> None:
         )
 
 
-def _redact(text: str, *secrets: str | None) -> str:
-    for secret in secrets:
-        if secret:
-            text = text.replace(secret, "***")
-    return text
+def _same_url(a: str, b: str) -> bool:
+    return a.strip().rstrip("/") == b.strip().rstrip("/")
+
+
+def _reenter_required(*missing: str) -> HTTPException:
+    """Stored secrets are never sent to a changed host; names fields, no values."""
+    return HTTPException(
+        status_code=422,
+        detail=f"{' and '.join(missing)} must be re-entered when base_url changes",
+    )
 
 
 def _connection_out(conn: OpenWAConnection | None) -> ConnectionOut:
@@ -191,6 +197,17 @@ async def put_connection(
     _check_secret("webhook_secret", body.webhook_secret, min_len=MIN_SECRET_LEN)
     box = _box(request)
     conn = await load_connection(db)
+    if conn is not None and not _same_url(body.base_url, conn.base_url):
+        missing = [
+            name
+            for name, value in (
+                ("api_key", body.api_key),
+                ("webhook_secret", body.webhook_secret),
+            )
+            if not value
+        ]
+        if missing:
+            raise _reenter_required(*missing)
     api_key_enc = _secret_or_keep(body.api_key, conn and conn.api_key_enc, box)
     secret_enc = _secret_or_keep(
         body.webhook_secret, conn and conn.webhook_secret_enc, box
@@ -222,6 +239,8 @@ async def test_connection(
     conn = await load_connection(db)
     base_url = body.base_url or (conn.base_url if conn else "")
     api_key = body.api_key
+    if not api_key and conn is not None and not _same_url(base_url, conn.base_url):
+        raise _reenter_required("api_key")
     if not api_key and conn is not None:
         try:
             api_key = _box(request).decrypt(conn.api_key_enc)
@@ -235,14 +254,19 @@ async def test_connection(
         return ConnectionTestResult(
             ok=False, detail="base_url, api_key and openwa_session_id are required"
         )
-    gateway = OpenWAGateway(base_url, api_key, session_id, timeout=TEST_TIMEOUT)
+    gateway: OpenWAGateway | None = None
     try:
-        status = await gateway.get_status()
-    except GatewayError as exc:
-        return ConnectionTestResult(ok=False, detail=_redact(str(exc), api_key))
+        # Built inside the try: bad input (a non-ASCII key, an unusable URL)
+        # fails in the constructor, and must be reported, not raised.
+        gateway = OpenWAGateway(base_url, api_key, session_id, timeout=TEST_TIMEOUT)
+        await gateway.get_status()
+    except Exception as exc:
+        # Only the status code or exception type: upstream text is never returned.
+        return ConnectionTestResult(ok=False, detail=describe_gateway_failure(exc))
     finally:
-        await gateway.aclose()
-    return ConnectionTestResult(ok=True, detail=f"session status: {status.status}")
+        if gateway is not None:
+            await gateway.aclose()
+    return ConnectionTestResult(ok=True, detail="connected")
 
 
 # --- sessions -----------------------------------------------------------------
@@ -333,9 +357,9 @@ async def register_session_webhook(
     try:
         await registry.get(row.id).ensure_webhook(url, secret, WEBHOOK_EVENTS)
     except GatewayError as exc:
-        detail = _redact(str(exc), secret)
         raise HTTPException(
-            status_code=502, detail=f"webhook registration failed: {detail}"
+            status_code=502,
+            detail=f"webhook registration failed: {describe_gateway_failure(exc)}",
         )
     except KeyError:  # removed by a concurrent reload
         raise HTTPException(status_code=409, detail="session is not active")

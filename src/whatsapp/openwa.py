@@ -102,10 +102,11 @@ class OpenWAGateway:
         except httpx.HTTPError as e:
             raise GatewayError(f"OpenWA {method} {path} failed: {e}") from e
         if resp.status_code == 409:
-            raise GatewayError("OpenWA session is not ready (409)")
+            raise GatewayError("OpenWA session is not ready (409)", status_code=409)
         if resp.is_error:
             raise GatewayError(
-                f"OpenWA {method} {path} -> {resp.status_code}: {resp.text[:200]}"
+                f"OpenWA {method} {path} -> {resp.status_code}: {resp.text[:200]}",
+                status_code=resp.status_code,
             )
         if not resp.content:
             return None

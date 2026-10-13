@@ -116,6 +116,46 @@ describe("Settings page: connection", () => {
     expect(result).toHaveTextContent("connection refused");
   });
 
+  it("asks to re-enter the secrets only when the base URL changes", async () => {
+    const HINT = "Changing the URL requires re-entering the API key and webhook secret";
+    render(<Settings />);
+    const base = await screen.findByLabelText("OpenWA base URL");
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+    await userEvent.clear(base);
+    await userEvent.type(base, "http://elsewhere:2785");
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+    await userEvent.clear(base);
+    await userEvent.type(base, " http://openwa:2785/ ");
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+
+  it("shows no re-enter hint before a connection is stored", async () => {
+    vi.mocked(api.getConnection).mockResolvedValue({ base_url: "", webhook_url: "", api_key_set: false, webhook_secret_set: false });
+    render(<Settings />);
+    await userEvent.type(await screen.findByLabelText("OpenWA base URL"), "http://new:1");
+    expect(screen.queryByText(/requires re-entering/)).not.toBeInTheDocument();
+  });
+
+  it("sends the re-entered secrets with a changed base URL", async () => {
+    render(<Settings />);
+    const base = await screen.findByLabelText("OpenWA base URL");
+    await userEvent.clear(base);
+    await userEvent.type(base, "http://elsewhere:2785");
+    await userEvent.type(screen.getByLabelText("API key"), " new-key ");
+    await userEvent.type(screen.getByLabelText("Webhook secret"), "abcdefghijklmnopqr");
+    await userEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(api.testConnection).toHaveBeenCalledWith({ base_url: "http://elsewhere:2785", api_key: "new-key" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save connection" }));
+    await waitFor(() =>
+      expect(api.putConnection).toHaveBeenCalledWith({
+        base_url: "http://elsewhere:2785",
+        webhook_url: "http://bot:8000/webhook",
+        api_key: "new-key",
+        webhook_secret: "abcdefghijklmnopqr",
+      }),
+    );
+  });
+
   it("never renders a secret value it was given", async () => {
     render(<Settings />);
     await userEvent.type(await screen.findByLabelText("API key"), "supersecret");
