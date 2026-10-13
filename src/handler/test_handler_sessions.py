@@ -7,6 +7,7 @@ from sqlmodel import select
 
 from config import Settings
 from handler import MessageHandler
+from handler.kb_qa import KBQAHandler
 from models import Group, Message, Reaction, Sender
 from test_utils.openwa_session import OTHER_SESSION_ID, TEST_SESSION_ID
 from whatsapp import InboundMessage, InboundReaction
@@ -136,3 +137,82 @@ async def test_message_upsert_keeps_the_original_session(db_sessionmaker):
 
     (stored,) = await messages(db_sessionmaker)
     assert stored.session_id == TEST_SESSION_ID
+
+
+@pytest.mark.parametrize(
+    ("asker", "found"), [(TEST_SESSION_ID, True), (OTHER_SESSION_ID, False)]
+)
+async def test_kb_qa_resolves_only_groups_of_its_own_session(
+    db_sessionmaker, asker, found
+):
+    async with db_sessionmaker() as session:
+        session.add(
+            Group(
+                group_jid="a@g.us",
+                group_name="Alpha",
+                session_id=TEST_SESSION_ID,
+                managed=True,
+            )
+        )
+        await session.commit()
+    qa_settings = Mock(
+        spec=Settings, qa_test_groups={"qa@g.us"}, qa_testers={USER}, model_name="m"
+    )
+    wa = whatsapp()
+    message = Message(
+        session_id=asker,
+        message_id="q1",
+        text="/kb_qa group: Alpha, question: what?",
+        chat_jid="qa@g.us",
+        group_jid="qa@g.us",
+        sender_jid=USER,
+    )
+    async with db_sessionmaker() as session:
+        handler = KBQAHandler(session, wa, AsyncMock(), qa_settings, asker)
+        ask = handler.ask_knowledge_base = AsyncMock()
+        await handler(message)
+
+    if found:
+        assert ask.await_args is not None
+        (asked,) = ask.await_args.args
+        assert asked.group_jid == "a@g.us"
+    else:
+        ask.assert_not_awaited()
+        assert wa.send_text.await_args is not None
+        assert "No group found matching 'Alpha'" in wa.send_text.await_args.args[1]
+
+
+async def test_group_created_by_another_session_during_the_race_is_not_taken(
+    db_sessionmaker, monkeypatch
+):
+    # Session B passed its ownership check while the group was still unknown;
+    # session A created it before B got to auto-create it.
+    monkeypatch.setattr(MessageHandler, "_foreign_group", AsyncMock(return_value=False))
+    async with db_sessionmaker() as session:
+        session.add(
+            Group(group_jid="r@g.us", session_id=TEST_SESSION_ID, group_name="Real")
+        )
+        await session.commit()
+    wa = whatsapp()
+
+    await handle(db_sessionmaker, OTHER_SESSION_ID, inbound("@bot hi", "r@g.us"), wa)
+
+    assert await messages(db_sessionmaker) == []
+    wa.send_text.assert_not_awaited()
+    async with db_sessionmaker() as session:
+        group = await session.get(Group, "r@g.us")
+        assert group is not None
+        assert (group.session_id, group.group_name) == (TEST_SESSION_ID, "Real")
+
+
+async def test_first_message_of_unknown_group_creates_it_for_the_session(
+    db_sessionmaker,
+):
+    await handle(
+        db_sessionmaker, OTHER_SESSION_ID, inbound("hello", "new@g.us"), whatsapp()
+    )
+    async with db_sessionmaker() as session:
+        group = await session.get(Group, "new@g.us")
+        assert group is not None and group.session_id == OTHER_SESSION_ID
+    (stored,) = await messages(db_sessionmaker)
+    assert stored.session_id == OTHER_SESSION_ID

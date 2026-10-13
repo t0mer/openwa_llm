@@ -453,3 +453,37 @@ async def test_schedule_of_an_inactive_session_is_skipped_unclaimed(
     assert [r.schedule_id for r in recs] == [sid_a]
     assert (await load(db_sessionmaker, sid_b)).last_run_at is None
     assert OTHER_SESSION_ID in caplog.text
+
+
+@pytest.mark.usefixtures("other_session_row")
+async def test_session_gone_before_its_run_is_skipped_unclaimed(
+    db_sessionmaker, summarize, caplog
+):
+    sid_a = await _seed_owned(db_sessionmaker, "a@g.us", TEST_SESSION_ID)
+    sid_b = await _seed_owned(db_sessionmaker, "b@g.us", OTHER_SESSION_ID)
+    registry: Any = StubRegistry({TEST_SESSION_ID: MagicMock(), OTHER_SESSION_ID: 1})
+
+    async def drop_b(*a, **k):
+        registry._gw.pop(OTHER_SESSION_ID)  # disabled while A's run was going on
+        return GroupSummaryResult(status="sent", message_count=20)
+
+    summarize.side_effect = drop_b
+    recs = await run_due(SETTINGS, db_sessionmaker, registry, now=NOW)
+
+    assert [r.schedule_id for r in recs] == [sid_a]
+    assert summarize.await_count == 1
+    assert (await load(db_sessionmaker, sid_b)).last_run_at is None
+    assert OTHER_SESSION_ID in caplog.text
+
+
+@pytest.mark.usefixtures("other_session_row")
+async def test_inactive_session_warns_once_per_tick(db_sessionmaker, summarize, caplog):
+    for jid in ("b1@g.us", "b2@g.us", "b3@g.us"):
+        await _seed_owned(db_sessionmaker, jid, OTHER_SESSION_ID)
+    caplog.set_level("DEBUG", logger="scheduling.runner")
+
+    assert await run_due(SETTINGS, db_sessionmaker, reg(MagicMock()), now=NOW) == []
+
+    mentions = [r for r in caplog.records if OTHER_SESSION_ID in r.getMessage()]
+    assert [r.levelname for r in mentions].count("WARNING") == 1
+    assert len(mentions) == 3

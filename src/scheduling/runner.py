@@ -176,21 +176,28 @@ async def run_due(
                 .order_by(col(GroupSummarySchedule.created_at))
             )
         ).all()
-        candidates: list[tuple[str, str, datetime, WhatsAppGateway]] = []
-        active = set(registry.ids())
+        candidates: list[tuple[str, str, str, datetime]] = []
         for s, session_id in rows:
             due = latest_due(now_local, s.weekdays, s.hour, s.minute, tz, GRACE)
-            if due is None or (s.last_run_at is not None and s.last_run_at >= due):
-                continue
-            if session_id not in active:
-                logger.warning(
-                    "Skipping schedule %s: session %s is not active", s.id, session_id
-                )
-                continue
-            candidates.append((s.id, s.group_jid, due, registry.get(session_id)))
+            if due is not None and (s.last_run_at is None or s.last_run_at < due):
+                candidates.append((s.id, s.group_jid, session_id, due))
 
     records: list[RunRecord] = []
-    for schedule_id, group_jid, due, whatsapp in candidates:
+    warned: set[str] = set()
+    for schedule_id, group_jid, session_id, due in candidates:
+        # Resolved right before each run: earlier runs can take long and the
+        # session may be disabled meanwhile. Never claim without a gateway.
+        if session_id not in registry.ids():
+            level = logging.DEBUG if session_id in warned else logging.WARNING
+            warned.add(session_id)
+            logger.log(
+                level,
+                "Skipping schedule %s: session %s is not active",
+                schedule_id,
+                session_id,
+            )
+            continue
+        whatsapp = registry.get(session_id)
         try:
             async with session_factory() as session:
                 if not await claim(session, schedule_id, due, now):

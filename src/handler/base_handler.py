@@ -1,6 +1,9 @@
 import logging
 from collections.abc import Sequence
 
+from sqlalchemy import inspect
+from sqlalchemy.dialects.postgresql import insert
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
 
@@ -72,16 +75,8 @@ class BaseHandler:
                     self.session.flush()
                 )  # Ensure sender is visible in this transaction
 
-            if message.group_jid:
-                group = await self.session.get(Group, message.group_jid)
-                if group is None:
-                    group = Group(
-                        **BaseGroup(
-                            group_jid=message.group_jid, session_id=self.session_id
-                        ).model_dump()
-                    )
-                    await self.upsert(group)
-                    await self.session.flush()
+            if message.group_jid and not await self._claim_group(message.group_jid):
+                return None  # Another session created the group meanwhile
 
             # Finally add the message
             stored_message = await self.upsert(message)
@@ -174,6 +169,25 @@ class BaseHandler:
             return False
         group = await self.session.get(Group, group_jid)
         return group is not None and group.session_id != self.session_id
+
+    async def _claim_group(self, group_jid: str) -> bool:
+        """Create the group for this session unless it exists; True if it is ours.
+
+        ON CONFLICT DO NOTHING never overwrites a row another session created
+        concurrently; the re-read decides who owns it.
+        """
+        group = Group(
+            **BaseGroup(group_jid=group_jid, session_id=self.session_id).model_dump()
+        )
+        await self.session.execute(
+            insert(Group)
+            .values(**{c.name: getattr(group, c.name) for c in inspect(Group).columns})
+            .on_conflict_do_nothing(index_elements=["group_jid"])
+        )
+        owner = await self.session.scalar(
+            select(Group.session_id).where(col(Group.group_jid) == group_jid)
+        )
+        return owner == self.session_id
 
     async def upsert(self, model):
         return await upsert(self.session, model)

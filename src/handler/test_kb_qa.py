@@ -142,6 +142,8 @@ async def test_kb_qa_handler_group_not_found(
     mock_result.all.return_value = []
     mock_session.exec.side_effect = None  # Clear the side_effect from AsyncSessionMock
     mock_session.exec.return_value = mock_result
+    # The reply's chat group belongs to this handler's session.
+    mock_session.scalar = AsyncMock(return_value="s1")
 
     with patch("handler.kb_qa.KnowledgeBaseAnswers"):
         handler = KBQAHandler(

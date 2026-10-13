@@ -1,4 +1,5 @@
-from typing import Annotated, AsyncGenerator
+import logging
+from typing import Annotated, AsyncGenerator, Awaitable, Callable
 
 from fastapi import Depends, HTTPException, Query, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -9,6 +10,9 @@ from whatsapp import WhatsAppGateway
 from voyageai.client_async import AsyncClient
 from config import Settings
 from config import get_settings as get_settings  # re-exported for API modules
+
+
+logger = logging.getLogger(__name__)
 
 
 async def get_db_async_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
@@ -64,6 +68,49 @@ def get_optional_whatsapp(
     session_id: Annotated[str | None, Depends(get_optional_session_id)],
 ) -> WhatsAppGateway | None:
     return registry.get(session_id) if session_id is not None else None
+
+
+def get_requested_session_ids(
+    registry: Annotated[GatewayRegistry, Depends(get_registry)],
+    session_id: Annotated[str | None, Query()] = None,
+) -> list[str]:
+    """The explicit session (404 when not active), else every active session."""
+    if session_id is None:
+        return registry.ids()
+    return [get_session_id(registry, session_id)]
+
+
+SessionJob = Callable[[AsyncSession, WhatsAppGateway, str], Awaitable[object]]
+
+
+async def run_for_sessions(
+    request: Request, session_ids: list[str], job: SessionJob
+) -> dict[str, str]:
+    """Run `job` once per session, each with its own DB session.
+
+    One failing session never stops the others; returns session id -> "ok" or
+    "failed" (details are only logged). Raises 500 when every session failed.
+    """
+    if not session_ids:
+        logger.info("No active OpenWA session: nothing to run")
+        return {}
+    registry: GatewayRegistry = request.app.state.registry
+    results: dict[str, str] = {}
+    for sid in session_ids:
+        try:
+            async with request.app.state.async_session() as db:
+                await job(db, registry.get(sid), sid)
+                await db.commit()
+            results[sid] = "ok"
+        except Exception:
+            logger.exception("Run failed for OpenWA session %s", sid)
+            results[sid] = "failed"
+    if "ok" not in results.values():
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "failed for every session", "sessions": results},
+        )
+    return results
 
 
 def get_text_embebedding(request: Request) -> AsyncClient:

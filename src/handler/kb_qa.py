@@ -110,11 +110,12 @@ class KBQAHandler(BaseHandler):
             )
             return
 
-        # Find the group by name (only managed groups)
+        # Find the group by name (only this session's managed groups)
         # Try exact match first (case-insensitive)
         stmt = select(Group).where(
             col(Group.group_name).ilike(group_name),
-            Group.managed == True,  # noqa: E712  https://stackoverflow.com/a/18998106
+            col(Group.managed).is_(True),
+            col(Group.session_id) == self.session_id,
         )
         result = await self.session.exec(stmt)
         groups = list(result.all())
@@ -123,7 +124,8 @@ class KBQAHandler(BaseHandler):
             # Fallback to partial match if no exact match found
             stmt = select(Group).where(
                 col(Group.group_name).ilike(f"%{group_name}%"),
-                Group.managed == True,  # noqa: E712  https://stackoverflow.com/a/18998106
+                col(Group.managed).is_(True),
+                col(Group.session_id) == self.session_id,
             )
             result = await self.session.exec(stmt)
             groups = list(result.all())

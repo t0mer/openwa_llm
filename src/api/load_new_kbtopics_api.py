@@ -1,17 +1,13 @@
 import logging
-from typing import Annotated, Dict, Any
-from fastapi import APIRouter, Depends
+from typing import Annotated, Any, Dict
+
+from fastapi import APIRouter, Depends, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
+from voyageai.client_async import AsyncClient
 
 from load_new_kbtopics import topicsLoader
 from whatsapp import WhatsAppGateway
-from voyageai.client_async import AsyncClient
-from .deps import (
-    get_db_async_session,
-    get_session_id,
-    get_text_embebedding,
-    get_whatsapp,
-)
+from .deps import get_requested_session_ids, get_text_embebedding, run_for_sessions
 
 router = APIRouter()
 
@@ -21,31 +17,28 @@ logger = logging.getLogger(__name__)
 
 @router.post("/load_new_kbtopics")
 async def load_new_kbtopics_api(
-    session: Annotated[AsyncSession, Depends(get_db_async_session)],
-    whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
+    request: Request,
+    session_ids: Annotated[list[str], Depends(get_requested_session_ids)],
     embedding_client: Annotated[AsyncClient, Depends(get_text_embebedding)],
-    session_id: Annotated[str, Depends(get_session_id)],
 ) -> Dict[str, Any]:
     """
-    Trigger load new kbtopics for the session's managed groups.
-    Returns a success message upon completion.
-    """
-    try:
-        logger.info("Starting load new kbtopics sync via API")
+    Trigger load new kbtopics for managed groups.
 
-        topics_loader = topicsLoader()
-        await topics_loader.load_topics_for_all_groups(
-            session, embedding_client, whatsapp, session_id
+    Runs for the session given by `?session_id=` (404 when not active), or for
+    every active session when omitted; one failing session does not stop the
+    others. 500 only when every session failed.
+    """
+    logger.info("Starting load new kbtopics sync via API")
+
+    async def job(db: AsyncSession, whatsapp: WhatsAppGateway, session_id: str):
+        await topicsLoader().load_topics_for_all_groups(
+            db, embedding_client, whatsapp, session_id
         )
 
-        logger.info("load new kbtopics sync completed successfully")
-
-        return {
-            "status": "success",
-            "message": "load new kbtopics sync completed successfully",
-        }
-
-    except Exception as e:
-        logger.error(f"Error during load new kbtopics sync: {str(e)}")
-        # Re-raise the exception to let FastAPI handle it with proper error response
-        raise
+    sessions = await run_for_sessions(request, session_ids, job)
+    logger.info("load new kbtopics sync completed: %s", sessions)
+    return {
+        "status": "success",
+        "message": "load new kbtopics sync completed successfully",
+        "sessions": sessions,
+    }
