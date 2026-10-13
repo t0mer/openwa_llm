@@ -5,8 +5,9 @@ Revises: e5f6a7b8c9d0
 Create Date: 2026-10-13
 
 Existing rows are backfilled onto one session. Its OpenWA session id comes
-from the OPENWA_SESSION_ID environment variable; without it the session is
-created as a disabled 'default' placeholder (only when rows exist).
+from the OPENWA_SESSION_ID environment variable, falling back to Settings
+(which also reads .env); without it the session is created as a disabled
+'default' placeholder (only when rows exist).
 
 """
 
@@ -24,6 +25,18 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 SCOPED_TABLES = ("group", "message")
+
+
+def _legacy_session_id() -> str | None:
+    """OPENWA_SESSION_ID from the process env, else from Settings (.env)."""
+    if value := os.environ.get("OPENWA_SESSION_ID"):
+        return value
+    try:
+        from config import Settings
+
+        return Settings.model_validate({}).openwa_session_id or None
+    except Exception:
+        return None  # missing/invalid settings must never break the migration
 
 
 def upgrade() -> None:
@@ -53,7 +66,7 @@ def upgrade() -> None:
             table, sa.Column("session_id", sa.String(length=64), nullable=True)
         )
 
-    env_session = os.environ.get("OPENWA_SESSION_ID") or None
+    env_session = _legacy_session_id()
     conn = op.get_bind()
     has_rows = any(
         conn.execute(sa.text(f'SELECT EXISTS (SELECT 1 FROM "{table}")')).scalar()
