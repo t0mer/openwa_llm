@@ -1,3 +1,4 @@
+import base64
 from os import environ
 from typing import Self
 
@@ -25,11 +26,15 @@ class Settings(BaseSettings):
     db_uri: str
 
     # WhatsApp (OpenWA) settings
-    whatsapp_host: str
-    openwa_api_key: str
-    openwa_session_id: str
-    openwa_webhook_secret: str  # >= 16 chars (OpenWA requirement)
+    # Legacy: imported once on first start, then managed in Admin > Settings
+    whatsapp_host: str = ""
+    openwa_api_key: str = ""
+    openwa_session_id: str = ""
+    openwa_webhook_secret: str = ""  # >= 16 chars when set (OpenWA requirement)
     openwa_webhook_url: str = ""  # if set, registered with OpenWA at startup
+
+    # Base64 of 32 random bytes; encrypts secrets stored in the database
+    settings_encryption_key: str
 
     anthropic_api_key: str
 
@@ -125,8 +130,19 @@ class Settings(BaseSettings):
     @field_validator("openwa_webhook_secret")
     @classmethod
     def validate_webhook_secret(cls, v: str) -> str:
-        if len(v) < 16:
+        if v and len(v) < 16:
             raise ValueError("openwa_webhook_secret must be at least 16 characters")
+        return v
+
+    @field_validator("settings_encryption_key")
+    @classmethod
+    def validate_settings_encryption_key(cls, v: str) -> str:
+        try:
+            ok = len(base64.b64decode(v, validate=True)) == 32
+        except ValueError:
+            ok = False
+        if not ok:
+            raise ValueError("settings_encryption_key must be base64 of 32 bytes")
         return v
 
     @field_validator("admin_session_secret")

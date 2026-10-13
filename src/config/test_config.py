@@ -17,10 +17,7 @@ def test_qa_testers_reject_group_jids():
 
 REQUIRED = dict(
     db_uri="postgresql+asyncpg://u:p@h/db",
-    whatsapp_host="http://h",
-    openwa_api_key="k",
-    openwa_session_id="s",
-    openwa_webhook_secret="w" * 16,
+    settings_encryption_key="A" * 43 + "=",
     anthropic_api_key="a",
     voyage_api_key="v",
     logfire_token="l",
@@ -89,3 +86,28 @@ def test_default_timezone_is_validated(monkeypatch):
 def test_scheduler_can_be_disabled():
     s = Settings.model_validate({**REQUIRED, "scheduler_enabled": False})
     assert s.scheduler_enabled is False
+
+
+def test_settings_load_without_legacy_openwa_keys(monkeypatch):
+    for k in (
+        "WHATSAPP_HOST",
+        "OPENWA_API_KEY",
+        "OPENWA_SESSION_ID",
+        "OPENWA_WEBHOOK_SECRET",
+        "OPENWA_WEBHOOK_URL",
+    ):
+        monkeypatch.delenv(k, raising=False)
+    s = Settings(_env_file=None, **REQUIRED)  # pyright: ignore[reportCallIssue]
+    assert s.whatsapp_host == s.openwa_api_key == s.openwa_session_id == ""
+    assert s.openwa_webhook_secret == s.openwa_webhook_url == ""
+
+
+@pytest.mark.parametrize("key", ["", "not base64!", "c2hvcnQ="])
+def test_settings_encryption_key_must_be_32_bytes_base64(key):
+    with pytest.raises(ValidationError):
+        Settings.model_validate({**REQUIRED, "settings_encryption_key": key})
+
+
+def test_short_webhook_secret_still_rejected_when_set():
+    with pytest.raises(ValidationError):
+        Settings.model_validate({**REQUIRED, "openwa_webhook_secret": "short"})
