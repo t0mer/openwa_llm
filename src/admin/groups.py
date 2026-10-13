@@ -7,7 +7,7 @@ from sqlalchemy import func, or_
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.deps import get_db_async_session
+from api.deps import get_db_async_session, get_session_id
 from models import Group, GroupSummarySchedule, Message
 from whatsapp.jid import normalize_jid
 
@@ -83,6 +83,7 @@ async def _schedule_count(session: AsyncSession, group_jid: str) -> int:
 @router.get("", response_model=Page[GroupOut])
 async def list_groups(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
+    session_id: Annotated[str, Depends(get_session_id)],
     search: Annotated[str | None, Query(max_length=100)] = None,
     managed: bool | None = None,
     sort: SortKey = "name",
@@ -113,14 +114,16 @@ async def list_groups(
         )
         .outerjoin(counts, counts.c.group_jid == Group.group_jid)
         .outerjoin(schedule_counts, schedule_counts.c.group_jid == Group.group_jid)
-        .where(*group_filters(search, managed))
+        .where(col(Group.session_id) == session_id, *group_filters(search, managed))
         .order_by(*_order_by(sort, message_count))
         .limit(limit)
         .offset(offset)
     )
     rows = (await session.execute(rows_stmt)).all()
     total_stmt = (
-        select(func.count()).select_from(Group).where(*group_filters(search, managed))
+        select(func.count())
+        .select_from(Group)
+        .where(col(Group.session_id) == session_id, *group_filters(search, managed))
     )
     total = (await session.execute(total_stmt)).scalar_one()
     return Page(

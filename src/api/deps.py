@@ -49,6 +49,23 @@ def get_whatsapp(
     return registry.get(session_id)
 
 
+def get_optional_session_id(
+    registry: Annotated[GatewayRegistry, Depends(get_registry)],
+    session_id: Annotated[str | None, Query()] = None,
+) -> str | None:
+    """Like `get_session_id`, but None (not 400) while no session is active."""
+    if session_id is None and not registry.ids():
+        return None
+    return get_session_id(registry, session_id)
+
+
+def get_optional_whatsapp(
+    registry: Annotated[GatewayRegistry, Depends(get_registry)],
+    session_id: Annotated[str | None, Depends(get_optional_session_id)],
+) -> WhatsAppGateway | None:
+    return registry.get(session_id) if session_id is not None else None
+
+
 def get_text_embebedding(request: Request) -> AsyncClient:
     assert request.app.state.embedding_client, "text embedding not initialized"
     return request.app.state.embedding_client

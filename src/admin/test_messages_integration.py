@@ -5,7 +5,7 @@ import pytest
 from models import Group, Message, Reaction, Sender
 from test_utils.openwa_session import TEST_SESSION_ID
 
-pytestmark = pytest.mark.usefixtures("session_row")
+pytestmark = pytest.mark.usefixtures("session_row", "active_sessions")
 
 BASE = "/api/v1/admin/messages"
 SAME = datetime(2026, 3, 1, 10, 0, tzinfo=timezone.utc)

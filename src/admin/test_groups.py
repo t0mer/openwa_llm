@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from admin import groups as groups_module
 from admin.auth import require_admin
-from api.deps import get_db_async_session
+from api.deps import get_db_async_session, get_session_id
 from models import Group
 
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
@@ -39,6 +39,7 @@ def ctx():
     app.include_router(groups_module.router, prefix="/groups")
     app.dependency_overrides[require_admin] = lambda: None
     app.dependency_overrides[get_db_async_session] = lambda: session
+    app.dependency_overrides[get_session_id] = lambda: "s1"
     return TestClient(app), session
 
 

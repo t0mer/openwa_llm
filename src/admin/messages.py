@@ -10,7 +10,7 @@ from sqlalchemy import func, literal, tuple_
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.deps import get_db_async_session
+from api.deps import get_db_async_session, get_session_id
 from models import Message, Reaction
 from whatsapp.jid import normalize_jid
 
@@ -67,6 +67,7 @@ def decode_cursor(cursor: str) -> tuple[datetime, str]:
 @router.get("", response_model=MessagePage)
 async def list_messages(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
+    session_id: Annotated[str, Depends(get_session_id)],
     group_jid: Annotated[str | None, Query(max_length=255)] = None,
     sender_jid: Annotated[str | None, Query(max_length=255)] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
@@ -77,7 +78,7 @@ async def list_messages(
 ) -> MessagePage:
     check_bound(from_, "from")
     check_bound(to, "to")
-    stmt = select(Message)
+    stmt = select(Message).where(col(Message.session_id) == session_id)
     if group_jid:
         stmt = stmt.where(Message.group_jid == normalize_jid(group_jid))
     if sender_jid:

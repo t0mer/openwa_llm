@@ -9,7 +9,7 @@ from admin.conftest import SECRET
 from models import Group, GroupSummarySchedule, Message, Sender
 from test_utils.openwa_session import TEST_SESSION_ID
 
-pytestmark = pytest.mark.usefixtures("session_row")
+pytestmark = pytest.mark.usefixtures("session_row", "active_sessions")
 
 BASE = "/api/v1/admin/groups/1@g.us/schedules"
 

@@ -5,6 +5,7 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import httpx
+import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 
@@ -14,6 +15,7 @@ from api.deps import get_db_async_session
 from config import get_settings
 from openwa_settings.crypto import SecretBox
 from openwa_settings.registry import GatewayRegistry
+from test_utils.openwa_session import TEST_SESSION_ID, StubRegistry
 from whatsapp import OpenWAGateway
 from whatsapp.types import SessionStatus
 
@@ -87,6 +89,17 @@ async def admin_app(db_sessionmaker, openwa_state):
     app.dependency_overrides[get_db_async_session] = _session
     app.dependency_overrides[get_settings] = settings
     return app
+
+
+@pytest.fixture
+def active_sessions(admin_app):
+    """Serve the given session pks as the active ones (default: the test session)."""
+
+    def activate(*ids: str) -> None:
+        admin_app.state.registry = StubRegistry({pk: object() for pk in ids})
+
+    activate(TEST_SESSION_ID)
+    return activate
 
 
 @pytest_asyncio.fixture

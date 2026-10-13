@@ -5,7 +5,7 @@ import pytest
 from models import Group, Message, Sender
 from test_utils.openwa_session import TEST_SESSION_ID
 
-pytestmark = pytest.mark.usefixtures("session_row")
+pytestmark = pytest.mark.usefixtures("session_row", "active_sessions")
 
 
 async def seed(db_sessionmaker):

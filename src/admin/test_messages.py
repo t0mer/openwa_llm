@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from admin import messages as messages_module
 from admin.auth import require_admin
-from api.deps import get_db_async_session
+from api.deps import get_db_async_session, get_session_id
 from models import Message, Sender
 
 TS = datetime(2026, 10, 8, 12, 0, 0, 123456, tzinfo=timezone.utc)
@@ -32,6 +32,7 @@ def ctx():
     app.include_router(messages_module.router, prefix="/messages")
     app.dependency_overrides[require_admin] = lambda: None
     app.dependency_overrides[get_db_async_session] = lambda: session
+    app.dependency_overrides[get_session_id] = lambda: "s1"
     return TestClient(app), session
 
 

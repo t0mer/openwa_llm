@@ -4,12 +4,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from api.deps import get_whatsapp
+from api.deps import get_optional_whatsapp
 from models import Group, KBTopic, Message, Reaction, Sender
 from whatsapp.jid import parse_jid
 from test_utils.openwa_session import TEST_SESSION_ID
 
-pytestmark = pytest.mark.usefixtures("session_row")
+pytestmark = pytest.mark.usefixtures("session_row", "active_sessions")
 
 BASE = "/api/v1/admin/stats"
 TZ = ZoneInfo("Asia/Jerusalem")
@@ -37,12 +37,12 @@ def _whatsapp(fail: bool = False):
 
 @pytest.fixture
 def bot(admin_app):
-    admin_app.dependency_overrides[get_whatsapp] = lambda: _whatsapp()
+    admin_app.dependency_overrides[get_optional_whatsapp] = lambda: _whatsapp()
 
 
 @pytest.fixture
 def no_bot(admin_app):
-    admin_app.dependency_overrides[get_whatsapp] = lambda: _whatsapp(fail=True)
+    admin_app.dependency_overrides[get_optional_whatsapp] = lambda: _whatsapp(fail=True)
 
 
 def _msg(mid, ts, sender, chat=G1, text: str | None = "hi", media=None):
