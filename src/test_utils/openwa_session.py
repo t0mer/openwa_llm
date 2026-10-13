@@ -3,6 +3,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from models import OpenWASession
 
 TEST_SESSION_ID = "test-session"
+OTHER_SESSION_ID = "other-session"
 
 
 async def seed_session(

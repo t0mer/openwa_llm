@@ -23,7 +23,9 @@ async def test_gather_groups_updates_only_gateway_owned_columns():
 
     (stmt,), _ = session.execute.await_args
     sql = str(stmt.compile(dialect=postgresql.dialect()))
-    insert_part, set_part = sql.split("DO UPDATE SET")
+    insert_part, update_part = sql.split("DO UPDATE SET")
+    set_part, where_part = update_part.split(" WHERE ")
+    assert '"group".session_id = %(session_id_1)s' in where_part
     assert "ON CONFLICT (group_jid)" in insert_part
     assert "display_name" in insert_part  # new rows still insert every column
     assert "summary_language" in insert_part

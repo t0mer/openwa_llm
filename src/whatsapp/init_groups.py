@@ -1,5 +1,6 @@
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import insert
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from models import Group, BaseGroup, Sender, BaseSender, upsert
@@ -34,6 +35,8 @@ async def gather_groups(
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=["group_jid"],
-            set_={col: stmt.excluded[col] for col in SYNC_OWNED_COLUMNS},
+            set_={name: stmt.excluded[name] for name in SYNC_OWNED_COLUMNS},
+            # A group owned by another session is left untouched, never taken over.
+            where=col(Group.session_id) == session_id,
         )
         await session.execute(stmt)

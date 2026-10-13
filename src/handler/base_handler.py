@@ -54,6 +54,9 @@ class BaseHandler:
         if not message.text:
             return message  # Don't store messages without text
 
+        if await self._foreign_group(message.group_jid):
+            return None  # Another session owns this group: not ours to store
+
         async with self.session.begin_nested():
             # Ensure sender exists and is committed
             sender = await self.session.get(Sender, message.sender_jid)
@@ -95,6 +98,11 @@ class BaseHandler:
 
         try:
             reaction = Reaction.from_inbound(event)
+            message = await self.session.get(Message, reaction.message_id)
+            if message is None:
+                logger.warning(f"Message {reaction.message_id} not found for reaction")
+            elif await self._foreign_group(message.group_jid):
+                return None  # Reaction in a group another session owns
 
             async with self.session.begin_nested():
                 # Ensure sender exists
@@ -108,13 +116,6 @@ class BaseHandler:
                     )
                     await self.upsert(sender)
                     await self.session.flush()
-
-                # Ensure the message being reacted to exists
-                message = await self.session.get(Message, reaction.message_id)
-                if message is None:
-                    logger.warning(
-                        f"Message {reaction.message_id} not found for reaction"
-                    )
 
                 stored_reaction = await Reaction.upsert_reaction(self.session, reaction)
                 logger.info(
@@ -166,6 +167,13 @@ class BaseHandler:
         stored_message = await self.store_message(Message(**new_message.model_dump()))
         assert stored_message, "Failed to store message"
         return stored_message
+
+    async def _foreign_group(self, group_jid: str | None) -> bool:
+        """True when the group exists and belongs to another session."""
+        if not group_jid:
+            return False
+        group = await self.session.get(Group, group_jid)
+        return group is not None and group.session_id != self.session_id
 
     async def upsert(self, model):
         return await upsert(self.session, model)

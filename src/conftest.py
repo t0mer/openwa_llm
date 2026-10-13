@@ -21,7 +21,7 @@ from models import (
     Sender,
 )
 from models.kb_topic_message import KBTopicMessage
-from test_utils.openwa_session import seed_session
+from test_utils.openwa_session import OTHER_SESSION_ID, seed_session
 
 TABLES = [
     model.__table__  # pyright: ignore[reportAttributeAccessIssue]
@@ -70,5 +70,14 @@ async def session_row(db_sessionmaker) -> OpenWASession:
     """A committed OpenWA session row for DB-backed tests (id TEST_SESSION_ID)."""
     async with db_sessionmaker() as session:
         row = await seed_session(session)
+        await session.commit()
+    return row
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def other_session_row(db_sessionmaker, session_row) -> OpenWASession:
+    """A second committed OpenWA session row (id OTHER_SESSION_ID)."""
+    async with db_sessionmaker() as session:
+        row = await seed_session(session, OTHER_SESSION_ID)
         await session.commit()
     return row
