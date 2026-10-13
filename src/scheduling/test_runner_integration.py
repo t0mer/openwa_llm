@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
@@ -12,7 +12,7 @@ from models import Group, GroupSummarySchedule
 from scheduling import runner
 from scheduling.runner import claim, run_due
 from summarize_and_send_to_groups import GroupSummaryResult
-from test_utils.openwa_session import TEST_SESSION_ID
+from test_utils.openwa_session import OTHER_SESSION_ID, StubRegistry, TEST_SESSION_ID
 
 pytestmark = pytest.mark.usefixtures("session_row")
 
@@ -20,6 +20,11 @@ TZ = ZoneInfo("Asia/Jerusalem")
 SETTINGS = cast(Settings, SimpleNamespace(timezone="Asia/Jerusalem"))
 # Wednesday 2026-10-07 09:00 Asia/Jerusalem (UTC+3)
 NOW = datetime(2026, 10, 7, 9, 0, tzinfo=TZ)
+
+
+def reg(wa) -> Any:
+    """Registry with only the default test session, served by `wa`."""
+    return StubRegistry({TEST_SESSION_ID: wa})
 
 
 def local(y, mo, d, h, mi):
@@ -70,7 +75,7 @@ def summarize(monkeypatch):
 async def test_due_schedule_runs_once_and_records_result(db_sessionmaker, summarize):
     sid = await seed(db_sessionmaker)
     wa = MagicMock()
-    recs = await run_due(SETTINGS, db_sessionmaker, wa, now=NOW)
+    recs = await run_due(SETTINGS, db_sessionmaker, reg(wa), now=NOW)
     assert [(r.schedule_id, r.status, r.message_count) for r in recs] == [
         (sid, "sent", 20)
     ]
@@ -80,9 +85,11 @@ async def test_due_schedule_runs_once_and_records_result(db_sessionmaker, summar
     assert row.last_run_at == NOW.astimezone(timezone.utc)
 
     # second tick in the same minute and a later tick in the grace window: no rerun
-    assert await run_due(SETTINGS, db_sessionmaker, wa, now=NOW) == []
+    assert await run_due(SETTINGS, db_sessionmaker, reg(wa), now=NOW) == []
     assert (
-        await run_due(SETTINGS, db_sessionmaker, wa, now=NOW + timedelta(minutes=30))
+        await run_due(
+            SETTINGS, db_sessionmaker, reg(wa), now=NOW + timedelta(minutes=30)
+        )
         == []
     )
     summarize.assert_awaited_once()
@@ -93,7 +100,7 @@ async def test_restart_right_after_run_does_not_rerun(db_sessionmaker, summarize
     await seed(db_sessionmaker, last_run=NOW + timedelta(seconds=5))
     assert (
         await run_due(
-            SETTINGS, db_sessionmaker, MagicMock(), now=NOW + timedelta(minutes=2)
+            SETTINGS, db_sessionmaker, reg(MagicMock()), now=NOW + timedelta(minutes=2)
         )
         == []
     )
@@ -102,7 +109,7 @@ async def test_restart_right_after_run_does_not_rerun(db_sessionmaker, summarize
 
 async def test_previous_occurrence_run_does_not_block_next(db_sessionmaker, summarize):
     await seed(db_sessionmaker, last_run=NOW - timedelta(days=7))
-    recs = await run_due(SETTINGS, db_sessionmaker, MagicMock(), now=NOW)
+    recs = await run_due(SETTINGS, db_sessionmaker, reg(MagicMock()), now=NOW)
     assert len(recs) == 1
 
 
@@ -110,15 +117,20 @@ async def test_not_due_outside_grace_or_wrong_day(db_sessionmaker, summarize):
     await seed(db_sessionmaker)
     wa = MagicMock()
     assert (
-        await run_due(SETTINGS, db_sessionmaker, wa, now=NOW - timedelta(minutes=1))
+        await run_due(
+            SETTINGS, db_sessionmaker, reg(wa), now=NOW - timedelta(minutes=1)
+        )
         == []
     )
     assert (
-        await run_due(SETTINGS, db_sessionmaker, wa, now=NOW + timedelta(minutes=61))
+        await run_due(
+            SETTINGS, db_sessionmaker, reg(wa), now=NOW + timedelta(minutes=61)
+        )
         == []
     )
     assert (
-        await run_due(SETTINGS, db_sessionmaker, wa, now=NOW + timedelta(days=1)) == []
+        await run_due(SETTINGS, db_sessionmaker, reg(wa), now=NOW + timedelta(days=1))
+        == []
     )
     summarize.assert_not_awaited()
 
@@ -128,11 +140,19 @@ async def test_midnight_and_noon_slots_fire(db_sessionmaker, summarize):
     await seed(db_sessionmaker, hour=12)
     wa = MagicMock()
     assert (
-        len(await run_due(SETTINGS, db_sessionmaker, wa, now=local(2026, 10, 7, 0, 0)))
+        len(
+            await run_due(
+                SETTINGS, db_sessionmaker, reg(wa), now=local(2026, 10, 7, 0, 0)
+            )
+        )
         == 1
     )
     assert (
-        len(await run_due(SETTINGS, db_sessionmaker, wa, now=local(2026, 10, 7, 12, 0)))
+        len(
+            await run_due(
+                SETTINGS, db_sessionmaker, reg(wa), now=local(2026, 10, 7, 12, 0)
+            )
+        )
         == 1
     )
 
@@ -142,7 +162,7 @@ async def test_2359_slot_fires_after_midnight_on_its_own_weekday(
 ):
     await seed(db_sessionmaker, weekdays=(2,), hour=23, minute=59)  # Tuesday
     now = local(2026, 10, 7, 0, 10)  # already Wednesday
-    assert len(await run_due(SETTINGS, db_sessionmaker, MagicMock(), now=now)) == 1
+    assert len(await run_due(SETTINGS, db_sessionmaker, reg(MagicMock()), now=now)) == 1
 
 
 async def test_dst_gap_slot_runs_once_at_first_valid_minute(db_sessionmaker, summarize):
@@ -151,14 +171,14 @@ async def test_dst_gap_slot_runs_once_at_first_valid_minute(db_sessionmaker, sum
     first_valid = datetime(2026, 3, 27, 0, 0, tzinfo=timezone.utc)  # 03:00 local
     assert (
         await run_due(
-            SETTINGS, db_sessionmaker, wa, now=first_valid - timedelta(minutes=1)
+            SETTINGS, db_sessionmaker, reg(wa), now=first_valid - timedelta(minutes=1)
         )
         == []
     )
-    assert len(await run_due(SETTINGS, db_sessionmaker, wa, now=first_valid)) == 1
+    assert len(await run_due(SETTINGS, db_sessionmaker, reg(wa), now=first_valid)) == 1
     assert (
         await run_due(
-            SETTINGS, db_sessionmaker, wa, now=first_valid + timedelta(minutes=5)
+            SETTINGS, db_sessionmaker, reg(wa), now=first_valid + timedelta(minutes=5)
         )
         == []
     )
@@ -172,7 +192,7 @@ async def test_dst_overlap_slot_runs_once(db_sessionmaker, summarize):
     ticks = [first + timedelta(minutes=m) for m in (0, 1, 30, 60, 61, 90)]
     total = 0
     for t in ticks:
-        total += len(await run_due(SETTINGS, db_sessionmaker, wa, now=t))
+        total += len(await run_due(SETTINGS, db_sessionmaker, reg(wa), now=t))
     assert total == 1
 
 
@@ -192,7 +212,7 @@ async def test_concurrent_ticks_run_exactly_once(db_sessionmaker, summarize):
     await seed(db_sessionmaker)
     wa = MagicMock()
     batches = await asyncio.gather(
-        *(run_due(SETTINGS, db_sessionmaker, wa, now=NOW) for _ in range(4))
+        *(run_due(SETTINGS, db_sessionmaker, reg(wa), now=NOW) for _ in range(4))
     )
     assert sum(len(b) for b in batches) == 1
     summarize.assert_awaited_once()
@@ -201,7 +221,7 @@ async def test_concurrent_ticks_run_exactly_once(db_sessionmaker, summarize):
 async def test_disabled_unmanaged_and_deleted_never_run(db_sessionmaker, summarize):
     await seed(db_sessionmaker, enabled=False)
     wa = MagicMock()
-    assert await run_due(SETTINGS, db_sessionmaker, wa, now=NOW) == []
+    assert await run_due(SETTINGS, db_sessionmaker, reg(wa), now=NOW) == []
 
     async with db_sessionmaker() as s:
         g = await s.get(Group, "1@g.us")
@@ -209,14 +229,14 @@ async def test_disabled_unmanaged_and_deleted_never_run(db_sessionmaker, summari
         g.managed = False
         await s.commit()
     await seed(db_sessionmaker)  # enabled schedule, unmanaged group
-    assert await run_due(SETTINGS, db_sessionmaker, wa, now=NOW) == []
+    assert await run_due(SETTINGS, db_sessionmaker, reg(wa), now=NOW) == []
 
     async with db_sessionmaker() as s:
         g = await s.get(Group, "1@g.us")
         assert g is not None
         await s.delete(g)
         await s.commit()
-    assert await run_due(SETTINGS, db_sessionmaker, wa, now=NOW) == []
+    assert await run_due(SETTINGS, db_sessionmaker, reg(wa), now=NOW) == []
     summarize.assert_not_awaited()
 
 
@@ -239,7 +259,7 @@ async def test_exception_is_recorded_without_text_and_other_schedules_still_run(
         RuntimeError("secret sk-ant-123 leaked"),
         GroupSummaryResult(status="sent", message_count=16),
     ]
-    recs = await run_due(SETTINGS, db_sessionmaker, MagicMock(), now=NOW)
+    recs = await run_due(SETTINGS, db_sessionmaker, reg(MagicMock()), now=NOW)
     assert sorted(r.status for r in recs) == ["failed", "sent"]
     failed = [r for r in recs if r.status == "failed"][0]
     assert failed.reason == "unexpected_error"
@@ -261,7 +281,7 @@ async def test_schedule_deleted_during_run_does_not_error(db_sessionmaker, summa
         return GroupSummaryResult(status="sent", message_count=15)
 
     summarize.side_effect = delete_then_return
-    recs = await run_due(SETTINGS, db_sessionmaker, MagicMock(), now=NOW)
+    recs = await run_due(SETTINGS, db_sessionmaker, reg(MagicMock()), now=NOW)
     assert len(recs) == 1
 
 
@@ -276,7 +296,7 @@ async def test_run_holds_the_group_lock(db_sessionmaker, monkeypatch):
         return GroupSummaryResult(status="sent", message_count=15)
 
     monkeypatch.setattr(runner, "summarize_and_send_to_group", fake)
-    await run_due(SETTINGS, db_sessionmaker, MagicMock(), now=NOW)
+    await run_due(SETTINGS, db_sessionmaker, reg(MagicMock()), now=NOW)
     assert held == [True]
 
 
@@ -299,7 +319,7 @@ async def test_hung_summary_times_out_releases_lock_and_next_schedule_runs(
 
     monkeypatch.setattr(runner, "summarize_and_send_to_group", fake)
     recs = await asyncio.wait_for(
-        run_due(SETTINGS, db_sessionmaker, MagicMock(), now=NOW), 5
+        run_due(SETTINGS, db_sessionmaker, reg(MagicMock()), now=NOW), 5
     )
     assert sorted(r.status for r in recs) == ["failed", "sent"]
     failed = [r for r in recs if r.status == "failed"][0]
@@ -393,3 +413,43 @@ async def test_lock_wait_does_not_consume_run_budget(
     lock.release()
     rec = await asyncio.wait_for(task, 5)
     assert rec.status == "sent"
+
+
+async def _seed_owned(sm, jid: str, owner: str) -> str:
+    async with sm() as s:
+        s.add(Group(session_id=owner, group_jid=jid, managed=True))
+        await s.flush()
+        sched = GroupSummarySchedule(group_jid=jid, weekdays=[3], hour=9, minute=0)
+        s.add(sched)
+        await s.commit()
+        return sched.id
+
+
+@pytest.mark.usefixtures("other_session_row")
+async def test_each_schedule_runs_through_its_group_session_gateway(
+    db_sessionmaker, summarize
+):
+    await _seed_owned(db_sessionmaker, "a@g.us", TEST_SESSION_ID)
+    await _seed_owned(db_sessionmaker, "b@g.us", OTHER_SESSION_ID)
+    wa_a, wa_b = MagicMock(name="a"), MagicMock(name="b")
+    registry: Any = StubRegistry({TEST_SESSION_ID: wa_a, OTHER_SESSION_ID: wa_b})
+
+    recs = await run_due(SETTINGS, db_sessionmaker, registry, now=NOW)
+
+    assert sorted(r.status for r in recs) == ["sent", "sent"]
+    used = {c.args[3].group_jid: c.args[2] for c in summarize.await_args_list}
+    assert used == {"a@g.us": wa_a, "b@g.us": wa_b}
+
+
+@pytest.mark.usefixtures("other_session_row")
+async def test_schedule_of_an_inactive_session_is_skipped_unclaimed(
+    db_sessionmaker, summarize, caplog
+):
+    sid_a = await _seed_owned(db_sessionmaker, "a@g.us", TEST_SESSION_ID)
+    sid_b = await _seed_owned(db_sessionmaker, "b@g.us", OTHER_SESSION_ID)
+
+    recs = await run_due(SETTINGS, db_sessionmaker, reg(MagicMock()), now=NOW)
+
+    assert [r.schedule_id for r in recs] == [sid_a]
+    assert (await load(db_sessionmaker, sid_b)).last_run_at is None
+    assert OTHER_SESSION_ID in caplog.text

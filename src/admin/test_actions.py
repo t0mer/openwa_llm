@@ -10,6 +10,7 @@ from admin.actions import ActionRunner
 from admin.auth import require_admin
 from config import get_settings
 from summarize_and_send_to_groups import GroupSummaryResult
+from test_utils.openwa_session import StubRegistry
 
 
 async def test_runner_runs_job_and_reports_success():
@@ -65,17 +66,6 @@ async def test_runner_shutdown_cancels_running_jobs():
 GATEWAY = object()
 
 
-class StubRegistry:
-    def __init__(self, gateways: dict) -> None:
-        self._gw = gateways
-
-    def ids(self) -> list[str]:
-        return list(self._gw)
-
-    def get(self, pk: str):
-        return self._gw[pk]
-
-
 @pytest_asyncio.fixture
 async def client(monkeypatch):
     fresh = ActionRunner()
@@ -105,7 +95,7 @@ async def test_get_actions_idle(client):
 async def test_start_summarize_returns_202_then_409_while_running(client, monkeypatch):
     gate = {}
 
-    async def fake(settings, session, whatsapp):
+    async def fake(settings, session, whatsapp, session_id):
         gate["called"] = True
         await asyncio.sleep(0.3)
         return []
@@ -143,7 +133,7 @@ def _res(jid, name, status, reason=None, count=20):
 async def _run_summarize(client, monkeypatch, results_per_run):
     runs = iter(results_per_run)
 
-    async def fake(settings, session, whatsapp):
+    async def fake(settings, session, whatsapp, session_id):
         return next(runs)
 
     monkeypatch.setattr(actions_module, "summarize_and_send_to_groups", fake)
@@ -191,7 +181,7 @@ async def test_summarize_none_managed(client, monkeypatch):
 async def test_summarize_results_reset_on_rerun(client, monkeypatch):
     runs = iter([[_res("a@g.us", "A", "sent")], [_res("b@g.us", "B", "sent")]])
 
-    async def fake(settings, session, whatsapp):
+    async def fake(settings, session, whatsapp, session_id):
         return next(runs)
 
     monkeypatch.setattr(actions_module, "summarize_and_send_to_groups", fake)
@@ -199,7 +189,7 @@ async def test_summarize_results_reset_on_rerun(client, monkeypatch):
     await actions_module.runner.wait_idle()
     gate = asyncio.Event()
 
-    async def slow(settings, session, whatsapp):
+    async def slow(settings, session, whatsapp, session_id):
         await gate.wait()
         return next(runs)
 
@@ -220,17 +210,84 @@ async def test_summarize_results_bounded_to_200(client, monkeypatch):
     assert s["summary"]["managed_groups"] == 250
 
 
-async def test_summarize_uses_the_first_active_session_gateway(client, monkeypatch):
-    seen = {}
+GATEWAY_2 = object()
 
-    async def fake(settings, session, whatsapp):
-        seen["whatsapp"] = whatsapp
-        return []
+
+def _two_sessions(client) -> None:
+    client._transport.app.state.registry = StubRegistry(
+        {"s1": GATEWAY, "s2": GATEWAY_2}
+    )
+
+
+async def test_summarize_runs_every_active_session_with_its_gateway(
+    client, monkeypatch
+):
+    _two_sessions(client)
+    seen = []
+
+    async def fake(settings, session, whatsapp, session_id):
+        seen.append((session_id, whatsapp))
+        return [_res(f"{session_id}@g.us", session_id, "sent")]
 
     monkeypatch.setattr(actions_module, "summarize_and_send_to_groups", fake)
     assert (await client.post("/actions/summarize")).status_code == 202
     await actions_module.runner.wait_idle()
-    assert seen["whatsapp"] is GATEWAY
+    s = (await client.get("/actions")).json()["summarize"]
+    assert seen == [("s1", GATEWAY), ("s2", GATEWAY_2)]
+    assert s["state"] == "succeeded"
+    assert [r["group_jid"] for r in s["results"]] == ["s1@g.us", "s2@g.us"]
+    assert s["summary"] == {"managed_groups": 2, "message": None}
+
+
+async def test_summarize_failure_in_one_session_does_not_stop_the_others(
+    client, monkeypatch
+):
+    _two_sessions(client)
+
+    async def fake(settings, session, whatsapp, session_id):
+        if session_id == "s1":
+            raise RuntimeError("boom")
+        return [_res("b@g.us", "B", "sent")]
+
+    monkeypatch.setattr(actions_module, "summarize_and_send_to_groups", fake)
+    await client.post("/actions/summarize")
+    await actions_module.runner.wait_idle()
+    s = (await client.get("/actions")).json()["summarize"]
+    assert s["state"] == "succeeded"
+    assert [r["group_jid"] for r in s["results"]] == ["b@g.us"]
+    assert "s1" in s["summary"]["message"] and "boom" in s["summary"]["message"]
+
+
+async def test_summarize_fails_when_every_session_fails(client, monkeypatch):
+    _two_sessions(client)
+    monkeypatch.setattr(
+        actions_module,
+        "summarize_and_send_to_groups",
+        AsyncMock(side_effect=RuntimeError("down")),
+    )
+    await client.post("/actions/summarize")
+    await actions_module.runner.wait_idle()
+    s = (await client.get("/actions")).json()["summarize"]
+    assert s["state"] == "failed"
+    assert "s1" in s["error"] and "s2" in s["error"]
+
+
+async def test_load_kb_runs_every_session_and_reports_failures(client, monkeypatch):
+    _two_sessions(client)
+    loader = MagicMock()
+    loader.load_topics_for_all_groups = AsyncMock(
+        side_effect=[RuntimeError("kb down"), None]
+    )
+    monkeypatch.setattr(actions_module, "topicsLoader", lambda: loader)
+    await client.post("/actions/load-kb")
+    await actions_module.runner.wait_idle()
+    calls = loader.load_topics_for_all_groups.await_args_list
+    assert [(c.args[2], c.args[3]) for c in calls] == [
+        (GATEWAY, "s1"),
+        (GATEWAY_2, "s2"),
+    ]
+    s = (await client.get("/actions")).json()["load_kb"]
+    assert s["state"] == "failed" and "s1" in s["error"] and "kb down" in s["error"]
 
 
 async def test_actions_fail_clearly_without_an_active_session(client, monkeypatch):

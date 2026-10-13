@@ -78,6 +78,8 @@ class Group(BaseGroup, table=True):
         query = (
             select(Group)
             .where(Group.group_jid != self.group_jid)  # Exclude self
+            # Only this session's bot is in (and can post to) its groups.
+            .where(Group.session_id == self.session_id)
             .where(
                 cast(Group.community_keys, ARRAY(String)).op("&&")(self.community_keys)
             )

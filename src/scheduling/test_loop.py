@@ -32,7 +32,7 @@ async def test_loop_survives_tick_failures_and_keeps_ticking(monkeypatch):
     calls = 0
     done = asyncio.Event()
 
-    async def fake_run_due(settings, factory, whatsapp, now=None):
+    async def fake_run_due(settings, factory, registry, now=None):
         nonlocal calls
         calls += 1
         if calls >= 3:
@@ -92,3 +92,19 @@ async def test_loop_skips_ticks_without_an_active_session(monkeypatch, caplog):
         await task
     run_due.assert_not_awaited()
     assert "no active OpenWA session" in caplog.text
+
+
+async def test_loop_passes_the_registry(monkeypatch):
+    seen = asyncio.Event()
+    app = _app()
+
+    async def fake_run_due(settings, factory, registry, now=None):
+        assert registry is app.state.registry
+        seen.set()
+        return []
+
+    monkeypatch.setattr(runner, "run_due", fake_run_due)
+    task = asyncio.create_task(runner.scheduler_loop(app, interval=0.001))
+    await asyncio.wait_for(seen.wait(), 2)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)

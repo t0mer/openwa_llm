@@ -6,7 +6,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from load_new_kbtopics import topicsLoader
 from whatsapp import WhatsAppGateway
 from voyageai.client_async import AsyncClient
-from .deps import get_db_async_session, get_whatsapp, get_text_embebedding
+from .deps import (
+    get_db_async_session,
+    get_session_id,
+    get_text_embebedding,
+    get_whatsapp,
+)
 
 router = APIRouter()
 
@@ -19,9 +24,10 @@ async def load_new_kbtopics_api(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
     whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
     embedding_client: Annotated[AsyncClient, Depends(get_text_embebedding)],
+    session_id: Annotated[str, Depends(get_session_id)],
 ) -> Dict[str, Any]:
     """
-    Trigger load new kbtopics for all managed groups.
+    Trigger load new kbtopics for the session's managed groups.
     Returns a success message upon completion.
     """
     try:
@@ -29,7 +35,7 @@ async def load_new_kbtopics_api(
 
         topics_loader = topicsLoader()
         await topics_loader.load_topics_for_all_groups(
-            session, embedding_client, whatsapp
+            session, embedding_client, whatsapp, session_id
         )
 
         logger.info("load new kbtopics sync completed successfully")

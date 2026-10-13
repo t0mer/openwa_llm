@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable
+from typing import Callable
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -102,12 +102,3 @@ async def _close_quietly(gw: OpenWAGateway) -> None:
     except Exception as exc:
         # Only the exception type: a transport error could echo request data.
         log.warning("closing openwa gateway failed: %s", type(exc).__name__)
-
-
-# TEMP(T7): callers become per-session; until then they use the first active one.
-def first_gateway(app: Any) -> OpenWAGateway:
-    """Gateway of the first active session; LookupError when there is none."""
-    ids = app.state.registry.ids()
-    if not ids:
-        raise LookupError("no active OpenWA session configured")
-    return app.state.registry.get(ids[0])

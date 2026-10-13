@@ -6,7 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from config import Settings
 from whatsapp import WhatsAppGateway
 from summarize_and_send_to_groups import summarize_and_send_to_groups
-from .deps import get_db_async_session, get_whatsapp, get_settings
+from .deps import get_db_async_session, get_session_id, get_whatsapp, get_settings
 
 # Create router for send summaries to groups endpoints
 router = APIRouter()
@@ -20,9 +20,10 @@ async def trigger_summarize_and_send_to_groups(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
     whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
     settings: Annotated[Settings, Depends(get_settings)],
+    session_id: Annotated[str, Depends(get_session_id)],
 ) -> Dict[str, Any]:
     """
-    Trigger a send summaries to groups sync for all managed groups.
+    Trigger a send summaries to groups sync for the session's managed groups.
 
     This endpoint manually triggers the same process that runs
     in the daily_summary.py script. It will:
@@ -38,7 +39,7 @@ async def trigger_summarize_and_send_to_groups(
         logger.info("Starting manual send summaries to groups sync via API")
 
         # Execute the send summaries to groups sync process
-        await summarize_and_send_to_groups(settings, session, whatsapp)
+        await summarize_and_send_to_groups(settings, session, whatsapp, session_id)
 
         logger.info("send summaries to groups sync completed successfully")
 

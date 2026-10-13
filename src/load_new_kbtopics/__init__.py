@@ -321,7 +321,13 @@ class topicsLoader:
         session: AsyncSession,
         embedding_client: AsyncClient,
         whatsapp: WhatsAppGateway,
+        session_id: str,
     ):
-        groups = await session.exec(select(Group).where(Group.managed == True))  # noqa: E712 https://stackoverflow.com/a/18998106
+        """Load topics for every managed group owned by `session_id`."""
+        groups = await session.exec(
+            select(Group).where(
+                col(Group.managed).is_(True), col(Group.session_id) == session_id
+            )
+        )
         for group in list(groups.all()):
             await self.load_topics(session, group, embedding_client, whatsapp)

@@ -14,7 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from config import Settings
 from models import Group, GroupSummarySchedule
-from openwa_settings.registry import first_gateway
+from openwa_settings.registry import GatewayRegistry
 from summarize_and_send_to_groups import GroupSummaryResult, summarize_and_send_to_group
 from whatsapp import WhatsAppGateway
 
@@ -151,10 +151,15 @@ async def _run_claimed(
 async def run_due(
     settings: Settings,
     session_factory: SessionFactory,
-    whatsapp: WhatsAppGateway,
+    registry: GatewayRegistry,
     now: datetime | None = None,
 ) -> list[RunRecord]:
-    """Run one tick; returns a record for each schedule this call claimed."""
+    """Run one tick; returns a record for each schedule this call claimed.
+
+    Each schedule is sent through the gateway of the session that owns its
+    group. Schedules of a session that is not active are left unclaimed (they
+    run once it is back within the grace window) and never block the others.
+    """
     now = now or datetime.now(timezone.utc)
     tz = ZoneInfo(settings.timezone)
     now_local = now.astimezone(tz)
@@ -162,7 +167,7 @@ async def run_due(
     async with session_factory() as session:
         rows = (
             await session.exec(
-                select(GroupSummarySchedule)
+                select(GroupSummarySchedule, Group.session_id)
                 .join(Group, col(Group.group_jid) == GroupSummarySchedule.group_jid)
                 .where(
                     col(GroupSummarySchedule.enabled).is_(True),
@@ -171,14 +176,21 @@ async def run_due(
                 .order_by(col(GroupSummarySchedule.created_at))
             )
         ).all()
-        candidates: list[tuple[str, str, datetime]] = []
-        for s in rows:
+        candidates: list[tuple[str, str, datetime, WhatsAppGateway]] = []
+        active = set(registry.ids())
+        for s, session_id in rows:
             due = latest_due(now_local, s.weekdays, s.hour, s.minute, tz, GRACE)
-            if due is not None and (s.last_run_at is None or s.last_run_at < due):
-                candidates.append((s.id, s.group_jid, due))
+            if due is None or (s.last_run_at is not None and s.last_run_at >= due):
+                continue
+            if session_id not in active:
+                logger.warning(
+                    "Skipping schedule %s: session %s is not active", s.id, session_id
+                )
+                continue
+            candidates.append((s.id, s.group_jid, due, registry.get(session_id)))
 
     records: list[RunRecord] = []
-    for schedule_id, group_jid, due in candidates:
+    for schedule_id, group_jid, due, whatsapp in candidates:
         try:
             async with session_factory() as session:
                 if not await claim(session, schedule_id, due, now):
@@ -200,13 +212,13 @@ async def scheduler_loop(app: Any, interval: float = 60) -> None:
     """Tick forever; a failing tick is logged and never ends the loop."""
     while True:
         try:
-            # TEMP(T7): scheduled summaries become per-session
-            try:
-                whatsapp = first_gateway(app)
-            except LookupError as e:
-                logger.warning("Skipping scheduler tick: %s", e)
+            registry = app.state.registry
+            if not registry.ids():
+                logger.warning(
+                    "Skipping scheduler tick: no active OpenWA session configured"
+                )
             else:
-                await run_due(app.state.settings, app.state.async_session, whatsapp)
+                await run_due(app.state.settings, app.state.async_session, registry)
         except asyncio.CancelledError:
             raise
         except Exception:

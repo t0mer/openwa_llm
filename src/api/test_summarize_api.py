@@ -5,7 +5,7 @@ import httpx
 from fastapi import FastAPI
 
 from api import summarize_and_send_to_group_api as api
-from api.deps import get_db_async_session, get_settings, get_whatsapp
+from api.deps import get_db_async_session, get_session_id, get_settings, get_whatsapp
 
 
 async def test_legacy_endpoint_contract_unchanged(monkeypatch):
@@ -16,6 +16,7 @@ async def test_legacy_endpoint_contract_unchanged(monkeypatch):
     app.dependency_overrides[get_db_async_session] = lambda: object()
     app.dependency_overrides[get_whatsapp] = lambda: object()
     app.dependency_overrides[get_settings] = lambda: object()
+    app.dependency_overrides[get_session_id] = lambda: "s1"
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
         r = await c.post("/summarize_and_send_to_groups")
@@ -25,3 +26,4 @@ async def test_legacy_endpoint_contract_unchanged(monkeypatch):
         "message": "send summaries to groups sync completed successfully",
     }
     called.assert_awaited_once()
+    assert called.await_args is not None and called.await_args.args[3] == "s1"
