@@ -18,6 +18,7 @@ from scheduling.runner import start_scheduler
 from openwa_settings.crypto import SecretBox
 from openwa_settings.registry import GatewayRegistry
 from openwa_settings.store import load_connection, seed_from_env, webhook_url_for
+from whatsapp import OpenWAGateway
 from whatsapp.init_groups import gather_groups
 from whatsapp.webhook_registration import register_webhook_with_retry
 from voyageai.client_async import AsyncClient
@@ -35,10 +36,21 @@ WEBHOOK_EVENTS = [
 logger = logging.getLogger(__name__)
 
 
+def _active_gateway(app: FastAPI, pk: str) -> OpenWAGateway | None:
+    """The session's gateway, or None when a reload removed it meanwhile."""
+    try:
+        return app.state.registry.get(pk)
+    except KeyError:
+        logger.info("OpenWA session %s is no longer active; skipping its task", pk)
+        return None
+
+
 async def _sync_groups(app: FastAPI, pk: str) -> None:
+    if (gateway := _active_gateway(app, pk)) is None:
+        return
     async with app.state.async_session() as db:
         try:
-            await gather_groups(db, app.state.registry.get(pk), pk)
+            await gather_groups(db, gateway, pk)
             await db.commit()
         except Exception:
             await db.rollback()
@@ -53,8 +65,10 @@ async def _register_webhook(app: FastAPI, pk: str) -> None:
     if not url or registry.webhook_secret is None:
         logger.info("No webhook URL configured; not registering session %s", pk)
         return
+    if (gateway := _active_gateway(app, pk)) is None:
+        return
     await register_webhook_with_retry(
-        registry.get(pk), url, registry.webhook_secret, WEBHOOK_EVENTS
+        gateway, url, registry.webhook_secret, WEBHOOK_EVENTS
     )
 
 

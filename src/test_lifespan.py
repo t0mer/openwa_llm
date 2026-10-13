@@ -145,3 +145,37 @@ async def test_undecryptable_connection_does_not_crash_startup(
         assert set(app.state.registry.errors()) == {"a"}
     gather.assert_not_awaited()
     register.assert_not_awaited()
+
+
+async def test_session_tasks_tolerate_a_session_removed_before_they_run(
+    main_module, mocks, db_sessionmaker
+):
+    gather, register = mocks
+    box = SecretBox(KEY)
+    async with db_sessionmaker() as db:
+        db.add(
+            OpenWAConnection(
+                id=1,
+                base_url="http://owa:2785",
+                api_key_enc=box.encrypt("k"),
+                webhook_secret_enc=box.encrypt("s" * 16),
+                webhook_url="http://bot/webhook",
+            )
+        )
+        await db.commit()
+
+    class GoneRegistry:
+        webhook_secret = "s" * 16
+
+        def get(self, pk: str):
+            raise KeyError(pk)
+
+    app = FastAPI()
+    app.state.registry = GoneRegistry()
+    app.state.async_session = db_sessionmaker
+    app.state.bg_tasks = []
+    main_module.start_session_tasks(app, "gone")
+    results = await asyncio.gather(*app.state.bg_tasks, return_exceptions=True)
+    assert results == [None, None]
+    gather.assert_not_awaited()
+    register.assert_not_awaited()

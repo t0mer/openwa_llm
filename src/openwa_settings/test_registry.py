@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 from typing import cast
@@ -149,3 +150,73 @@ async def test_aclose_closes_every_gateway(db_sessionmaker):
     assert registry.ids() == []
     for gw in factory.built:
         gw.aclose.assert_awaited_once()
+
+
+async def _change_base_url(db_sessionmaker, base_url: str) -> None:
+    async with db_sessionmaker() as db:
+        conn = await db.get(OpenWAConnection, 1)
+        assert conn is not None
+        conn.base_url = base_url
+        db.add(conn)
+        await db.commit()
+
+
+async def test_reload_swaps_before_closing_old_gateways(db_sessionmaker):
+    box, factory = _box(), FakeFactory()
+    await _seed(db_sessionmaker, box)
+    registry = GatewayRegistry(box, factory)
+    await _reload(db_sessionmaker, registry)
+    old_a = cast(FakeGateway, registry.get("a"))
+    closing, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_close() -> None:
+        closing.set()
+        await release.wait()
+
+    old_a.aclose = AsyncMock(side_effect=slow_close)
+    await _change_base_url(db_sessionmaker, "http://elsewhere")
+    task = asyncio.create_task(_reload(db_sessionmaker, registry))
+    await asyncio.wait_for(closing.wait(), 5)
+    # While the old gateway is still closing, lookups already see the new one.
+    current = cast(FakeGateway, registry.get("a"))
+    assert current is not old_a
+    assert current.cfg[0] == "http://elsewhere"
+    assert sorted(registry.ids()) == ["a", "b"]
+    release.set()
+    await task
+    old_a.aclose.assert_awaited_once()
+
+
+async def test_reload_survives_a_failing_aclose(db_sessionmaker, caplog):
+    box, factory = _box(), FakeFactory()
+    await _seed(db_sessionmaker, box)
+    registry = GatewayRegistry(box, factory)
+    await _reload(db_sessionmaker, registry)
+    old_a = cast(FakeGateway, registry.get("a"))
+    old_b = cast(FakeGateway, registry.get("b"))
+    old_a.aclose = AsyncMock(side_effect=RuntimeError("socket gone"))
+    await _change_base_url(db_sessionmaker, "http://elsewhere")
+    result = await _reload(db_sessionmaker, registry)
+    assert result == {"a": None, "b": None}
+    old_b.aclose.assert_awaited_once()
+    for pk in ("a", "b"):
+        assert cast(FakeGateway, registry.get(pk)).cfg[0] == "http://elsewhere"
+    assert "api-key" not in caplog.text and "hook-secret" not in caplog.text
+
+
+async def test_factory_failure_is_isolated_per_session(db_sessionmaker):
+    box, factory = _box(), FakeFactory()
+    await _seed(db_sessionmaker, box)
+
+    def flaky(base_url: str, api_key: str, session_id: str) -> OpenWAGateway:
+        if session_id == "wa-b":
+            raise ValueError(f"bad config for key {api_key}")
+        return factory(base_url, api_key, session_id)
+
+    registry = GatewayRegistry(box, flaky)
+    result = await _reload(db_sessionmaker, registry)
+    assert registry.ids() == ["a"]
+    assert result["a"] is None
+    assert result["b"] and "api-key" not in result["b"]
+    assert set(registry.errors()) == {"b"}
+    assert "api-key" not in registry.errors()["b"]
