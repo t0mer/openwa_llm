@@ -111,6 +111,7 @@ async def test_legacy_env_is_seeded_and_each_session_started(main_module, boot, 
             main_module.WEBHOOK_EVENTS,
         )
         assert registry.webhook_secret == "webhook-secret-123456"
+        assert app.state.start_session_tasks is main_module.start_session_tasks
 
 
 async def test_registration_skipped_without_webhook_url(boot, mocks):

@@ -7,6 +7,16 @@ from .openwa import OpenWAGateway
 
 logger = logging.getLogger(__name__)
 
+# OpenWA events the bot subscribes each session's webhook to.
+WEBHOOK_EVENTS = [
+    "message.received",
+    "message.reaction",
+    "group.join",
+    "group.leave",
+    "group.update",
+    "group.join_request",
+]
+
 # 5s doubling to a 30s cap; sums to roughly five minutes.
 DEFAULT_DELAYS: tuple[float, ...] = (5, 10, 20, 30) + (30,) * 8
 

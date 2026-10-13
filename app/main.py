@@ -20,18 +20,8 @@ from openwa_settings.registry import GatewayRegistry
 from openwa_settings.store import load_connection, seed_from_env, webhook_url_for
 from whatsapp import OpenWAGateway
 from whatsapp.init_groups import gather_groups
-from whatsapp.webhook_registration import register_webhook_with_retry
+from whatsapp.webhook_registration import WEBHOOK_EVENTS, register_webhook_with_retry
 from voyageai.client_async import AsyncClient
-
-WEBHOOK_EVENTS = [
-    "message.received",
-    "message.reaction",
-    "group.join",
-    "group.leave",
-    "group.update",
-    "group.join_request",
-]
-
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +111,7 @@ async def lifespan(app: FastAPI):
     box = SecretBox(settings.settings_encryption_key)
     app.state.secret_box = box
     app.state.registry = GatewayRegistry(box)
+    app.state.start_session_tasks = start_session_tasks  # used by admin settings
     async with async_session() as db:
         await seed_from_env(db, settings, box)
         await app.state.registry.reload(db)

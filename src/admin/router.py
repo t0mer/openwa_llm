@@ -8,6 +8,7 @@ from . import (
     messages,
     optouts,
     schedules,
+    settings,
     stats,
 )
 from .auth import require_admin
@@ -26,6 +27,7 @@ def build_admin_router() -> APIRouter:
     protected.include_router(messages.router, prefix="/messages")
     protected.include_router(actions.router, prefix="/actions")
     protected.include_router(stats.router, prefix="/stats")
+    protected.include_router(settings.router, prefix="/settings")
     # later tasks: protected.include_router(<module>.router, prefix="/<name>")
     router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
     router.include_router(auth_routes.router)
