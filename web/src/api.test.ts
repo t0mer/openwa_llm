@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, api, setUnauthorizedHandler } from "./api";
+import { ApiError, api, setUnauthorizedHandler, withSession } from "./api";
 import { setSessionId } from "./session";
 
 function mockFetch(status: number, body: unknown = {}) {
@@ -123,6 +123,15 @@ describe("session scoping", () => {
       "/api/v1/admin/settings/sessions",
       "/api/v1/admin/settings/connection",
     ]);
+  });
+
+  it("excludes settings and auth by whole path segment", () => {
+    setSessionId("s1");
+    for (const path of ["/settings", "/settings/sessions", "/settings?x=1", "/auth/session", "/auth"]) {
+      expect(withSession(path)).toBe(path);
+    }
+    expect(withSession("/settingsfoo")).toBe("/settingsfoo?session_id=s1");
+    expect(withSession("/authors?x=1")).toBe("/authors?x=1&session_id=s1");
   });
 
   it("never sends an empty session_id", async () => {

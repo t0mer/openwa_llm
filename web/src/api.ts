@@ -20,10 +20,15 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn;
 }
 
+const GLOBAL_PREFIXES = ["/settings", "/auth"];
+/** `path` is `prefix` itself or below it (whole segments: "/settingsfoo" is not). */
+const under = (path: string, prefix: string) =>
+  path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
+
 /** Data calls carry the selected session; settings and auth calls are global. */
-function withSession(path: string): string {
+export function withSession(path: string): string {
   const id = getSessionId();
-  if (!id || path.startsWith("/settings") || path.startsWith("/auth")) return path;
+  if (!id || GLOBAL_PREFIXES.some((prefix) => under(path, prefix))) return path;
   return `${path}${path.includes("?") ? "&" : "?"}${new URLSearchParams({ session_id: id })}`;
 }
 

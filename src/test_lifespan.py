@@ -180,3 +180,86 @@ async def test_session_tasks_tolerate_a_session_removed_before_they_run(
     assert results == [None, None]
     gather.assert_not_awaited()
     register.assert_not_awaited()
+
+
+def _bare_app(registry, db_sessionmaker) -> FastAPI:
+    app = FastAPI()
+    app.state.registry = registry
+    app.state.async_session = db_sessionmaker
+    app.state.bg_tasks = []
+    return app
+
+
+class _OneSessionRegistry:
+    def __init__(self, secret: str | None = "s" * 16) -> None:
+        self.webhook_secret = secret
+
+    def get(self, pk: str):
+        return AsyncMock(name=f"gw-{pk}")
+
+
+async def _store_connection(db_sessionmaker, webhook_url: str) -> None:
+    box = SecretBox(KEY)
+    async with db_sessionmaker() as db:
+        db.add(
+            OpenWAConnection(
+                id=1,
+                base_url="http://owa:2785",
+                api_key_enc=box.encrypt("k"),
+                webhook_secret_enc=box.encrypt("s" * 16),
+                webhook_url=webhook_url,
+            )
+        )
+        await db.commit()
+
+
+async def _settle(tasks) -> None:
+    await asyncio.gather(*tasks, return_exceptions=True)
+    await asyncio.sleep(0)  # let done callbacks run
+
+
+async def test_finished_session_tasks_are_dropped(main_module, mocks, db_sessionmaker):
+    await _store_connection(db_sessionmaker, "http://bot/webhook")
+    app = _bare_app(_OneSessionRegistry(), db_sessionmaker)
+    for _ in range(3):  # e.g. three settings saves
+        main_module.start_session_tasks(app, "a")
+    tasks = list(app.state.bg_tasks)
+    assert len(tasks) == 6
+    await _settle(tasks)
+    assert app.state.bg_tasks == []
+
+
+async def test_failed_session_task_is_logged_without_its_message(
+    main_module, mocks, db_sessionmaker, caplog
+):
+    gather, _ = mocks
+    gather.side_effect = RuntimeError("secret-bearing upstream text")
+    await _store_connection(db_sessionmaker, "")
+    app = _bare_app(_OneSessionRegistry(), db_sessionmaker)
+    main_module.start_session_tasks(app, "a")
+    await _settle(list(app.state.bg_tasks))
+    assert app.state.bg_tasks == []
+    failures = [r for r in caplog.records if "failed" in r.getMessage()]
+    assert any("RuntimeError" in r.getMessage() for r in failures)
+    assert "secret-bearing" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("webhook_url", "secret", "reason"),
+    [
+        ("", "s" * 16, "No webhook URL configured"),
+        ("http://bot/webhook", None, "No webhook secret available"),
+    ],
+)
+async def test_registration_skip_reason_is_accurate(
+    main_module, mocks, db_sessionmaker, caplog, webhook_url, secret, reason
+):
+    import logging
+
+    _, register = mocks
+    await _store_connection(db_sessionmaker, webhook_url)
+    app = _bare_app(_OneSessionRegistry(secret), db_sessionmaker)
+    caplog.set_level(logging.INFO)
+    await main_module._register_webhook(app, "a")
+    register.assert_not_awaited()
+    assert reason in caplog.text

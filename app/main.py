@@ -52,8 +52,11 @@ async def _register_webhook(app: FastAPI, pk: str) -> None:
     async with app.state.async_session() as db:
         conn = await load_connection(db)
     url = webhook_url_for(conn, pk) if conn is not None else ""
-    if not url or registry.webhook_secret is None:
+    if not url:
         logger.info("No webhook URL configured; not registering session %s", pk)
+        return
+    if not registry.webhook_secret:
+        logger.info("No webhook secret available; not registering session %s", pk)
         return
     if (gateway := _active_gateway(app, pk)) is None:
         return
@@ -62,15 +65,29 @@ async def _register_webhook(app: FastAPI, pk: str) -> None:
     )
 
 
+def _task_done(app: FastAPI, task: asyncio.Task) -> None:
+    """Forget a finished session task and log its failure."""
+    try:
+        app.state.bg_tasks.remove(task)
+    except ValueError:
+        pass
+    if task.cancelled() or (exc := task.exception()) is None:
+        return
+    # Only the type: the message can carry OpenWA's response or request data.
+    logger.error("Background task %s failed: %s", task.get_name(), type(exc).__name__)
+
+
 def start_session_tasks(app: FastAPI, pk: str) -> None:
     """Sync groups and register the per-session webhook for one active session."""
-    # Keep references so startup tasks are not garbage-collected mid-flight.
-    app.state.bg_tasks.extend(
-        [
-            asyncio.create_task(_sync_groups(app, pk)),
-            asyncio.create_task(_register_webhook(app, pk)),
-        ]
-    )
+    # Keep references so tasks are not garbage-collected mid-flight; each one
+    # removes itself when done, so repeated settings saves do not pile up.
+    for name, coro in (
+        ("sync-groups", _sync_groups(app, pk)),
+        ("register-webhook", _register_webhook(app, pk)),
+    ):
+        task = asyncio.create_task(coro, name=f"{name}:{pk}")
+        task.add_done_callback(lambda t: _task_done(app, t))
+        app.state.bg_tasks.append(task)
 
 
 @asynccontextmanager
@@ -108,7 +125,7 @@ async def lifespan(app: FastAPI):
     app.state.async_session = async_session
     app.state.bg_tasks = []
 
-    box = SecretBox(settings.settings_encryption_key)
+    box = SecretBox(settings.settings_encryption_key.get_secret_value())
     app.state.secret_box = box
     app.state.registry = GatewayRegistry(box)
     app.state.start_session_tasks = start_session_tasks  # used by admin settings

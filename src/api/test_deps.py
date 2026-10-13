@@ -6,7 +6,12 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from api.deps import build_handler, get_session_id, get_whatsapp
+from api.deps import (
+    build_handler,
+    get_optional_whatsapp,
+    get_session_id,
+    get_whatsapp,
+)
 from handler import MessageHandler
 from whatsapp import WhatsAppGateway
 
@@ -74,3 +79,31 @@ def test_build_handler_binds_the_sessions_gateway():
         "emb",
     )
     assert handler.session_id == "b"
+
+
+class VanishingRegistry(FakeRegistry):
+    """Lists a session that a concurrent reload removes before `get`."""
+
+    def get(self, pk: str):
+        raise KeyError(pk)
+
+
+def test_session_removed_between_lookup_and_get_is_404():
+    app = FastAPI()
+    app.state.registry = VanishingRegistry(["a"])
+
+    @app.get("/gw")
+    def gw(whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)]) -> str:
+        return str(whatsapp)
+
+    @app.get("/optional")
+    def optional(
+        whatsapp: Annotated[WhatsAppGateway | None, Depends(get_optional_whatsapp)],
+    ) -> str:
+        return str(whatsapp)
+
+    client = TestClient(app, raise_server_exceptions=False)
+    for path in ("/gw", "/optional"):
+        resp = client.get(path)
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "session not found"}

@@ -50,7 +50,14 @@ def get_whatsapp(
     registry: Annotated[GatewayRegistry, Depends(get_registry)],
     session_id: Annotated[str, Depends(get_session_id)],
 ) -> WhatsAppGateway:
-    return registry.get(session_id)
+    return _gateway(registry, session_id)
+
+
+def _gateway(registry: GatewayRegistry, session_id: str) -> WhatsAppGateway:
+    try:
+        return registry.get(session_id)
+    except KeyError:  # removed by a reload after the session was resolved
+        raise HTTPException(status_code=404, detail="session not found")
 
 
 def get_optional_session_id(
@@ -67,7 +74,7 @@ def get_optional_whatsapp(
     registry: Annotated[GatewayRegistry, Depends(get_registry)],
     session_id: Annotated[str | None, Depends(get_optional_session_id)],
 ) -> WhatsAppGateway | None:
-    return registry.get(session_id) if session_id is not None else None
+    return _gateway(registry, session_id) if session_id is not None else None
 
 
 def get_requested_session_ids(

@@ -156,12 +156,46 @@ describe("Settings page: connection", () => {
     );
   });
 
-  it("never renders a secret value it was given", async () => {
+  it("sends secrets only in the intended payloads and clears them after saving", async () => {
+    const KEY = "supersecret-api-key";
+    const SECRET = "supersecret-webhook-123";
+    vi.mocked(api.getConnection)
+      .mockResolvedValueOnce(CONNECTION)
+      .mockResolvedValue({ ...CONNECTION, webhook_secret_set: true });
     render(<Settings />);
-    await userEvent.type(await screen.findByLabelText("API key"), "supersecret");
+    await userEvent.type(await screen.findByLabelText("API key"), KEY);
+    await userEvent.type(screen.getByLabelText("Webhook secret"), SECRET);
+    await userEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(api.testConnection).toHaveBeenCalledWith({ base_url: "http://openwa:2785", api_key: KEY }));
     await userEvent.click(screen.getByRole("button", { name: "Save connection" }));
-    await waitFor(() => expect(api.putConnection).toHaveBeenCalled());
-    expect(document.body.textContent).not.toContain("supersecret");
+    await waitFor(() =>
+      expect(api.putConnection).toHaveBeenCalledWith({
+        base_url: "http://openwa:2785",
+        webhook_url: "http://bot:8000/webhook",
+        api_key: KEY,
+        webhook_secret: SECRET,
+      }),
+    );
+
+    // The inputs are emptied and show the stored hint instead of a value.
+    const key = screen.getByLabelText("API key");
+    const secret = screen.getByLabelText("Webhook secret");
+    await waitFor(() => expect(secret).toHaveAttribute("placeholder", "•••• stored"));
+    expect(key).toHaveValue("");
+    expect(secret).toHaveValue("");
+    expect(key).toHaveAttribute("placeholder", "•••• stored");
+    for (const input of document.querySelectorAll("input")) {
+      expect(input.value).not.toContain("supersecret");
+    }
+    expect(document.body.innerHTML).not.toContain("supersecret");
+
+    // No other API call ever carried a secret.
+    expect(api.testConnection).toHaveBeenCalledTimes(1);
+    expect(api.putConnection).toHaveBeenCalledTimes(1);
+    for (const [name, fn] of Object.entries(api)) {
+      if (name === "putConnection" || name === "testConnection") continue;
+      expect(JSON.stringify(vi.mocked(fn).mock.calls)).not.toContain("supersecret");
+    }
   });
 });
 

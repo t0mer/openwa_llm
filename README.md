@@ -144,7 +144,7 @@ Earlier versions read the OpenWA settings from the env file on every start. They
 1. **Add `SETTINGS_ENCRYPTION_KEY`** to your env file before upgrading (the web server does not start without it, and compose stops with an error). Generate it as shown in [Settings and sessions](#settings-and-sessions) and back it up.
 2. **Keep the old `OPENWA_*` / `WHATSAPP_HOST` values in place for the first start.** The database migration assigns all existing groups and messages to one session created from `OPENWA_SESSION_ID` (it is called `default`; rename it in Settings). On startup the connection is imported from `WHATSAPP_HOST`, `OPENWA_API_KEY`, `OPENWA_WEBHOOK_SECRET` and `OPENWA_WEBHOOK_URL`. If `OPENWA_SESSION_ID` is not set but data exists, the migration creates a disabled `default` session: set its OpenWA session id in Settings and enable it.
 3. **Check Admin > Settings** after the first start. From now on, edit the connection there; later changes to those env vars are ignored (except `OPENWA_API_KEY`, which compose still passes to the OpenWA container as `API_MASTER_KEY`).
-4. **Delete the old webhook in OpenWA (optional).** Each session now registers its own URL, `<webhook url>/<session id>`, for example `http://web-server:8000/webhook/<session id>`. A webhook registered earlier at the bare `/webhook` URL keeps being accepted while exactly one session is enabled (with more than one it gets `404`), but OpenWA then delivers every event to both URLs. Both resolve to the same session, so a delivery whose `X-OpenWA-Idempotency-Key` was already processed is skipped. Delete the old registration in OpenWA (its webhooks are listed by `GET /api/sessions/<id>/webhooks`, or use the OpenWA dashboard) to stop the double delivery.
+4. **Delete the old webhook in OpenWA (optional).** Each session now registers its own URL, `<webhook url>/<session id>`, for example `http://web-server:8000/webhook/<session id>`. A webhook registered earlier at the bare `/webhook` URL keeps being accepted while exactly one session is enabled (with more than one it gets `404`), but OpenWA then delivers every event to both URLs. Both resolve to the same session, and a delivery whose `X-OpenWA-Idempotency-Key` was already processed is skipped, so the duplicate is dropped only if OpenWA sends the same key to both webhooks (not verified). Delete the old registration in OpenWA (its webhooks are listed by `GET /api/sessions/<id>/webhooks`, or use the OpenWA dashboard) so events are not processed twice.
 
 #### Upgrading from the go-whatsapp-web-multidevice (gowa) setup
 
@@ -324,7 +324,7 @@ Fields: `weekdays` (non-empty list of integers, 0 = Sunday to 6 = Saturday), the
 - The **session switcher** at the top of each admin page picks the session that Dashboard, Groups and Messages show. The choice is remembered in the browser. Disabled sessions cannot be selected; with no enabled session the switcher links to Settings.
 - **Bot actions**, the **cron endpoints** (`/summarize_and_send_to_groups`, `/load_new_kbtopics`) and the **scheduler** run for every active session, each with its own OpenWA session; one failing session does not stop the others.
 
-![Session switcher with the second session selected on Groups](assets/screenshots/admin-session-switcher-light.png)
+![Session switcher on Groups with the "Family phone" session selected](assets/screenshots/admin-session-switcher-light.png)
 
 **The encryption key.** `SETTINGS_ENCRYPTION_KEY` is required and must be base64 of exactly 32 random bytes (AES-256-GCM). Generate it once:
 
@@ -417,7 +417,7 @@ The OpenWA connection and the sessions (more in [Settings and sessions](#setting
 ![Settings](assets/screenshots/admin-settings-light.png)
 ![Settings (dark)](assets/screenshots/admin-settings-dark.png)
 
-The session switcher above every page, here with the second session selected:
+The session switcher above every page, here with the "Family phone" session selected:
 
 ![Session switcher](assets/screenshots/admin-session-switcher-light.png)
 

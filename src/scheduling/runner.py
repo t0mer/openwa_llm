@@ -217,14 +217,18 @@ async def run_due(
 
 async def scheduler_loop(app: Any, interval: float = 60) -> None:
     """Tick forever; a failing tick is logged and never ends the loop."""
+    idle = False  # the no-session warning is logged once per idle stretch
     while True:
         try:
             registry = app.state.registry
             if not registry.ids():
-                logger.warning(
-                    "Skipping scheduler tick: no active OpenWA session configured"
+                logger.log(
+                    logging.DEBUG if idle else logging.WARNING,
+                    "Skipping scheduler tick: no active OpenWA session configured",
                 )
+                idle = True
             else:
+                idle = False
                 await run_due(app.state.settings, app.state.async_session, registry)
         except asyncio.CancelledError:
             raise

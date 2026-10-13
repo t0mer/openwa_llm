@@ -111,3 +111,21 @@ def test_settings_encryption_key_must_be_32_bytes_base64(key):
 def test_short_webhook_secret_still_rejected_when_set():
     with pytest.raises(ValidationError):
         Settings.model_validate({**REQUIRED, "openwa_webhook_secret": "short"})
+
+
+@pytest.mark.parametrize("key", ["c2hvcnQta2V5LXZhbHVl", "not-base64-key-value!"])
+def test_bad_encryption_key_is_never_echoed_in_the_error(key):
+    with pytest.raises(ValidationError) as exc:
+        Settings.model_validate({**REQUIRED, "settings_encryption_key": key})
+    assert "settings_encryption_key" in str(exc.value)
+    assert key not in str(exc.value)
+    assert key not in repr(exc.value)
+
+
+def test_encryption_key_is_hidden_from_repr():
+    s = Settings.model_validate(REQUIRED)
+    assert REQUIRED["settings_encryption_key"] not in repr(s)
+    assert (
+        s.settings_encryption_key.get_secret_value()
+        == REQUIRED["settings_encryption_key"]
+    )

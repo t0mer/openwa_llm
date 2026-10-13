@@ -108,3 +108,69 @@ async def test_loop_passes_the_registry(monkeypatch):
     await asyncio.wait_for(seen.wait(), 2)
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+
+
+async def _run_ticks(app, ticks: int) -> None:
+    """Run the loop until it has checked for sessions `ticks` times, then cancel."""
+    registry = app.state.registry
+    real_ids = registry.ids
+    calls = 0
+
+    def counting_ids():
+        nonlocal calls
+        calls += 1
+        return real_ids()
+
+    registry.ids = counting_ids
+    task = asyncio.create_task(runner.scheduler_loop(app, interval=0))
+    try:
+        for _ in range(1000):
+            if calls >= ticks:
+                break
+            await asyncio.sleep(0)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert calls >= ticks
+
+
+async def test_no_session_warning_is_logged_once_then_debug(monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr(runner, "run_due", AsyncMock())
+    app = _app(ids=())
+    caplog.set_level(logging.DEBUG, logger=runner.logger.name)
+    await _run_ticks(app, 3)
+    skips = [r for r in caplog.records if "no active OpenWA session" in r.message]
+    assert [r.levelno for r in skips[:3]] == [
+        logging.WARNING,
+        logging.DEBUG,
+        logging.DEBUG,
+    ]
+
+
+async def test_no_session_warning_repeats_after_a_session_was_active(
+    monkeypatch, caplog
+):
+    import logging
+
+    monkeypatch.setattr(runner, "run_due", AsyncMock())
+
+    class Flapping:
+        """No session, then one, then none again."""
+
+        states = iter([(), ("s1",), (), ()])
+
+        def ids(self):
+            return list(next(self.states, ()))
+
+    app = _app()
+    app.state.registry = Flapping()
+    caplog.set_level(logging.DEBUG, logger=runner.logger.name)
+    await _run_ticks(app, 4)
+    skips = [r for r in caplog.records if "no active OpenWA session" in r.message]
+    assert [r.levelno for r in skips[:3]] == [
+        logging.WARNING,
+        logging.WARNING,
+        logging.DEBUG,
+    ]

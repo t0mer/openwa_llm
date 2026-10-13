@@ -2,7 +2,7 @@ import base64
 from os import environ
 from typing import Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from zoneinfo import available_timezones
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     openwa_webhook_url: str = ""  # if set, registered with OpenWA at startup
 
     # Base64 of 32 random bytes; encrypts secrets stored in the database
-    settings_encryption_key: str
+    settings_encryption_key: SecretStr
 
     anthropic_api_key: str
 
@@ -136,9 +136,9 @@ class Settings(BaseSettings):
 
     @field_validator("settings_encryption_key")
     @classmethod
-    def validate_settings_encryption_key(cls, v: str) -> str:
+    def validate_settings_encryption_key(cls, v: SecretStr) -> SecretStr:
         try:
-            ok = len(base64.b64decode(v, validate=True)) == 32
+            ok = len(base64.b64decode(v.get_secret_value(), validate=True)) == 32
         except ValueError:
             ok = False
         if not ok:
@@ -163,6 +163,9 @@ class Settings(BaseSettings):
         arbitrary_types_allowed=True,
         case_sensitive=False,
         extra="ignore",
+        # Validation errors must never print a secret (the encryption key, API
+        # keys) as their input value at startup.
+        hide_input_in_errors=True,
     )
 
     @model_validator(mode="after")
