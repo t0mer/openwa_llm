@@ -220,3 +220,70 @@ async def test_factory_failure_is_isolated_per_session(db_sessionmaker):
     assert result["b"] and "api-key" not in result["b"]
     assert set(registry.errors()) == {"b"}
     assert "api-key" not in registry.errors()["b"]
+
+
+async def test_overlapping_reloads_apply_in_start_order(db_sessionmaker, monkeypatch):
+    """A slow, older reload must not overwrite a newer one's snapshot.
+
+    Request 1 disables A and reads ["b"] slowly; request 2 then disables B and
+    reads [] quickly. The DB's final state has no enabled session, so the
+    registry must end empty, not with the stale ["b"].
+    """
+    import openwa_settings.registry as registry_mod
+
+    box, factory = _box(), FakeFactory()
+    await _seed(db_sessionmaker, box)
+    registry = GatewayRegistry(box, factory)
+    await _reload(db_sessionmaker, registry)
+    first_reading, release_first = asyncio.Event(), asyncio.Event()
+    views = [
+        [OpenWASession(id="b", label="B", openwa_session_id="wa-b")],
+        [],
+    ]
+    calls = 0
+
+    async def fake_list_sessions(db, *, enabled_only=False):
+        nonlocal calls
+        view = views[calls]
+        calls += 1
+        if calls == 1:
+            first_reading.set()
+            await release_first.wait()
+        return view
+
+    monkeypatch.setattr(registry_mod, "list_sessions", fake_list_sessions)
+    first = asyncio.create_task(_reload(db_sessionmaker, registry))
+    await asyncio.wait_for(first_reading.wait(), 5)
+    second = asyncio.create_task(_reload(db_sessionmaker, registry))
+    # Let the second reload run as far as it can (to completion if unserialized).
+    await asyncio.wait({second}, timeout=1)
+    release_first.set()
+    await asyncio.wait_for(asyncio.gather(first, second), 5)
+    assert registry.ids() == []
+
+
+async def test_aclose_waits_for_a_running_reload(db_sessionmaker, monkeypatch):
+    import openwa_settings.registry as registry_mod
+
+    box, factory = _box(), FakeFactory()
+    await _seed(db_sessionmaker, box)
+    registry = GatewayRegistry(box, factory)
+    reading, release = asyncio.Event(), asyncio.Event()
+    real_list_sessions = registry_mod.list_sessions
+
+    async def slow_list_sessions(db, *, enabled_only=False):
+        reading.set()
+        await release.wait()
+        return await real_list_sessions(db, enabled_only=enabled_only)
+
+    monkeypatch.setattr(registry_mod, "list_sessions", slow_list_sessions)
+    reload_task = asyncio.create_task(_reload(db_sessionmaker, registry))
+    await asyncio.wait_for(reading.wait(), 5)
+    close_task = asyncio.create_task(registry.aclose())
+    await asyncio.wait({close_task}, timeout=1)
+    release.set()
+    await asyncio.wait_for(asyncio.gather(reload_task, close_task), 5)
+    # aclose ran after the reload, so nothing it built is left open.
+    assert registry.ids() == []
+    for gw in factory.built:
+        gw.aclose.assert_awaited_once()

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Callable
 
@@ -22,6 +23,10 @@ class GatewayRegistry:
         self._cfg: dict[str, tuple[str, str, str]] = {}
         self._errors: dict[str, str] = {}
         self.webhook_secret: str | None = None
+        # Serializes reloads (and aclose): each reads the DB across awaits, so
+        # unserialized, an older reload finishing last would win with a stale
+        # snapshot. Callers must not hold it while calling reload().
+        self._lock = asyncio.Lock()
 
     async def reload(self, db: AsyncSession) -> dict[str, str | None]:
         """Sync gateways with the DB; returns session pk -> error message or None.
@@ -30,7 +35,12 @@ class GatewayRegistry:
         between, so `get()` never fails or returns a closed client for a session
         that stays active. Replaced gateways are closed afterwards, best-effort.
         One session's bad config never affects the others or raises.
+        Concurrent reloads run one after another, in call order.
         """
+        async with self._lock:
+            return await self._reload_locked(db)
+
+    async def _reload_locked(self, db: AsyncSession) -> dict[str, str | None]:
         conn = await load_connection(db)
         result: dict[str, str | None] = {}
         errors: dict[str, str] = {}
@@ -86,10 +96,11 @@ class GatewayRegistry:
         return dict(self._errors)
 
     async def aclose(self) -> None:
-        gateways = list(self._gateways.values())
-        self._gateways, self._cfg = {}, {}
-        for gw in gateways:
-            await _close_quietly(gw)
+        async with self._lock:
+            gateways = list(self._gateways.values())
+            self._gateways, self._cfg = {}, {}
+            for gw in gateways:
+                await _close_quietly(gw)
 
 
 def _redact(message: str, secret: str | None) -> str:
