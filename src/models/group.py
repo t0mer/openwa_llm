@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 class BaseGroup(SQLModel):
     group_jid: str = Field(primary_key=True, max_length=255)
+    session_id: str = Field(foreign_key="openwa_session.id", index=True, max_length=64)
     group_name: Optional[str] = Field(default=None, max_length=255)
     display_name: Optional[str] = Field(default=None, max_length=255)
     group_topic: Optional[str] = Field(default=None)

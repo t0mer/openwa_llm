@@ -5,11 +5,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from models import Group, GroupSummarySchedule
+from test_utils.openwa_session import TEST_SESSION_ID
+
+pytestmark = pytest.mark.usefixtures("session_row")
 
 
 async def test_round_trip_with_weekdays_array_and_defaults(db_sessionmaker):
     async with db_sessionmaker() as session:
-        session.add(Group(group_jid="1@g.us", managed=True))
+        session.add(Group(session_id=TEST_SESSION_ID, group_jid="1@g.us", managed=True))
         await session.flush()
         schedule = GroupSummarySchedule(
             group_jid="1@g.us", weekdays=[0, 3, 6], hour=0, minute=5
@@ -34,7 +37,7 @@ async def test_round_trip_with_weekdays_array_and_defaults(db_sessionmaker):
 
 async def test_ids_are_distinct_per_schedule(db_sessionmaker):
     async with db_sessionmaker() as session:
-        session.add(Group(group_jid="1@g.us"))
+        session.add(Group(session_id=TEST_SESSION_ID, group_jid="1@g.us"))
         await session.flush()
         for _ in range(2):
             session.add(
@@ -56,7 +59,7 @@ async def test_ids_are_distinct_per_schedule(db_sessionmaker):
 )
 async def test_valid_ranges_insert(db_sessionmaker, weekdays, hour, minute):
     async with db_sessionmaker() as session:
-        session.add(Group(group_jid="1@g.us"))
+        session.add(Group(session_id=TEST_SESSION_ID, group_jid="1@g.us"))
         await session.flush()
         session.add(
             GroupSummarySchedule(
@@ -83,7 +86,7 @@ async def test_out_of_range_values_are_rejected_by_db(
     db_sessionmaker, weekdays, hour, minute
 ):
     async with db_sessionmaker() as session:
-        session.add(Group(group_jid="1@g.us"))
+        session.add(Group(session_id=TEST_SESSION_ID, group_jid="1@g.us"))
         await session.flush()
         session.add(
             GroupSummarySchedule(
@@ -97,7 +100,7 @@ async def test_out_of_range_values_are_rejected_by_db(
 async def test_last_run_fields_round_trip(db_sessionmaker):
     ran = datetime(2026, 10, 9, 12, 0, tzinfo=timezone.utc)
     async with db_sessionmaker() as session:
-        session.add(Group(group_jid="1@g.us"))
+        session.add(Group(session_id=TEST_SESSION_ID, group_jid="1@g.us"))
         await session.flush()
         schedule = GroupSummarySchedule(
             group_jid="1@g.us",
@@ -128,8 +131,8 @@ async def test_last_run_fields_round_trip(db_sessionmaker):
 
 async def test_deleting_group_cascades_to_schedules(db_sessionmaker):
     async with db_sessionmaker() as session:
-        session.add(Group(group_jid="1@g.us"))
-        session.add(Group(group_jid="2@g.us"))
+        session.add(Group(session_id=TEST_SESSION_ID, group_jid="1@g.us"))
+        session.add(Group(session_id=TEST_SESSION_ID, group_jid="2@g.us"))
         await session.flush()
         session.add(
             GroupSummarySchedule(group_jid="1@g.us", weekdays=[1], hour=8, minute=0)

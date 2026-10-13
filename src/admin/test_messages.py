@@ -37,6 +37,7 @@ def ctx():
 
 def _msg(i: int) -> Message:
     m = Message(
+        session_id="s1",
         message_id=f"m{i}",
         chat_jid="1203@g.us",
         sender_jid="9725@s.whatsapp.net",

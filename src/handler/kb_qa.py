@@ -19,12 +19,13 @@ class KBQAHandler(BaseHandler):
         whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
+        session_id: str,
     ):
         self.settings = settings
         self.ask_knowledge_base = KnowledgeBaseAnswers(
-            session, whatsapp, embedding_client, settings
+            session, whatsapp, embedding_client, settings, session_id
         )
-        super().__init__(session, whatsapp, embedding_client)
+        super().__init__(session, whatsapp, embedding_client, session_id)
 
     async def __call__(self, message: Message):
         """Handle the /kb_qa <group_name> <query> command for cross-group KB search."""
@@ -153,6 +154,7 @@ class KBQAHandler(BaseHandler):
             chat_jid=message.chat_jid,  # Reply to original chat
             sender_jid=message.sender_jid,
             group_jid=target_group.group_jid,  # But search in target group
+            session_id=message.session_id,
         )
 
         # Run the knowledge base search

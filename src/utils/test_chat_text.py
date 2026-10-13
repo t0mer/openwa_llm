@@ -7,6 +7,7 @@ from utils.chat_text import chat2text
 def test_chat2text_no_opt_out():
     messages = [
         Message(
+            session_id="s1",
             message_id="1",
             chat_jid="123@g.us",
             sender_jid="123456789@s.whatsapp.net",
@@ -21,6 +22,7 @@ def test_chat2text_no_opt_out():
 def test_chat2text_with_opt_out_name():
     messages = [
         Message(
+            session_id="s1",
             message_id="1",
             chat_jid="123@g.us",
             sender_jid="123456789@s.whatsapp.net",
@@ -36,6 +38,7 @@ def test_chat2text_with_opt_out_name():
 def test_chat2text_with_opt_out_no_name():
     messages = [
         Message(
+            session_id="s1",
             message_id="1",
             chat_jid="123@g.us",
             sender_jid="123456789@s.whatsapp.net",
@@ -51,6 +54,7 @@ def test_chat2text_with_opt_out_no_name():
 def test_chat2text_mixed():
     messages = [
         Message(
+            session_id="s1",
             message_id="1",
             chat_jid="123@g.us",
             sender_jid="123456789@s.whatsapp.net",
@@ -58,6 +62,7 @@ def test_chat2text_mixed():
             timestamp=datetime(2023, 1, 1, 12, 0, 0),
         ),
         Message(
+            session_id="s1",
             message_id="2",
             chat_jid="123@g.us",
             sender_jid="987654321@s.whatsapp.net",

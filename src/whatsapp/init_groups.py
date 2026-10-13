@@ -11,7 +11,9 @@ from .gateway import WhatsAppGateway
 SYNC_OWNED_COLUMNS = ("group_name", "group_topic", "owner_jid")
 
 
-async def gather_groups(session: AsyncSession, client: WhatsAppGateway) -> None:
+async def gather_groups(
+    session: AsyncSession, client: WhatsAppGateway, session_id: str
+) -> None:
     for g in await client.list_groups():
         owner_usr = g.owner_jid or None
         if owner_usr and (await session.get(Sender, owner_usr)) is None:
@@ -24,6 +26,7 @@ async def gather_groups(session: AsyncSession, client: WhatsAppGateway) -> None:
                 group_name=g.name,
                 group_topic=g.topic,
                 owner_jid=owner_usr,
+                session_id=session_id,
             ).model_dump()
         )
         stmt = insert(Group).values(

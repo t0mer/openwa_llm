@@ -12,6 +12,9 @@ from models import Group, GroupSummarySchedule
 from scheduling import runner
 from scheduling.runner import claim, run_due
 from summarize_and_send_to_groups import GroupSummaryResult
+from test_utils.openwa_session import TEST_SESSION_ID
+
+pytestmark = pytest.mark.usefixtures("session_row")
 
 TZ = ZoneInfo("Asia/Jerusalem")
 SETTINGS = cast(Settings, SimpleNamespace(timezone="Asia/Jerusalem"))
@@ -28,7 +31,14 @@ async def seed(
 ):
     async with sm() as s:
         if await s.get(Group, "1@g.us") is None:
-            s.add(Group(group_jid="1@g.us", group_name="G", managed=managed))
+            s.add(
+                Group(
+                    session_id=TEST_SESSION_ID,
+                    group_jid="1@g.us",
+                    group_name="G",
+                    managed=managed,
+                )
+            )
             await s.flush()
         sched = GroupSummarySchedule(
             group_jid="1@g.us",

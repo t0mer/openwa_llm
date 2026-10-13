@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api import webhook as webhook_api
-from api.deps import get_db_async_session, get_handler, get_whatsapp
+from api.deps import get_db_async_session, get_handler, get_session_id, get_whatsapp
 from config import get_settings
 from whatsapp import InboundMessage, InboundReaction
 
@@ -28,6 +28,7 @@ def ctx(monkeypatch: pytest.MonkeyPatch):
     app.dependency_overrides[get_handler] = lambda: handler
     app.dependency_overrides[get_db_async_session] = lambda: session
     app.dependency_overrides[get_whatsapp] = lambda: whatsapp
+    app.dependency_overrides[get_session_id] = lambda: "s1"
     app.dependency_overrides[get_settings] = lambda: Mock(openwa_webhook_secret=SECRET)
     return TestClient(app), handler, gather, session, whatsapp
 
@@ -85,7 +86,7 @@ def test_group_events_resync_groups(ctx, name):
     client, handler, gather, session, whatsapp = ctx
     assert _post(client, {"event": name, "data": {}}).status_code == 200
     handler.assert_not_awaited()
-    gather.assert_awaited_once_with(session, whatsapp)
+    gather.assert_awaited_once_with(session, whatsapp, "s1")
 
 
 def test_other_events_are_acknowledged_and_ignored(ctx):
@@ -194,6 +195,16 @@ async def test_concurrent_duplicate_delivery_is_processed_once(ctx):
 def test_broadcast_and_newsletter_messages_are_acknowledged_and_ignored(ctx, chat):
     client, handler, gather, *_ = ctx
     payload = {**MESSAGE, "data": {**MESSAGE["data"], "chatId": chat, "from": chat}}
+    assert _post(client, payload).status_code == 200
+    handler.assert_not_awaited()
+    gather.assert_not_awaited()
+
+
+@pytest.mark.parametrize("payload", [MESSAGE, {"event": "group.join", "data": {}}])
+def test_events_are_skipped_without_an_openwa_session(ctx, payload):
+    client, handler, gather, *_ = ctx
+    client.app.dependency_overrides[get_session_id] = lambda: None
+    client.app.dependency_overrides[get_handler] = lambda: None
     assert _post(client, payload).status_code == 200
     handler.assert_not_awaited()
     gather.assert_not_awaited()

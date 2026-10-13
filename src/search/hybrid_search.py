@@ -119,6 +119,7 @@ async def keyword_search(
             sender_jid=row.sender_jid,
             group_jid=row.group_jid,
             reply_to_id=row.reply_to_id,
+            session_id=row.session_id,
         )
         messages.append((msg, row.rank))
 

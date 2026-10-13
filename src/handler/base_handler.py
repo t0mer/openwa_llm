@@ -26,10 +26,12 @@ class BaseHandler:
         session: AsyncSession,
         whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
+        session_id: str,
     ):
         self.session = session
         self.whatsapp = whatsapp
         self.embedding_client = embedding_client
+        self.session_id = session_id
 
     async def store_message(
         self,
@@ -44,7 +46,7 @@ class BaseHandler:
         """
         if isinstance(message, InboundMessage):
             sender_pushname = message.sender_name
-            message = Message.from_inbound(message)
+            message = Message.from_inbound(message, self.session_id)
 
         if isinstance(message, BaseMessage):
             message = Message(**message.model_dump())
@@ -70,7 +72,11 @@ class BaseHandler:
             if message.group_jid:
                 group = await self.session.get(Group, message.group_jid)
                 if group is None:
-                    group = Group(**BaseGroup(group_jid=message.group_jid).model_dump())
+                    group = Group(
+                        **BaseGroup(
+                            group_jid=message.group_jid, session_id=self.session_id
+                        ).model_dump()
+                    )
                     await self.upsert(group)
                     await self.session.flush()
 
@@ -155,6 +161,7 @@ class BaseHandler:
             sender_jid=str(my_number),
             chat_jid=to_jid,
             reply_to_id=in_reply_to,
+            session_id=self.session_id,
         )
         stored_message = await self.store_message(Message(**new_message.model_dump()))
         assert stored_message, "Failed to store message"

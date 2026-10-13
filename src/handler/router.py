@@ -50,12 +50,13 @@ class Router(BaseHandler):
         whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
+        session_id: str,
     ):
         self.settings = settings
         self.ask_knowledge_base = KnowledgeBaseAnswers(
-            session, whatsapp, embedding_client, settings
+            session, whatsapp, embedding_client, settings, session_id
         )
-        super().__init__(session, whatsapp, embedding_client)
+        super().__init__(session, whatsapp, embedding_client, session_id)
 
     async def __call__(self, message: Message):
         if not message.text:

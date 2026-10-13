@@ -10,6 +10,7 @@ ASKER = "227912345678901@lid"
 
 def _message(text="q"):
     return Message(
+        session_id="s1",
         message_id="m1",
         text=text,
         chat_jid="chat@g.us",
@@ -22,7 +23,7 @@ async def test_send_message_passes_mentions_only_when_present():
     whatsapp = AsyncMock()
     whatsapp.send_text = AsyncMock(return_value="out")
     whatsapp.get_my_jid = AsyncMock(return_value="bot@s.whatsapp.net")
-    handler = BaseHandler(Mock(), whatsapp, Mock())
+    handler = BaseHandler(Mock(), whatsapp, Mock(), "s1")
     handler.store_message = AsyncMock(return_value=Mock())
 
     await handler.send_message("chat@g.us", "hi")
@@ -40,7 +41,7 @@ def _kwargs(send):
 async def _run_kb(output: str, opt_out: dict[str, str]):
     session = AsyncMock()
     session.exec.return_value = SimpleNamespace(all=lambda: [])
-    kb = KnowledgeBaseAnswers(session, AsyncMock(), AsyncMock(), Mock())
+    kb = KnowledgeBaseAnswers(session, AsyncMock(), AsyncMock(), Mock(), "s1")
     kb.send_message = AsyncMock()
     kb.rephrasing_agent = AsyncMock(return_value=SimpleNamespace(output="r"))
     kb.generation_agent = AsyncMock(return_value=SimpleNamespace(output=output))
@@ -91,6 +92,7 @@ async def test_kb_reply_mentions_history_and_topic_senders():
     quiet_jid = "555666777888@s.whatsapp.net"
     session = AsyncMock()
     hist = Message(
+        session_id="s1",
         message_id="h",
         text="x",
         chat_jid="chat@g.us",
@@ -98,7 +100,7 @@ async def test_kb_reply_mentions_history_and_topic_senders():
         timestamp=Mock(),
     )
     session.exec.return_value = SimpleNamespace(all=lambda: [hist])
-    kb = KnowledgeBaseAnswers(session, AsyncMock(), AsyncMock(), Mock())
+    kb = KnowledgeBaseAnswers(session, AsyncMock(), AsyncMock(), Mock(), "s1")
     kb.send_message = AsyncMock()
     kb.rephrasing_agent = AsyncMock(return_value=SimpleNamespace(output="r"))
     kb.generation_agent = AsyncMock(
@@ -153,7 +155,7 @@ async def test_kb_reply_mentions_history_and_topic_senders():
 
 
 async def test_generation_prompt_labels_the_request():
-    kb = KnowledgeBaseAnswers(AsyncMock(), AsyncMock(), AsyncMock(), Mock())
+    kb = KnowledgeBaseAnswers(AsyncMock(), AsyncMock(), AsyncMock(), Mock(), "s1")
     agent = SimpleNamespace(run=AsyncMock(return_value=SimpleNamespace(output="x")))
     with patch("handler.knowledge_base_answers.Agent", Mock(return_value=agent)):
         await kb.generation_agent("מה זה?", "topics", ASKER, [], {})

@@ -6,7 +6,7 @@ from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.deps import get_db_async_session, get_handler, get_whatsapp
+from api.deps import get_db_async_session, get_handler, get_session_id, get_whatsapp
 from config import Settings, get_settings
 from handler import MessageHandler
 from whatsapp import (
@@ -49,10 +49,11 @@ async def _read_body_limited(request: Request) -> bytes:
 @router.post("/webhook")
 async def webhook(
     request: Request,
-    handler: Annotated[MessageHandler, Depends(get_handler)],
+    handler: Annotated[MessageHandler | None, Depends(get_handler)],
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
     whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
     settings: Annotated[Settings, Depends(get_settings)],
+    session_id: Annotated[str | None, Depends(get_session_id)],
 ) -> str:
     """OpenWA webhook endpoint. Returns "ok" to acknowledge receipt."""
     body = await _read_body_limited(request)
@@ -78,11 +79,14 @@ async def webhook(
         _in_flight.add(key)
     try:
         event = parse_event(envelope)
-        if isinstance(event, (InboundMessage, InboundReaction)):
+        if handler is None or session_id is None:
+            # TEMP(T4/T5): replaced by the session registry
+            logger.warning("No OpenWA session configured; ignoring webhook event")
+        elif isinstance(event, (InboundMessage, InboundReaction)):
             await handler(event)
         elif isinstance(event, GroupEvent):
             # Keep GROUPS table in sync when group-related events happen
-            await gather_groups(session, whatsapp)
+            await gather_groups(session, whatsapp, session_id)
         # Mark seen only after success, so a failed delivery is retried by OpenWA.
         if key:
             _seen_keys[key] = True

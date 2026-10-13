@@ -6,9 +6,12 @@ Lives here to reuse the real-Postgres `db_sessionmaker` fixture (conftest.py).
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from models import Group, Message, Sender
 from load_new_kbtopics import get_conversation_topics, messages_to_ingest_stmt
 from summarize_and_send_to_groups import messages_to_summarize_stmt
+from test_utils.openwa_session import TEST_SESSION_ID
 
 PHONE = "972559661780@s.whatsapp.net"
 LID = "209878492672151@lid"
@@ -22,6 +25,7 @@ async def seed(db_sessionmaker):
         for jid in (PHONE, LID, USER):
             session.add(Sender(jid=jid))
         group = Group(
+            session_id=TEST_SESSION_ID,
             group_jid="1@g.us",
             last_summary_sync=datetime(2026, 1, 1),
             last_ingest=datetime(2026, 1, 1),
@@ -31,6 +35,7 @@ async def seed(db_sessionmaker):
         for mid, sender in (("by-phone", PHONE), ("by-lid", LID), ("by-user", USER)):
             session.add(
                 Message(
+                    session_id=TEST_SESSION_ID,
                     message_id=mid,
                     chat_jid="1@g.us",
                     group_jid="1@g.us",
@@ -43,6 +48,7 @@ async def seed(db_sessionmaker):
         return group
 
 
+@pytest.mark.usefixtures("session_row")
 async def test_summary_query_excludes_both_bot_ids(db_sessionmaker):
     group = await seed(db_sessionmaker)
     async with db_sessionmaker() as session:
@@ -50,6 +56,7 @@ async def test_summary_query_excludes_both_bot_ids(db_sessionmaker):
     assert [m.message_id for m in rows] == ["by-user"]
 
 
+@pytest.mark.usefixtures("session_row")
 async def test_summary_query_phone_only_keeps_lid_messages(db_sessionmaker):
     group = await seed(db_sessionmaker)
     async with db_sessionmaker() as session:
@@ -59,6 +66,7 @@ async def test_summary_query_phone_only_keeps_lid_messages(db_sessionmaker):
     assert sorted(m.message_id for m in rows) == ["by-lid", "by-user"]
 
 
+@pytest.mark.usefixtures("session_row")
 async def test_kb_ingest_query_excludes_both_bot_ids(db_sessionmaker):
     group = await seed(db_sessionmaker)
     async with db_sessionmaker() as session:
@@ -68,6 +76,7 @@ async def test_kb_ingest_query_excludes_both_bot_ids(db_sessionmaker):
 
 async def test_conversation_topics_maps_both_bot_ids_to_bot():
     msg = Message(
+        session_id=TEST_SESSION_ID,
         message_id="m",
         chat_jid="1@g.us",
         sender_jid=USER,

@@ -5,7 +5,7 @@ from handler.router import Router
 
 
 async def test_about_links_this_repo_and_credits_the_original():
-    router = Router(AsyncMock(), AsyncMock(), AsyncMock(), Mock())
+    router = Router(AsyncMock(), AsyncMock(), AsyncMock(), Mock(), "s1")
     router.send_message = AsyncMock()
 
     await router.about(SimpleNamespace(chat_jid="chat@g.us", text="about"))
@@ -19,7 +19,7 @@ async def test_about_links_this_repo_and_credits_the_original():
 
 
 async def _about_text(question):
-    router = Router(AsyncMock(), AsyncMock(), AsyncMock(), Mock())
+    router = Router(AsyncMock(), AsyncMock(), AsyncMock(), Mock(), "s1")
     router.send_message = AsyncMock()
     await router.about(SimpleNamespace(chat_jid="chat@g.us", text=question))
     assert router.send_message.await_args is not None

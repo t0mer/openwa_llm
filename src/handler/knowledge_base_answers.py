@@ -37,9 +37,10 @@ class KnowledgeBaseAnswers(BaseHandler):
         whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
+        session_id: str,
     ):
         self.settings = settings
-        super().__init__(session, whatsapp, embedding_client)
+        super().__init__(session, whatsapp, embedding_client, session_id)
 
     async def __call__(self, message: Message):
         # Ensure message.text is not None before passing to generation_agent

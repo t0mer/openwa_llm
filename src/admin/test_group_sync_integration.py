@@ -1,9 +1,14 @@
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
+import pytest
+
 from models import Group, Sender
 from whatsapp.init_groups import gather_groups
 from whatsapp.types import GroupInfo
+from test_utils.openwa_session import TEST_SESSION_ID
+
+pytestmark = pytest.mark.usefixtures("session_row")
 
 
 async def test_sync_keeps_admin_owned_columns(db_sessionmaker):
@@ -12,6 +17,7 @@ async def test_sync_keeps_admin_owned_columns(db_sessionmaker):
         session.add(Sender(jid="972501234567@s.whatsapp.net"))
         session.add(
             Group(
+                session_id=TEST_SESSION_ID,
                 group_jid="1203@g.us",
                 group_name="Old name",
                 group_topic="Old topic",
@@ -38,7 +44,7 @@ async def test_sync_keeps_admin_owned_columns(db_sessionmaker):
         GroupInfo(jid="999@g.us", name="Brand new"),
     ]
     async with db_sessionmaker() as session:
-        await gather_groups(session, gateway)
+        await gather_groups(session, gateway, TEST_SESSION_ID)
         await session.commit()
 
     async with db_sessionmaker() as session:

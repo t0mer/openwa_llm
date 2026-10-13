@@ -14,16 +14,21 @@ from models import (
     GroupSummarySchedule,
     KBTopic,
     Message,
+    OpenWAConnection,
+    OpenWASession,
     OptOut,
     Reaction,
     Sender,
 )
 from models.kb_topic_message import KBTopicMessage
+from test_utils.openwa_session import seed_session
 
 TABLES = [
     model.__table__  # pyright: ignore[reportAttributeAccessIssue]
     for model in (
         Sender,
+        OpenWAConnection,
+        OpenWASession,
         Group,
         Message,
         Reaction,
@@ -58,3 +63,12 @@ async def db_sessionmaker():
         await conn.execute(text("SELECT 1"))
     yield async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     await engine.dispose()
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def session_row(db_sessionmaker) -> OpenWASession:
+    """A committed OpenWA session row for DB-backed tests (id TEST_SESSION_ID)."""
+    async with db_sessionmaker() as session:
+        row = await seed_session(session)
+        await session.commit()
+    return row

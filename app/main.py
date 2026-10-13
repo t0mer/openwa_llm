@@ -11,6 +11,7 @@ import logfire
 from admin import admin_router, spa_router
 from admin.auth import admin_config_warning
 from admin.actions import runner as admin_actions
+from api.deps import first_openwa_session_id
 from api import load_new_kbtopics_api, status, summarize_and_send_to_group_api, webhook
 import models  # noqa
 from config import get_settings
@@ -70,7 +71,14 @@ async def lifespan(app: FastAPI):
     async def sync_groups_on_startup() -> None:
         async with async_session() as session:
             try:
-                await gather_groups(session, app.state.whatsapp)
+                # TEMP(T4/T5): replaced by the session registry
+                session_id = await first_openwa_session_id(session)
+                if session_id is None:
+                    logging.getLogger(__name__).warning(
+                        "No OpenWA session configured; skipping group sync"
+                    )
+                    return
+                await gather_groups(session, app.state.whatsapp, session_id)
                 await session.commit()
             except Exception:
                 await session.rollback()
