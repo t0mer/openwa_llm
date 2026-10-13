@@ -7,12 +7,23 @@ import pytest
 from scheduling import runner
 
 
-def _app(enabled=True):
+class _Registry:
+    def __init__(self, ids):
+        self._ids = ids
+
+    def ids(self):
+        return list(self._ids)
+
+    def get(self, pk):
+        return MagicMock(name=pk)
+
+
+def _app(enabled=True, ids=("s1",)):
     return SimpleNamespace(
         state=SimpleNamespace(
             settings=SimpleNamespace(scheduler_enabled=enabled),
             async_session=MagicMock(),
-            whatsapp=MagicMock(),
+            registry=_Registry(ids),
         )
     )
 
@@ -69,3 +80,15 @@ async def test_start_scheduler_enabled_returns_running_task(monkeypatch):
     assert not task.done()
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_loop_skips_ticks_without_an_active_session(monkeypatch, caplog):
+    run_due = AsyncMock()
+    monkeypatch.setattr(runner, "run_due", run_due)
+    task = asyncio.create_task(runner.scheduler_loop(_app(ids=()), interval=0.001))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    run_due.assert_not_awaited()
+    assert "no active OpenWA session" in caplog.text

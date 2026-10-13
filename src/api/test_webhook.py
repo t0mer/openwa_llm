@@ -8,7 +8,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api import webhook as webhook_api
-from api.deps import get_db_async_session, get_handler, get_session_id, get_whatsapp
+from api.deps import (
+    get_db_async_session,
+    get_handler,
+    get_webhook_session_id,
+    get_webhook_whatsapp,
+)
 from config import get_settings
 from whatsapp import InboundMessage, InboundReaction
 
@@ -27,8 +32,8 @@ def ctx(monkeypatch: pytest.MonkeyPatch):
     session, whatsapp = AsyncMock(), AsyncMock()
     app.dependency_overrides[get_handler] = lambda: handler
     app.dependency_overrides[get_db_async_session] = lambda: session
-    app.dependency_overrides[get_whatsapp] = lambda: whatsapp
-    app.dependency_overrides[get_session_id] = lambda: "s1"
+    app.dependency_overrides[get_webhook_whatsapp] = lambda: whatsapp
+    app.dependency_overrides[get_webhook_session_id] = lambda: "s1"
     app.dependency_overrides[get_settings] = lambda: Mock(openwa_webhook_secret=SECRET)
     return TestClient(app), handler, gather, session, whatsapp
 
@@ -203,7 +208,7 @@ def test_broadcast_and_newsletter_messages_are_acknowledged_and_ignored(ctx, cha
 @pytest.mark.parametrize("payload", [MESSAGE, {"event": "group.join", "data": {}}])
 def test_events_are_skipped_without_an_openwa_session(ctx, payload):
     client, handler, gather, *_ = ctx
-    client.app.dependency_overrides[get_session_id] = lambda: None
+    client.app.dependency_overrides[get_webhook_session_id] = lambda: None
     client.app.dependency_overrides[get_handler] = lambda: None
     assert _post(client, payload).status_code == 200
     handler.assert_not_awaited()

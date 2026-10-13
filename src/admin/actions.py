@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from config import Settings, get_settings
 from load_new_kbtopics import topicsLoader
+from openwa_settings.registry import first_gateway
 from summarize_and_send_to_groups import summarize_and_send_to_groups
 
 from .schemas import ActionStarted, ActionStatus, ActionSummary, GroupActionResult
@@ -105,7 +106,9 @@ async def run_summarize(
     async def job() -> ActionOutcome:
         async with app.state.async_session() as session:
             outcomes = await summarize_and_send_to_groups(
-                settings, session, app.state.whatsapp
+                settings,
+                session,
+                first_gateway(app),  # TEMP(T7): actions become per-session
             )
             await session.commit()
         results = [
@@ -135,7 +138,9 @@ async def run_load_kb(request: Request) -> ActionStarted:
     async def job() -> None:
         async with app.state.async_session() as session:
             await topicsLoader().load_topics_for_all_groups(
-                session, app.state.embedding_client, app.state.whatsapp
+                session,
+                app.state.embedding_client,
+                first_gateway(app),  # TEMP(T7): actions become per-session
             )
             await session.commit()
 

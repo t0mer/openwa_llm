@@ -14,6 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from config import Settings
 from models import Group, GroupSummarySchedule
+from openwa_settings.registry import first_gateway
 from summarize_and_send_to_groups import GroupSummaryResult, summarize_and_send_to_group
 from whatsapp import WhatsAppGateway
 
@@ -199,9 +200,13 @@ async def scheduler_loop(app: Any, interval: float = 60) -> None:
     """Tick forever; a failing tick is logged and never ends the loop."""
     while True:
         try:
-            await run_due(
-                app.state.settings, app.state.async_session, app.state.whatsapp
-            )
+            # TEMP(T7): scheduled summaries become per-session
+            try:
+                whatsapp = first_gateway(app)
+            except LookupError as e:
+                logger.warning("Skipping scheduler tick: %s", e)
+            else:
+                await run_due(app.state.settings, app.state.async_session, whatsapp)
         except asyncio.CancelledError:
             raise
         except Exception:

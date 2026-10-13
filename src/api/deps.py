@@ -1,12 +1,11 @@
 import logging
 from typing import Annotated, AsyncGenerator
 
-from fastapi import Depends, Request
-from sqlmodel import select
+from fastapi import Depends, HTTPException, Query, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from handler import MessageHandler
-from models import OpenWASession
+from openwa_settings.registry import GatewayRegistry
 from whatsapp import WhatsAppGateway
 from voyageai.client_async import AsyncClient
 from config import Settings, get_settings
@@ -25,9 +24,31 @@ async def get_db_async_session(request: Request) -> AsyncGenerator[AsyncSession,
             raise
 
 
-def get_whatsapp(request: Request) -> WhatsAppGateway:
-    assert request.app.state.whatsapp, "WhatsApp client not initialized"
-    return request.app.state.whatsapp
+def get_registry(request: Request) -> GatewayRegistry:
+    assert request.app.state.registry, "gateway registry not initialized"
+    return request.app.state.registry
+
+
+def get_session_id(
+    registry: Annotated[GatewayRegistry, Depends(get_registry)],
+    session_id: Annotated[str | None, Query()] = None,
+) -> str:
+    """The requested active session, or the only active one when omitted."""
+    ids = registry.ids()
+    if session_id is not None:
+        if session_id not in ids:
+            raise HTTPException(status_code=404, detail="session not found or inactive")
+        return session_id
+    if len(ids) == 1:
+        return ids[0]
+    raise HTTPException(status_code=400, detail="session_id required")
+
+
+def get_whatsapp(
+    registry: Annotated[GatewayRegistry, Depends(get_registry)],
+    session_id: Annotated[str, Depends(get_session_id)],
+) -> WhatsAppGateway:
+    return registry.get(session_id)
 
 
 def get_text_embebedding(request: Request) -> AsyncClient:
@@ -35,32 +56,32 @@ def get_text_embebedding(request: Request) -> AsyncClient:
     return request.app.state.embedding_client
 
 
-# TEMP(T4/T5): replaced by the session registry
-async def first_openwa_session_id(session: AsyncSession) -> str | None:
-    """Id of the first configured OpenWA session, or None when there is none."""
-    result = await session.exec(
-        select(OpenWASession.id).order_by(OpenWASession.id).limit(1)  # pyright: ignore[reportArgumentType]
-    )
-    return result.first()
-
-
-# TEMP(T4/T5): replaced by the session registry
-async def get_session_id(
-    session: Annotated[AsyncSession, Depends(get_db_async_session)],
+# TEMP(T5): the webhook becomes per-session; until then it uses the first active one.
+def get_webhook_session_id(
+    registry: Annotated[GatewayRegistry, Depends(get_registry)],
 ) -> str | None:
-    session_id = await first_openwa_session_id(session)
-    if session_id is None:
-        logger.warning("No OpenWA session configured; skipping webhook processing")
-    return session_id
+    ids = registry.ids()
+    if not ids:
+        logger.warning("No active OpenWA session; skipping webhook processing")
+        return None
+    return ids[0]
+
+
+# TEMP(T5): the webhook becomes per-session; until then it uses the first active one.
+def get_webhook_whatsapp(
+    registry: Annotated[GatewayRegistry, Depends(get_registry)],
+    session_id: Annotated[str | None, Depends(get_webhook_session_id)],
+) -> WhatsAppGateway | None:
+    return None if session_id is None else registry.get(session_id)
 
 
 async def get_handler(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
-    whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
+    whatsapp: Annotated[WhatsAppGateway | None, Depends(get_webhook_whatsapp)],
     embedding_client: Annotated[AsyncClient, Depends(get_text_embebedding)],
     settings: Annotated[Settings, Depends(get_settings)],
-    session_id: Annotated[str | None, Depends(get_session_id)],
+    session_id: Annotated[str | None, Depends(get_webhook_session_id)],
 ) -> MessageHandler | None:
-    if session_id is None:
+    if session_id is None or whatsapp is None:
         return None
     return MessageHandler(session, whatsapp, embedding_client, settings, session_id)

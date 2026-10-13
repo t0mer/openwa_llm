@@ -62,6 +62,20 @@ async def test_runner_shutdown_cancels_running_jobs():
     assert runner.status()["summarize"].state == "failed"
 
 
+GATEWAY = object()
+
+
+class StubRegistry:
+    def __init__(self, gateways: dict) -> None:
+        self._gw = gateways
+
+    def ids(self) -> list[str]:
+        return list(self._gw)
+
+    def get(self, pk: str):
+        return self._gw[pk]
+
+
 @pytest_asyncio.fixture
 async def client(monkeypatch):
     fresh = ActionRunner()
@@ -75,7 +89,7 @@ async def client(monkeypatch):
     session.__aexit__ = AsyncMock(return_value=False)
     session.commit = AsyncMock()
     app.state.async_session = lambda: session
-    app.state.whatsapp = object()
+    app.state.registry = StubRegistry({"s1": GATEWAY})
     app.state.embedding_client = object()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
@@ -204,3 +218,31 @@ async def test_summarize_results_bounded_to_200(client, monkeypatch):
     s = (await _run_summarize(client, monkeypatch, [many]))["summarize"]
     assert len(s["results"]) == 200
     assert s["summary"]["managed_groups"] == 250
+
+
+async def test_summarize_uses_the_first_active_session_gateway(client, monkeypatch):
+    seen = {}
+
+    async def fake(settings, session, whatsapp):
+        seen["whatsapp"] = whatsapp
+        return []
+
+    monkeypatch.setattr(actions_module, "summarize_and_send_to_groups", fake)
+    assert (await client.post("/actions/summarize")).status_code == 202
+    await actions_module.runner.wait_idle()
+    assert seen["whatsapp"] is GATEWAY
+
+
+async def test_actions_fail_clearly_without_an_active_session(client, monkeypatch):
+    client._transport.app.state.registry = StubRegistry({})
+    loader = MagicMock()
+    loader.load_topics_for_all_groups = AsyncMock()
+    monkeypatch.setattr(actions_module, "topicsLoader", lambda: loader)
+    await client.post("/actions/summarize")
+    await client.post("/actions/load-kb")
+    await actions_module.runner.wait_idle()
+    body = (await client.get("/actions")).json()
+    for name in ("summarize", "load_kb"):
+        assert body[name]["state"] == "failed"
+        assert "no active OpenWA session" in body[name]["error"]
+    loader.load_topics_for_all_groups.assert_not_awaited()
