@@ -1,6 +1,8 @@
+import { getSessionId } from "./session";
 import type {
-  ActionName, Actions, Contact, Group, GroupPatch, GroupSort, MessagePage,
-  OptOutItem, Page, Schedule, ScheduleCreate, ScheduleList, SchedulePatch, Stats,
+  ActionName, Actions, ConnectionSettings, ConnectionTestRequest, ConnectionTestResult, ConnectionUpdate,
+  Contact, Group, GroupPatch, GroupSort, MessagePage, OptOutItem, Page, Schedule, ScheduleCreate,
+  ScheduleList, SchedulePatch, SessionCreate, SessionInfo, SessionPatch, Stats,
 } from "./types";
 
 const BASE = "/api/v1/admin";
@@ -18,10 +20,17 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn;
 }
 
+/** Data calls carry the selected session; settings and auth calls are global. */
+function withSession(path: string): string {
+  const id = getSessionId();
+  if (!id || path.startsWith("/settings") || path.startsWith("/auth")) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}${new URLSearchParams({ session_id: id })}`;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "X-Requested-With": "admin-ui" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${BASE}${withSession(path)}`, {
     method,
     headers,
     credentials: "same-origin",
@@ -84,6 +93,18 @@ export const api = {
 
   listMessages: (p: { group_jid?: string; sender_jid?: string; q?: string; from?: string; to?: string; limit?: number; before?: string }) =>
     request<MessagePage>("GET", `/messages${qs(p)}`),
+
+  getConnection: () => request<ConnectionSettings>("GET", "/settings/connection"),
+  putConnection: (body: ConnectionUpdate) => request<ConnectionSettings>("PUT", "/settings/connection", body),
+  testConnection: (body: ConnectionTestRequest) =>
+    request<ConnectionTestResult>("POST", "/settings/connection/test", body),
+  listSessions: () => request<SessionInfo[]>("GET", "/settings/sessions"),
+  createSession: (body: SessionCreate) => request<SessionInfo>("POST", "/settings/sessions", body),
+  patchSession: (id: string, patch: SessionPatch) =>
+    request<SessionInfo>("PATCH", `/settings/sessions/${encodeURIComponent(id)}`, patch),
+  deleteSession: (id: string) => request<void>("DELETE", `/settings/sessions/${encodeURIComponent(id)}`),
+  registerWebhook: (id: string) =>
+    request<{ registered: boolean }>("POST", `/settings/sessions/${encodeURIComponent(id)}/webhook`),
 
   getActions: () => request<Actions>("GET", "/actions"),
   runAction: (name: ActionName) =>

@@ -155,3 +155,48 @@ export interface Stats {
   /** 7 counts, 0 = Sunday .. 6 = Saturday. */
   by_weekday: number[];
 }
+
+/** The OpenWA connection. Secrets are never returned: only whether they are stored. */
+export interface ConnectionSettings {
+  base_url: string;
+  webhook_url: string;
+  api_key_set: boolean;
+  webhook_secret_set: boolean;
+}
+
+/** A secret left null keeps the stored value. */
+export interface ConnectionUpdate {
+  base_url: string;
+  webhook_url: string;
+  api_key: string | null;
+  webhook_secret: string | null;
+}
+
+/** Null fields fall back to the stored values on the server. */
+export interface ConnectionTestRequest {
+  base_url: string | null;
+  api_key: string | null;
+  openwa_session_id?: string | null;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  detail: string;
+}
+
+export interface SessionInfo {
+  id: string;
+  label: string;
+  openwa_session_id: string;
+  enabled: boolean;
+  status: string | null;
+  error: string | null;
+  group_count: number;
+}
+
+export interface SessionCreate {
+  label: string;
+  openwa_session_id: string;
+}
+
+export type SessionPatch = Partial<SessionCreate & { enabled: boolean }>;

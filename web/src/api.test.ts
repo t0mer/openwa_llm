@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, api, setUnauthorizedHandler } from "./api";
+import { setSessionId } from "./session";
 
 function mockFetch(status: number, body: unknown = {}) {
   const fn = vi.fn().mockImplementation(async () =>
@@ -12,6 +13,7 @@ function mockFetch(status: number, body: unknown = {}) {
 afterEach(() => {
   vi.unstubAllGlobals();
   setUnauthorizedHandler(null);
+  setSessionId(null);
 });
 
 describe("api client", () => {
@@ -102,5 +104,52 @@ describe("getStats", () => {
   it("surfaces errors", async () => {
     mockFetch(422, { detail: "from must be before to" });
     await expect(api.getStats({ from: "x" })).rejects.toMatchObject({ status: 422, message: "from must be before to" });
+  });
+});
+
+describe("session scoping", () => {
+  it("appends the selected session to data calls only", async () => {
+    const f = mockFetch(200, { items: [], total: 0 });
+    setSessionId("s 1");
+    await api.listGroups({ search: "a" });
+    await api.getStats({});
+    await api.session();
+    await api.listSessions();
+    await api.getConnection();
+    expect(f.mock.calls.map((c) => c[0])).toEqual([
+      "/api/v1/admin/groups?search=a&session_id=s+1",
+      "/api/v1/admin/stats?session_id=s+1",
+      "/api/v1/admin/auth/session",
+      "/api/v1/admin/settings/sessions",
+      "/api/v1/admin/settings/connection",
+    ]);
+  });
+
+  it("never sends an empty session_id", async () => {
+    const f = mockFetch(200, { items: [], total: 0 });
+    await api.listGroups({});
+    expect(f.mock.calls[0][0]).toBe("/api/v1/admin/groups");
+  });
+});
+
+describe("settings endpoints", () => {
+  it("uses the settings paths and methods", async () => {
+    const f = mockFetch(200, {});
+    await api.putConnection({ base_url: "http://x", webhook_url: "", api_key: null, webhook_secret: null });
+    await api.testConnection({ base_url: "http://x", api_key: null });
+    await api.createSession({ label: "Main", openwa_session_id: "wa" });
+    await api.patchSession("a/b", { enabled: false });
+    await api.registerWebhook("a/b");
+    mockFetch(204);
+    await api.deleteSession("a/b");
+    const calls = f.mock.calls.map(([url, init]) => `${init.method} ${url}`);
+    expect(calls).toEqual([
+      "PUT /api/v1/admin/settings/connection",
+      "POST /api/v1/admin/settings/connection/test",
+      "POST /api/v1/admin/settings/sessions",
+      "PATCH /api/v1/admin/settings/sessions/a%2Fb",
+      "POST /api/v1/admin/settings/sessions/a%2Fb/webhook",
+    ]);
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ base_url: "http://x", webhook_url: "", api_key: null, webhook_secret: null });
   });
 });
