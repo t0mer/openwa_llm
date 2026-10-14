@@ -207,6 +207,19 @@ function SessionRow({ session: s, busy, run }: RowProps) {
         </form>
       ) : (
         <div className="flex flex-wrap gap-2">
+          <Button
+            size="table"
+            aria-label={`Sync ${s.label} now`}
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                const { groups } = await api.syncSession(s.id);
+                toast.success(`Synced ${groups} ${groups === 1 ? "group" : "groups"}`);
+              })
+            }
+          >
+            Sync now
+          </Button>
           <Button size="table" aria-label={`Re-register webhook for ${s.label}`} disabled={busy} onClick={() => void run(() => api.registerWebhook(s.id), "Webhook registered")}>
             Re-register webhook
           </Button>

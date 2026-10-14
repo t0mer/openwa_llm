@@ -25,6 +25,7 @@ from openwa_settings.registry import GatewayRegistry
 from openwa_settings.store import list_sessions, load_connection, webhook_url_for
 from whatsapp import GatewayError, OpenWAGateway
 from whatsapp.gateway import describe_gateway_failure
+from whatsapp.init_groups import gather_groups
 from whatsapp.webhook_registration import WEBHOOK_EVENTS
 
 from .schemas import (
@@ -37,6 +38,7 @@ from .schemas import (
     SessionCreate,
     SessionOut,
     SessionPatch,
+    SessionSynced,
     WebhookRegistered,
 )
 
@@ -341,11 +343,40 @@ async def delete_session(session_id: str, request: Request, db: Db) -> Response:
     return Response(status_code=204)
 
 
+async def _sync_groups(db: AsyncSession, gateway: OpenWAGateway, pk: str) -> int:
+    """Import the session's groups from OpenWA; returns how many it now owns."""
+    await gather_groups(db, gateway, pk)
+    await db.commit()
+    return (await _group_counts(db)).get(pk, 0)
+
+
+@router.post("/sessions/{session_id}/sync", response_model=SessionSynced)
+async def sync_session(session_id: str, request: Request, db: Db) -> SessionSynced:
+    row = await _get_session(db, session_id)
+    registry = _registry(request)
+    if row.id not in registry.ids():
+        raise HTTPException(status_code=409, detail="session is not active")
+    try:
+        gateway = registry.get(row.id)
+    except KeyError:  # removed by a concurrent reload
+        raise HTTPException(status_code=409, detail="session is not active")
+    try:
+        groups = await _sync_groups(db, gateway, row.id)
+    except GatewayError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=502,
+            detail=f"group sync failed: {describe_gateway_failure(exc)}",
+        )
+    return SessionSynced(groups=groups)
+
+
 @router.post("/sessions/{session_id}/webhook", response_model=WebhookRegistered)
 async def register_session_webhook(
     session_id: str, request: Request, db: Db
 ) -> WebhookRegistered:
     row = await _get_session(db, session_id)
+    pk = row.id
     registry = _registry(request)
     if row.id not in registry.ids():
         raise HTTPException(status_code=409, detail="session is not active")
@@ -363,4 +394,13 @@ async def register_session_webhook(
         )
     except KeyError:  # removed by a concurrent reload
         raise HTTPException(status_code=409, detail="session is not active")
+    # A fresh webhook usually means a new or repaired session: pull its groups too.
+    # Best effort; the registration itself already succeeded.
+    try:
+        await _sync_groups(db, registry.get(pk), pk)
+    except Exception as exc:
+        await db.rollback()
+        log.warning(
+            "group sync after webhook for %s failed: %s", pk, type(exc).__name__
+        )
     return WebhookRegistered(registered=True)

@@ -556,3 +556,7 @@ class SessionOut(BaseModel):
 
 class WebhookRegistered(BaseModel):
     registered: bool
+
+
+class SessionSynced(BaseModel):
+    groups: int

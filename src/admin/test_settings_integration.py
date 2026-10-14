@@ -9,7 +9,7 @@ from admin.auth import CSRF_HEADER, CSRF_VALUE
 from admin.conftest import FakeGateway
 from models import Group, OpenWAConnection, OpenWASession
 from whatsapp import GatewayError
-from whatsapp.types import SessionStatus
+from whatsapp.types import GroupInfo, SessionStatus
 from whatsapp.webhook_registration import WEBHOOK_EVENTS
 
 BASE = "/api/v1/admin/settings"
@@ -411,6 +411,50 @@ async def test_register_webhook_needs_an_active_session_and_url(
     assert "webhook url" in resp.json()["detail"]
 
 
+async def test_sync_session_imports_groups(admin_client, openwa_state):
+    await _put_connection(admin_client)
+    pk = await _create_session(admin_client)
+    gw = cast(FakeGateway, openwa_state.registry.get(pk))
+    gw.list_groups.return_value = [
+        GroupInfo(jid="1@g.us", name="One"),
+        GroupInfo(jid="2@g.us", name="Two"),
+    ]
+    resp = await admin_client.post(f"{BASE}/sessions/{pk}/sync")
+    assert resp.status_code == 200
+    assert resp.json() == {"groups": 2}
+    rows = (await admin_client.get(f"{BASE}/sessions")).json()
+    assert rows[0]["group_count"] == 2
+
+
+async def test_sync_session_errors(admin_client, openwa_state):
+    assert (await admin_client.post(f"{BASE}/sessions/nope/sync")).status_code == 404
+    pk = await _create_session(admin_client)
+    assert (await admin_client.post(f"{BASE}/sessions/{pk}/sync")).status_code == 409
+    await _put_connection(admin_client)
+    gw = cast(FakeGateway, openwa_state.registry.get(pk))
+    gw.list_groups = AsyncMock(
+        side_effect=GatewayError(f"-> 400: {UPSTREAM_TEXT}", status_code=400)
+    )
+    resp = await admin_client.post(f"{BASE}/sessions/{pk}/sync")
+    assert resp.status_code == 502
+    assert resp.json() == {"detail": "group sync failed: OpenWA returned HTTP 400"}
+    assert UPSTREAM_TEXT not in resp.text
+
+
+async def test_register_webhook_also_syncs_groups(admin_client, openwa_state):
+    await _put_connection(admin_client)
+    pk = await _create_session(admin_client)
+    gw = cast(FakeGateway, openwa_state.registry.get(pk))
+    gw.list_groups.return_value = [GroupInfo(jid="3@g.us", name="Three")]
+    assert (await admin_client.post(f"{BASE}/sessions/{pk}/webhook")).status_code == 200
+    gw.list_groups.assert_awaited()
+    rows = (await admin_client.get(f"{BASE}/sessions")).json()
+    assert rows[0]["group_count"] == 1
+    # a failing sync never fails the webhook registration
+    gw.list_groups = AsyncMock(side_effect=GatewayError("down"))
+    assert (await admin_client.post(f"{BASE}/sessions/{pk}/webhook")).status_code == 200
+
+
 ROUTES = [
     ("GET", "/connection"),
     ("PUT", "/connection"),
@@ -420,6 +464,7 @@ ROUTES = [
     ("PATCH", "/sessions/x"),
     ("DELETE", "/sessions/x"),
     ("POST", "/sessions/x/webhook"),
+    ("POST", "/sessions/x/sync"),
 ]
 
 
