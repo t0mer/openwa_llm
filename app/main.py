@@ -60,9 +60,11 @@ async def _register_webhook(app: FastAPI, pk: str) -> None:
         return
     if (gateway := _active_gateway(app, pk)) is None:
         return
-    await register_webhook_with_retry(
+    if await register_webhook_with_retry(
         gateway, url, registry.webhook_secret, WEBHOOK_EVENTS
-    )
+    ):
+        # The first sync may have run before OpenWA was ready; redo it now.
+        await _sync_groups(app, pk)
 
 
 def _task_done(app: FastAPI, task: asyncio.Task) -> None:
