@@ -38,6 +38,7 @@ class FakeGateway:
         self.cfg = (base_url, api_key, session_id)
         self.get_status = AsyncMock(return_value=SessionStatus(status="WORKING"))
         self.ensure_webhook = AsyncMock(return_value=True)
+        self.list_groups = AsyncMock(return_value=[])
         self.aclose = AsyncMock()
 
 
