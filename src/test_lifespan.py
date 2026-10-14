@@ -102,7 +102,8 @@ async def test_legacy_env_is_seeded_and_each_session_started(main_module, boot, 
         gateway = registry.get(pk)
         assert isinstance(gateway, OpenWAGateway)
         await asyncio.gather(*app.state.bg_tasks)
-        gather.assert_awaited_once()
+        # Once at startup, and again after the webhook registration succeeded.
+        assert gather.await_count == 2
         assert gather.await_args.args[1:] == (gateway, pk)
         register.assert_awaited_once_with(
             gateway,
@@ -112,6 +113,16 @@ async def test_legacy_env_is_seeded_and_each_session_started(main_module, boot, 
         )
         assert registry.webhook_secret == "webhook-secret-123456"
         assert app.state.start_session_tasks is main_module.start_session_tasks
+
+
+async def test_no_resync_when_webhook_registration_fails(mocks, boot):
+    gather, register = mocks
+    register.return_value = False
+    app = FastAPI()
+    async with boot(app, **LEGACY):
+        await asyncio.gather(*app.state.bg_tasks)
+    register.assert_awaited_once()
+    gather.assert_awaited_once()
 
 
 async def test_registration_skipped_without_webhook_url(boot, mocks):
