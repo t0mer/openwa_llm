@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import ipaddress
+import socket
 from datetime import datetime
 from typing import Annotated, Generic, Literal, TypeVar
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -400,3 +403,156 @@ class StatsOut(BaseModel):
     top_senders: list[StatsTopSender]
     by_hour: list[int] = Field(min_length=24, max_length=24)
     by_weekday: list[int] = Field(min_length=7, max_length=7)
+
+
+# --- OpenWA settings ------------------------------------------------------------
+#
+# Secrets are never echoed: secret fields carry no failing validators (a 422
+# body would include the rejected input), so their length is checked in the
+# handler, and no model-level validator may fail on a model holding secrets.
+
+MIN_SECRET_LEN = 16
+MAX_SECRET_LEN = 1024
+MAX_URL_LEN = 2048
+
+
+def _strip(value: object) -> object:
+    return value.strip() if isinstance(value, str) else value
+
+
+def _http_url(value: str, *, allow_empty: bool, block_link_local: bool = False) -> str:
+    if not value and allow_empty:
+        return value
+    parts = urlsplit(value)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("must look like http(s)://host")
+    if block_link_local and _is_link_local(parts.hostname):
+        # The message never echoes the value.
+        raise ValueError("must not be a link-local or cloud metadata address")
+    return value
+
+
+def _is_link_local(host: str) -> bool:
+    """True for a literal IP host in 169.254.0.0/16 or fe80::/10.
+
+    Hostnames are not resolved. Numeric IPv4 shorthands that the OS resolver
+    also accepts (for example a single decimal number) are parsed the same way.
+    """
+    try:
+        ip: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(
+            host.split("%", 1)[0]
+        )
+    except ValueError:
+        try:
+            ip = ipaddress.IPv4Address(socket.inet_aton(host))
+        except OSError:
+            return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_link_local
+
+
+class ConnectionOut(BaseModel):
+    base_url: str
+    webhook_url: str
+    api_key_set: bool
+    webhook_secret_set: bool
+
+
+class ConnectionPut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Defaulted so a missing value fails on the field alone, not on the whole
+    # body (a "field required" error would echo the body, secrets included).
+    base_url: str = Field(default="", max_length=MAX_URL_LEN, validate_default=True)
+    api_key: str | None = None
+    webhook_secret: str | None = None
+    webhook_url: str = Field(default="", max_length=MAX_URL_LEN)
+
+    @field_validator(
+        "base_url", "api_key", "webhook_secret", "webhook_url", mode="before"
+    )
+    @classmethod
+    def _trim(cls, value):
+        return _strip(value)
+
+    @field_validator("base_url")
+    @classmethod
+    def _base_url(cls, value: str) -> str:
+        return _http_url(value, allow_empty=False, block_link_local=True)
+
+    @field_validator("webhook_url")
+    @classmethod
+    def _webhook_url(cls, value: str) -> str:
+        return _http_url(value, allow_empty=True)
+
+
+class ConnectionTest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str | None = Field(default=None, max_length=MAX_URL_LEN)
+    api_key: str | None = None
+    openwa_session_id: str | None = Field(default=None, max_length=255)
+
+    @field_validator("base_url", "api_key", "openwa_session_id", mode="before")
+    @classmethod
+    def _trim(cls, value):
+        return _strip(value)
+
+    @field_validator("base_url")
+    @classmethod
+    def _base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _http_url(value, allow_empty=True, block_link_local=True)
+
+
+class ConnectionTestResult(BaseModel):
+    ok: bool
+    detail: str
+
+
+class SessionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(min_length=1, max_length=100)
+    openwa_session_id: str = Field(min_length=1, max_length=255)
+
+    @field_validator("label", "openwa_session_id", mode="before")
+    @classmethod
+    def _trim(cls, value):
+        return _strip(value)
+
+
+class SessionPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str | None = Field(default=None, min_length=1, max_length=100)
+    openwa_session_id: str | None = Field(default=None, min_length=1, max_length=255)
+    enabled: bool | None = None
+
+    @field_validator("label", "openwa_session_id", mode="before")
+    @classmethod
+    def _trim(cls, value):
+        return _strip(value)
+
+    @model_validator(mode="after")
+    def _no_nulls(self):
+        for name in self.model_fields_set:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
+
+
+class SessionOut(BaseModel):
+    id: str
+    label: str
+    openwa_session_id: str
+    enabled: bool
+    status: str | None
+    error: str | None
+    group_count: int
+
+
+class WebhookRegistered(BaseModel):
+    registered: bool

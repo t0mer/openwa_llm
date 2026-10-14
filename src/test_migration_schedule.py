@@ -12,7 +12,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 ROOT = Path(__file__).resolve().parents[1]
-HEAD = "e5f6a7b8c9d0"
+HEAD = "f6a7b8c9d0e1"
 TABLE = "group_summary_schedule"
 
 
@@ -109,7 +109,7 @@ def test_schedule_migration_upgrade_downgrade_upgrade(fresh_db_uri):
         "ck_group_summary_schedule_weekdays_range",
     }
 
-    command.downgrade(config, "-1")
+    command.downgrade(config, "d4e5f6a7b8c9")
     (has, *_), version = asyncio.run(snapshot())
     assert not has and version == "d4e5f6a7b8c9"
 

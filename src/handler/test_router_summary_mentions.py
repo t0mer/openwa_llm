@@ -12,6 +12,7 @@ QUIET = "972509999999@s.whatsapp.net"
 
 def _msg(jid, mid):
     return Message(
+        session_id="s1",
         message_id=mid,
         text="hello",
         chat_jid="chat@g.us",
@@ -25,7 +26,7 @@ async def _run(output, opt_out):
     session.exec.return_value = SimpleNamespace(
         all=lambda: [_msg(OTHER, "a"), _msg(QUIET, "b")]
     )
-    router = Router(session, AsyncMock(), AsyncMock(), Mock())
+    router = Router(session, AsyncMock(), AsyncMock(), Mock(), "s1")
     router.send_message = AsyncMock()
     agent = SimpleNamespace(run=AsyncMock(return_value=SimpleNamespace(output=output)))
     with (
@@ -66,7 +67,7 @@ async def test_summary_mentions_failure_sends_without_mentions(caplog):
 async def test_summary_prompt_labels_the_request():
     session = AsyncMock()
     session.exec.return_value = SimpleNamespace(all=lambda: [])
-    router = Router(session, AsyncMock(), AsyncMock(), Mock())
+    router = Router(session, AsyncMock(), AsyncMock(), Mock(), "s1")
     router.send_message = AsyncMock()
     agent = SimpleNamespace(run=AsyncMock(return_value=SimpleNamespace(output="x")))
     with (

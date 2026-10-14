@@ -1,7 +1,8 @@
+import base64
 from os import environ
 from typing import Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from zoneinfo import available_timezones
@@ -25,11 +26,15 @@ class Settings(BaseSettings):
     db_uri: str
 
     # WhatsApp (OpenWA) settings
-    whatsapp_host: str
-    openwa_api_key: str
-    openwa_session_id: str
-    openwa_webhook_secret: str  # >= 16 chars (OpenWA requirement)
+    # Legacy: imported once on first start, then managed in Admin > Settings
+    whatsapp_host: str = ""
+    openwa_api_key: str = ""
+    openwa_session_id: str = ""
+    openwa_webhook_secret: str = ""  # >= 16 chars when set (OpenWA requirement)
     openwa_webhook_url: str = ""  # if set, registered with OpenWA at startup
+
+    # Base64 of 32 random bytes; encrypts secrets stored in the database
+    settings_encryption_key: SecretStr
 
     anthropic_api_key: str
 
@@ -125,8 +130,19 @@ class Settings(BaseSettings):
     @field_validator("openwa_webhook_secret")
     @classmethod
     def validate_webhook_secret(cls, v: str) -> str:
-        if len(v) < 16:
+        if v and len(v) < 16:
             raise ValueError("openwa_webhook_secret must be at least 16 characters")
+        return v
+
+    @field_validator("settings_encryption_key")
+    @classmethod
+    def validate_settings_encryption_key(cls, v: SecretStr) -> SecretStr:
+        try:
+            ok = len(base64.b64decode(v.get_secret_value(), validate=True)) == 32
+        except ValueError:
+            ok = False
+        if not ok:
+            raise ValueError("settings_encryption_key must be base64 of 32 bytes")
         return v
 
     @field_validator("admin_session_secret")
@@ -147,6 +163,9 @@ class Settings(BaseSettings):
         arbitrary_types_allowed=True,
         case_sensitive=False,
         extra="ignore",
+        # Validation errors must never print a secret (the encryption key, API
+        # keys) as their input value at startup.
+        hide_input_in_errors=True,
     )
 
     @model_validator(mode="after")

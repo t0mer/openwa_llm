@@ -8,11 +8,24 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api import webhook as webhook_api
-from api.deps import get_db_async_session, get_handler, get_whatsapp
+from api.deps import get_db_async_session
 from config import get_settings
 from whatsapp import InboundMessage, InboundReaction
 
 SECRET = "s" * 16
+
+
+class StubRegistry:
+    def __init__(self, whatsapp, secret: str | None = SECRET) -> None:
+        self.webhook_secret = secret
+        self._whatsapp = whatsapp
+
+    def ids(self) -> list[str]:
+        return ["a"]
+
+    def get(self, pk: str):
+        assert pk == "a"
+        return self._whatsapp
 
 
 @pytest.fixture
@@ -20,15 +33,15 @@ def ctx(monkeypatch: pytest.MonkeyPatch):
     webhook_api._seen_keys.clear()
     webhook_api._in_flight.clear()
     handler = AsyncMock()
+    monkeypatch.setattr(webhook_api, "build_handler", lambda *_: handler)
     gather = AsyncMock()
     monkeypatch.setattr(webhook_api, "gather_groups", gather)
     app = FastAPI()
     app.include_router(webhook_api.router)
     session, whatsapp = AsyncMock(), AsyncMock()
-    app.dependency_overrides[get_handler] = lambda: handler
+    app.state.registry = StubRegistry(whatsapp)
     app.dependency_overrides[get_db_async_session] = lambda: session
-    app.dependency_overrides[get_whatsapp] = lambda: whatsapp
-    app.dependency_overrides[get_settings] = lambda: Mock(openwa_webhook_secret=SECRET)
+    app.dependency_overrides[get_settings] = lambda: Mock()
     return TestClient(app), handler, gather, session, whatsapp
 
 
@@ -41,7 +54,7 @@ def _post(client, payload, *, secret=SECRET, key=None, signature=True, raw=None)
         )
     if key:
         headers["X-OpenWA-Idempotency-Key"] = key
-    return client.post("/webhook", content=body, headers=headers)
+    return client.post("/webhook/a", content=body, headers=headers)
 
 
 MESSAGE = {
@@ -85,7 +98,7 @@ def test_group_events_resync_groups(ctx, name):
     client, handler, gather, session, whatsapp = ctx
     assert _post(client, {"event": name, "data": {}}).status_code == 200
     handler.assert_not_awaited()
-    gather.assert_awaited_once_with(session, whatsapp)
+    gather.assert_awaited_once_with(session, whatsapp, "a")
 
 
 def test_other_events_are_acknowledged_and_ignored(ctx):
@@ -104,9 +117,7 @@ def test_bad_missing_or_wrong_signature_is_401_and_not_processed(ctx):
 
 def test_unconfigured_secret_rejects_everything(ctx):
     client, handler, *_ = ctx
-    client.app.dependency_overrides[get_settings] = lambda: Mock(
-        openwa_webhook_secret=""
-    )
+    client.app.state.registry.webhook_secret = None
     assert _post(client, MESSAGE, secret="").status_code == 401
     handler.assert_not_awaited()
 
@@ -137,7 +148,7 @@ def test_failed_delivery_is_not_marked_seen_so_retry_reprocesses(ctx):
 def test_oversized_content_length_is_413_and_not_processed(ctx):
     client, handler, *_ = ctx
     big = b"x" * (webhook_api.MAX_BODY_BYTES + 1)
-    resp = client.post("/webhook", content=big)
+    resp = client.post("/webhook/a", content=big)
     assert resp.status_code == 413
     handler.assert_not_awaited()
 
@@ -149,14 +160,14 @@ async def test_oversized_body_with_lying_content_length_is_413(ctx):
     big = b"x" * (webhook_api.MAX_BODY_BYTES + 1)
     transport = httpx.ASGITransport(app=client.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-        resp = await c.post("/webhook", content=big, headers={"content-length": "10"})
+        resp = await c.post("/webhook/a", content=big, headers={"content-length": "10"})
     assert resp.status_code == 413
     handler.assert_not_awaited()
 
 
 def test_body_at_limit_is_not_rejected_for_size(ctx):
     client, *_ = ctx
-    resp = client.post("/webhook", content=b"x" * webhook_api.MAX_BODY_BYTES)
+    resp = client.post("/webhook/a", content=b"x" * webhook_api.MAX_BODY_BYTES)
     assert resp.status_code == 401  # size ok; fails signature as expected
 
 
@@ -181,9 +192,9 @@ async def test_concurrent_duplicate_delivery_is_processed_once(ctx):
     }
     transport = httpx.ASGITransport(app=client.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-        first = asyncio.create_task(c.post("/webhook", content=body, headers=headers))
+        first = asyncio.create_task(c.post("/webhook/a", content=body, headers=headers))
         await started.wait()
-        second = await c.post("/webhook", content=body, headers=headers)
+        second = await c.post("/webhook/a", content=body, headers=headers)
         release.set()
         first_resp = await first
     assert second.status_code == 200 and first_resp.status_code == 200

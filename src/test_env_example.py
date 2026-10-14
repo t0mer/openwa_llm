@@ -8,10 +8,7 @@ ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 
 REQUIRED = dict(
     db_uri="postgresql+asyncpg://u:p@h/db",
-    whatsapp_host="http://h",
-    openwa_api_key="k",
-    openwa_session_id="s",
-    openwa_webhook_secret="w" * 16,
+    settings_encryption_key="A" * 43 + "=",
     anthropic_api_key="a",
     voyage_api_key="v",
     logfire_token="l",

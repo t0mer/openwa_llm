@@ -53,11 +53,12 @@ async def test_message_handler_dm_opt_out(
 ):
     # Create handler instance
     handler = MessageHandler(
-        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
     )
 
     # Mock store_message to return our test message
     test_message = Message(
+        session_id="s1",
         message_id="1",
         chat_jid="user@s.whatsapp.net",
         sender_jid="user@s.whatsapp.net",  # DM: sender == chat (usually, but logic checks message.group)
@@ -97,10 +98,11 @@ async def test_message_handler_dm_opt_in(
     mock_settings: Mock,
 ):
     handler = MessageHandler(
-        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
     )
 
     test_message = Message(
+        session_id="s1",
         message_id="1",
         chat_jid="user@s.whatsapp.net",
         sender_jid="user@s.whatsapp.net",
@@ -139,10 +141,11 @@ async def test_message_handler_dm_status(
     mock_settings: Mock,
 ):
     handler = MessageHandler(
-        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
     )
 
     test_message = Message(
+        session_id="s1",
         message_id="1",
         chat_jid="user@s.whatsapp.net",
         sender_jid="user@s.whatsapp.net",
@@ -171,10 +174,11 @@ async def test_message_handler_ignores_own_messages(
     mock_session, mock_whatsapp, mock_embedding_client, mock_settings
 ):
     handler = MessageHandler(
-        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
     )
     handler.store_message = AsyncMock(
         return_value=Message(
+            session_id="s1",
             message_id="1",
             chat_jid="user@s.whatsapp.net",
             sender_jid="user@s.whatsapp.net",
@@ -191,17 +195,18 @@ async def test_message_handler_routes_mention_from_mentioned_jids(
     mock_session, mock_whatsapp, mock_embedding_client, mock_settings
 ):
     handler = MessageHandler(
-        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
     )
     handler.router = AsyncMock()
     msg = Message(
+        session_id="s1",
         message_id="g1",
         chat_jid="1203@g.us",
         sender_jid="user@s.whatsapp.net",
         text="what is the plan?",  # no literal @bot in the text
         timestamp=datetime.now(timezone.utc),
     )
-    msg.group = Group(group_jid="1203@g.us", managed=True)
+    msg.group = Group(session_id="s1", group_jid="1203@g.us", managed=True)
     handler.store_message = AsyncMock(return_value=msg)
     await handler(
         inbound(
@@ -221,7 +226,7 @@ async def test_message_handler_stores_reaction_event(
     from whatsapp import InboundReaction
 
     handler = MessageHandler(
-        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
     )
     handler.store_reaction = AsyncMock()
     handler.store_message = AsyncMock()
@@ -244,7 +249,7 @@ async def test_store_reaction_ignores_empty_emoji(
     from whatsapp import InboundReaction
 
     handler = MessageHandler(
-        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
     )
     removal = InboundReaction(
         message_id="m1",
@@ -284,19 +289,20 @@ async def _run_group_message(
     from_me=False,
 ):
     handler = MessageHandler(
-        mock_session, whatsapp, mock_embedding_client, mock_settings
+        mock_session, whatsapp, mock_embedding_client, mock_settings, "s1"
     )
     router = AsyncMock()
     handler.router = router
     message_id = f"lid-{next(_ids)}"  # the handler dedupes by id across tests
     msg = Message(
+        session_id="s1",
         message_id=message_id,
         chat_jid="1203@g.us",
         sender_jid=sender,
         text=text,
         timestamp=datetime.now(timezone.utc),
     )
-    msg.group = Group(group_jid="1203@g.us", managed=True)
+    msg.group = Group(session_id="s1", group_jid="1203@g.us", managed=True)
     handler.store_message = AsyncMock(return_value=msg)
     await handler(
         inbound(

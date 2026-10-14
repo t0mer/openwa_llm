@@ -1,6 +1,11 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from models import Group, Message, Reaction, Sender
+from test_utils.openwa_session import TEST_SESSION_ID
+
+pytestmark = pytest.mark.usefixtures("session_row", "active_sessions")
 
 BASE = "/api/v1/admin/messages"
 SAME = datetime(2026, 3, 1, 10, 0, tzinfo=timezone.utc)
@@ -10,12 +15,13 @@ async def seed(db_sessionmaker, n=7):
     async with db_sessionmaker() as session:
         session.add(Sender(jid="a@s.whatsapp.net", push_name="Ann"))
         session.add(Sender(jid="b@s.whatsapp.net", push_name="Bob"))
-        session.add(Group(group_jid="1@g.us"))
-        session.add(Group(group_jid="2@g.us"))
+        session.add(Group(session_id=TEST_SESSION_ID, group_jid="1@g.us"))
+        session.add(Group(session_id=TEST_SESSION_ID, group_jid="2@g.us"))
         await session.flush()
         for i in range(n):  # several messages share the exact same timestamp
             session.add(
                 Message(
+                    session_id=TEST_SESSION_ID,
                     message_id=f"m{i}",
                     chat_jid="1@g.us",
                     group_jid="1@g.us",
@@ -28,6 +34,7 @@ async def seed(db_sessionmaker, n=7):
             )
         session.add(
             Message(
+                session_id=TEST_SESSION_ID,
                 message_id="other",
                 chat_jid="2@g.us",
                 group_jid="2@g.us",
@@ -177,6 +184,7 @@ async def test_sender_filter_accepts_typed_phone_numbers(db_sessionmaker, admin_
         await session.flush()
         session.add(
             Message(
+                session_id=TEST_SESSION_ID,
                 message_id="p1",
                 chat_jid=jid,
                 sender_jid=jid,

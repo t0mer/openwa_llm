@@ -162,10 +162,20 @@ async def _summarize_group_locked(
 
 
 async def summarize_and_send_to_groups(
-    settings: Settings, session: AsyncSession, whatsapp: WhatsAppGateway
+    settings: Settings,
+    session: AsyncSession,
+    whatsapp: WhatsAppGateway,
+    session_id: str,
 ) -> list[GroupSummaryResult]:
+    """Summarize every managed group owned by `session_id` via its gateway."""
     groups = list(
-        (await session.exec(select(Group).where(Group.managed == True))).all()  # noqa: E712 https://stackoverflow.com/a/18998106
+        (
+            await session.exec(
+                select(Group).where(
+                    col(Group.managed).is_(True), col(Group.session_id) == session_id
+                )
+            )
+        ).all()
     )
     tasks = [
         _summarize_group_locked(settings, session, whatsapp, group) for group in groups

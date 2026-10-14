@@ -4,13 +4,19 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from config import Settings, get_settings
 from load_new_kbtopics import topicsLoader
-from summarize_and_send_to_groups import summarize_and_send_to_groups
+from summarize_and_send_to_groups import (
+    GroupSummaryResult,
+    summarize_and_send_to_groups,
+)
+
+from whatsapp import GatewayError
+from whatsapp.gateway import describe_gateway_failure
 
 from .schemas import ActionStarted, ActionStatus, ActionSummary, GroupActionResult
 
@@ -66,7 +72,7 @@ class ActionRunner:
                 state="failed",
                 started_at=started,
                 finished_at=_now(),
-                error=f"{type(e).__name__}: {e}"[:_MAX_ERROR_LEN],
+                error=_error_text(e)[:_MAX_ERROR_LEN],
             )
         else:
             summary, results = outcome if outcome else (None, [])
@@ -90,6 +96,25 @@ class ActionRunner:
 runner = ActionRunner()
 
 
+def _active_sessions(app: Any) -> list[str]:
+    ids = app.state.registry.ids()
+    if not ids:
+        raise LookupError("no active OpenWA session configured")
+    return ids
+
+
+def _session_error(session_id: str, exc: Exception) -> str:
+    logger.error("Admin action failed for session %s", session_id, exc_info=exc)
+    return f"{session_id}: {_error_text(exc)}"[:_MAX_ERROR_LEN]
+
+
+def _error_text(exc: BaseException) -> str:
+    # A gateway error's message can carry OpenWA's response body: never shown.
+    if isinstance(exc, GatewayError):
+        return describe_gateway_failure(exc)
+    return f"{type(exc).__name__}: {exc}"
+
+
 @router.get("", response_model=dict[str, ActionStatus])
 async def get_actions() -> dict[str, ActionStatus]:
     return runner.status()
@@ -103,11 +128,23 @@ async def run_summarize(
     app = request.app
 
     async def job() -> ActionOutcome:
-        async with app.state.async_session() as session:
-            outcomes = await summarize_and_send_to_groups(
-                settings, session, app.state.whatsapp
-            )
-            await session.commit()
+        outcomes: list[GroupSummaryResult] = []
+        errors: list[str] = []
+        # One DB session per OpenWA session: a failure never stops the others.
+        for session_id in (ids := _active_sessions(app)):
+            try:
+                async with app.state.async_session() as session:
+                    outcomes += await summarize_and_send_to_groups(
+                        settings,
+                        session,
+                        app.state.registry.get(session_id),
+                        session_id,
+                    )
+                    await session.commit()
+            except Exception as e:
+                errors.append(_session_error(session_id, e))
+        if errors and len(errors) == len(ids):
+            raise RuntimeError("; ".join(errors))
         results = [
             GroupActionResult(
                 group_name=o.group_name,
@@ -120,6 +157,8 @@ async def run_summarize(
             for o in outcomes
         ]
         message = None if outcomes else "No managed groups to summarize."
+        if errors:
+            message = "Failed sessions: " + "; ".join(errors)
         return ActionSummary(managed_groups=len(outcomes), message=message), results
 
     job_id = runner.start("summarize", job)
@@ -133,11 +172,21 @@ async def run_load_kb(request: Request) -> ActionStarted:
     app = request.app
 
     async def job() -> None:
-        async with app.state.async_session() as session:
-            await topicsLoader().load_topics_for_all_groups(
-                session, app.state.embedding_client, app.state.whatsapp
-            )
-            await session.commit()
+        errors: list[str] = []
+        for session_id in _active_sessions(app):
+            try:
+                async with app.state.async_session() as session:
+                    await topicsLoader().load_topics_for_all_groups(
+                        session,
+                        app.state.embedding_client,
+                        app.state.registry.get(session_id),
+                        session_id,
+                    )
+                    await session.commit()
+            except Exception as e:
+                errors.append(_session_error(session_id, e))
+        if errors:
+            raise RuntimeError("; ".join(errors))
 
     job_id = runner.start("load_kb", job)
     if job_id is None:

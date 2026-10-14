@@ -4,10 +4,15 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockViewport } from "../../hooks/mockViewport";
 import { THEME_KEY } from "../../lib/theme";
+import { api } from "../../api";
 import AppShell from "./AppShell";
 
 const logout = vi.fn();
 vi.mock("../../auth", () => ({ useAuth: () => ({ logout }) }));
+vi.mock("../../api", async (orig) => {
+  const actual = await orig<typeof import("../../api")>();
+  return { ...actual, api: { listSessions: vi.fn() } };
+});
 
 let viewport: ReturnType<typeof mockViewport>;
 function setup(width: number, path = "/groups") {
@@ -24,6 +29,8 @@ function setup(width: number, path = "/groups") {
 }
 
 beforeEach(() => {
+  // Pending by default: the switcher stays empty and causes no late state updates.
+  vi.mocked(api.listSessions).mockReturnValue(new Promise(() => {}));
   logout.mockReset();
   localStorage.clear();
   document.documentElement.className = "";
@@ -74,7 +81,7 @@ describe("AppShell breakpoints", () => {
     setup(1024);
     const nav = screen.getByRole("navigation", { name: "Main" });
     expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual([
-      "Dashboard", "Groups", "Messages", "Bot actions", "Contacts", "Opt-outs",
+      "Dashboard", "Groups", "Messages", "Bot actions", "Contacts", "Opt-outs", "Settings",
     ]);
   });
 
@@ -99,6 +106,22 @@ describe("AppShell breakpoints", () => {
   it("keeps content clear of the fixed tab bar on phones", () => {
     setup(375);
     expect(screen.getByRole("main")).toHaveClass("pb-24", "md:pb-10");
+  });
+});
+
+describe("session switcher", () => {
+  it.each([375, 1024])("is shown above the page at %ipx", async (width) => {
+    vi.mocked(api.listSessions).mockResolvedValue([]);
+    setup(width);
+    const link = await screen.findByRole("link", { name: "No sessions configured" });
+    expect(screen.getByRole("main")).toContainElement(link);
+    expect(link).toHaveAttribute("href", "/settings");
+  });
+
+  it("lists Settings in the More sheet on phones", async () => {
+    setup(375);
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(within(screen.getByRole("dialog", { name: "More" })).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
   });
 });
 

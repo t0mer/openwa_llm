@@ -4,9 +4,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from api.deps import get_whatsapp
+from api.deps import get_optional_whatsapp
 from models import Group, KBTopic, Message, Reaction, Sender
 from whatsapp.jid import parse_jid
+from test_utils.openwa_session import TEST_SESSION_ID
+
+pytestmark = pytest.mark.usefixtures("session_row", "active_sessions")
 
 BASE = "/api/v1/admin/stats"
 TZ = ZoneInfo("Asia/Jerusalem")
@@ -34,16 +37,17 @@ def _whatsapp(fail: bool = False):
 
 @pytest.fixture
 def bot(admin_app):
-    admin_app.dependency_overrides[get_whatsapp] = lambda: _whatsapp()
+    admin_app.dependency_overrides[get_optional_whatsapp] = lambda: _whatsapp()
 
 
 @pytest.fixture
 def no_bot(admin_app):
-    admin_app.dependency_overrides[get_whatsapp] = lambda: _whatsapp(fail=True)
+    admin_app.dependency_overrides[get_optional_whatsapp] = lambda: _whatsapp(fail=True)
 
 
 def _msg(mid, ts, sender, chat=G1, text: str | None = "hi", media=None):
     return Message(
+        session_id=TEST_SESSION_ID,
         message_id=mid,
         chat_jid=chat,
         group_jid=chat if chat.endswith("@g.us") else None,
@@ -84,9 +88,11 @@ async def seed(db_sessionmaker):
             message_id="a3", sender_jid=C, emoji="👍", timestamp=T - timedelta(days=9)
         ),
         groups=(
-            Group(group_jid=G1, group_name="One", managed=True),
-            Group(group_jid=G2, group_name=HEBREW_LONG),
-            Group(group_jid="300@g.us", group_name="Idle"),
+            Group(
+                session_id=TEST_SESSION_ID, group_jid=G1, group_name="One", managed=True
+            ),
+            Group(session_id=TEST_SESSION_ID, group_jid=G2, group_name=HEBREW_LONG),
+            Group(session_id=TEST_SESSION_ID, group_jid="300@g.us", group_name="Idle"),
         ),
     )
 
@@ -164,7 +170,11 @@ async def test_top_groups_limit_ordering_and_tie_break(
         for jid, n in counts.items()
         for i in range(n)
     ]
-    await _add(db_sessionmaker, *rows, groups=[Group(group_jid=jid) for jid in counts])
+    await _add(
+        db_sessionmaker,
+        *rows,
+        groups=[Group(session_id=TEST_SESSION_ID, group_jid=jid) for jid in counts],
+    )
     body = (await admin_client.get(BASE, params=RANGE)).json()
     assert [(g["group_jid"], g["count"]) for g in body["top_groups"]] == [
         ("1@g.us", 3),
@@ -178,7 +188,12 @@ async def test_top_groups_limit_ordering_and_tie_break(
 async def test_top_senders_are_limited_to_ten(admin_client, db_sessionmaker, bot):
     jids = [f"{500 + i}@s.whatsapp.net" for i in range(12)]
     rows = [_msg(f"s{i}", T, jid) for i, jid in enumerate(jids)]
-    await _add(db_sessionmaker, *rows, senders=jids, groups=[Group(group_jid=G1)])
+    await _add(
+        db_sessionmaker,
+        *rows,
+        senders=jids,
+        groups=[Group(session_id=TEST_SESSION_ID, group_jid=G1)],
+    )
     body = (await admin_client.get(BASE, params=RANGE)).json()
     assert [s["sender_jid"] for s in body["top_senders"]] == jids[:10]
 
@@ -201,7 +216,7 @@ async def test_kb_topics_counted_by_start_time_in_range(
         db_sessionmaker,
         topic("in", T),
         topic("out", T - timedelta(days=3)),
-        groups=[Group(group_jid=G1)],
+        groups=[Group(session_id=TEST_SESSION_ID, group_jid=G1)],
     )
     body = (await admin_client.get(BASE, params=RANGE)).json()
     assert body["kb_topics"] == 1
@@ -211,7 +226,11 @@ async def test_late_utc_message_lands_on_next_local_day(
     admin_client, db_sessionmaker, bot
 ):
     late = datetime(2026, 6, 10, 22, 30, tzinfo=UTC)  # Thu 01:30 in Jerusalem
-    await _add(db_sessionmaker, _msg("late", late, A), groups=[Group(group_jid=G1)])
+    await _add(
+        db_sessionmaker,
+        _msg("late", late, A),
+        groups=[Group(session_id=TEST_SESSION_ID, group_jid=G1)],
+    )
     body = (
         await admin_client.get(
             BASE, params={"from": "2026-06-09T21:00:00Z", "to": "2026-06-12T20:59:59Z"}
@@ -235,7 +254,7 @@ async def test_hour_buckets_across_dst_start(admin_client, db_sessionmaker, bot)
         db_sessionmaker,
         _msg("pre", before, A),
         _msg("post", after, A),
-        groups=[Group(group_jid=G1)],
+        groups=[Group(session_id=TEST_SESSION_ID, group_jid=G1)],
     )
     body = (
         await admin_client.get(
@@ -270,7 +289,7 @@ async def test_naive_bounds_use_the_configured_zone(admin_client, db_sessionmake
     await _add(
         db_sessionmaker,
         _msg("m", datetime(2026, 6, 10, 21, 30, tzinfo=UTC), A),  # 00:30 local, 11th
-        groups=[Group(group_jid=G1)],
+        groups=[Group(session_id=TEST_SESSION_ID, group_jid=G1)],
     )
     params = {"from": "2026-06-11T00:00:00", "to": "2026-06-11T23:59:59"}
     body = (await admin_client.get(BASE, params=params)).json()
@@ -280,7 +299,11 @@ async def test_naive_bounds_use_the_configured_zone(admin_client, db_sessionmake
 
 async def test_sunday_is_weekday_zero(admin_client, db_sessionmaker, bot):
     sunday = datetime(2026, 6, 14, 9, 0, tzinfo=UTC)
-    await _add(db_sessionmaker, _msg("sun", sunday, A), groups=[Group(group_jid=G1)])
+    await _add(
+        db_sessionmaker,
+        _msg("sun", sunday, A),
+        groups=[Group(session_id=TEST_SESSION_ID, group_jid=G1)],
+    )
     body = (
         await admin_client.get(
             BASE, params={"from": "2026-06-13T00:00:00Z", "to": "2026-06-15T00:00:00Z"}
@@ -360,7 +383,7 @@ async def test_week_buckets_are_monday_midnights_and_zero_filled(
         db_sessionmaker,
         _msg("w1", datetime(2026, 1, 8, 10, 0, tzinfo=UTC), A),  # Thu, week of 01-05
         _msg("w2", datetime(2026, 3, 5, 10, 0, tzinfo=UTC), A),  # Thu, week of 03-02
-        groups=[Group(group_jid=G1)],
+        groups=[Group(session_id=TEST_SESSION_ID, group_jid=G1)],
     )
     params = {"from": "2026-01-07T00:00:00", "to": "2026-06-10T00:00:00"}
     body = (await admin_client.get(BASE, params=params)).json()
@@ -389,7 +412,11 @@ async def test_day_buckets_survive_a_dst_jump_at_midnight(
 ):
     # Jerusalem skipped 1974-07-07 00:00 -> 01:00; later days start at 00:00 again.
     msg = datetime(1974, 7, 8, 9, 0, tzinfo=UTC)  # 12:00 local
-    await _add(db_sessionmaker, _msg("old", msg, A), groups=[Group(group_jid=G1)])
+    await _add(
+        db_sessionmaker,
+        _msg("old", msg, A),
+        groups=[Group(session_id=TEST_SESSION_ID, group_jid=G1)],
+    )
     params = {"from": "1974-07-05T00:00:00", "to": "1974-07-09T23:59:59"}
     body = (await admin_client.get(BASE, params=params)).json()
     local = [datetime.fromisoformat(p["start"]).astimezone(TZ) for p in body["series"]]

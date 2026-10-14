@@ -15,7 +15,7 @@ async def test_hybrid_search_quality(mock_session: AsyncSession):
     might not perfectly match the query, demonstrating the value of full-text search.
     """
     # 1. Setup Data
-    group = Group(group_jid="123@g.us", group_name="Test Group")
+    group = Group(session_id="s1", group_jid="123@g.us", group_name="Test Group")
 
     # Create a topic about "Project Alpha"
     topic = KBTopic(
@@ -29,6 +29,7 @@ async def test_hybrid_search_quality(mock_session: AsyncSession):
 
     # Create a message with a specific keyword "deadline" and "Friday"
     message = Message(
+        session_id="s1",
         message_id="msg_1",
         chat_jid=group.group_jid,
         sender_jid="user_1@s.whatsapp.net",
@@ -48,6 +49,7 @@ async def test_hybrid_search_quality(mock_session: AsyncSession):
     mock_row.media_url = message.media_url
     mock_row.chat_jid = message.chat_jid
     mock_row.sender_jid = message.sender_jid
+    mock_row.session_id = message.session_id
     mock_row.group_jid = message.group_jid
     mock_row.reply_to_id = message.reply_to_id
     mock_row.rank = 0.9
@@ -110,9 +112,10 @@ async def test_hybrid_search_quality(mock_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_keyword_search_multi_language(mock_session: AsyncSession):
     """Test that keyword search works for non-English text (Hebrew)."""
-    group = Group(group_jid="456@g.us", group_name="Hebrew Group")
+    group = Group(session_id="s1", group_jid="456@g.us", group_name="Hebrew Group")
 
     message = Message(
+        session_id="s1",
         message_id="msg_he_1",
         chat_jid=group.group_jid,
         sender_jid="user_1@s.whatsapp.net",
@@ -130,6 +133,7 @@ async def test_keyword_search_multi_language(mock_session: AsyncSession):
     mock_row.media_url = message.media_url
     mock_row.chat_jid = message.chat_jid
     mock_row.sender_jid = message.sender_jid
+    mock_row.session_id = message.session_id
     mock_row.group_jid = message.group_jid
     mock_row.reply_to_id = message.reply_to_id
     mock_row.rank = 0.8

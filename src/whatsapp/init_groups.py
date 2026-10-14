@@ -1,5 +1,6 @@
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import insert
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from models import Group, BaseGroup, Sender, BaseSender, upsert
@@ -11,7 +12,9 @@ from .gateway import WhatsAppGateway
 SYNC_OWNED_COLUMNS = ("group_name", "group_topic", "owner_jid")
 
 
-async def gather_groups(session: AsyncSession, client: WhatsAppGateway) -> None:
+async def gather_groups(
+    session: AsyncSession, client: WhatsAppGateway, session_id: str
+) -> None:
     for g in await client.list_groups():
         owner_usr = g.owner_jid or None
         if owner_usr and (await session.get(Sender, owner_usr)) is None:
@@ -24,6 +27,7 @@ async def gather_groups(session: AsyncSession, client: WhatsAppGateway) -> None:
                 group_name=g.name,
                 group_topic=g.topic,
                 owner_jid=owner_usr,
+                session_id=session_id,
             ).model_dump()
         )
         stmt = insert(Group).values(
@@ -31,6 +35,8 @@ async def gather_groups(session: AsyncSession, client: WhatsAppGateway) -> None:
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=["group_jid"],
-            set_={col: stmt.excluded[col] for col in SYNC_OWNED_COLUMNS},
+            set_={name: stmt.excluded[name] for name in SYNC_OWNED_COLUMNS},
+            # A group owned by another session is left untouched, never taken over.
+            where=col(Group.session_id) == session_id,
         )
         await session.execute(stmt)

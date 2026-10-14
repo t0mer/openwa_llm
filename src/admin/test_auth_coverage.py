@@ -21,6 +21,7 @@ EXPECTED_PREFIXES = {
     "/messages",
     "/actions",
     "/stats",
+    "/settings",
 }
 MIN_ROUTES = 12
 

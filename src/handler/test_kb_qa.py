@@ -38,6 +38,7 @@ def mock_settings():
 @pytest.fixture
 def test_message():
     return Message(
+        session_id="s1",
         message_id="test_id",
         text="/kb_qa group: target_group, question: query",
         chat_jid="allowed@g.us",
@@ -55,7 +56,12 @@ async def test_kb_qa_handler_success(
     mock_settings,
 ):
     # Mock group search result
-    mock_group = Group(group_jid="target@g.us", group_name="target_group", managed=True)
+    mock_group = Group(
+        session_id="s1",
+        group_jid="target@g.us",
+        group_name="target_group",
+        managed=True,
+    )
 
     mock_result = Mock()
     mock_result.all.return_value = [mock_group]
@@ -68,7 +74,7 @@ async def test_kb_qa_handler_success(
         MockKB.return_value = mock_kb_instance
 
         handler = KBQAHandler(
-            mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+            mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
         )
         await handler(test_message)
 
@@ -92,7 +98,7 @@ async def test_kb_qa_handler_unauthorized_group(
     test_message.chat_jid = "not_allowed@g.us"
 
     handler = KBQAHandler(
-        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
     )
 
     with patch("handler.kb_qa.logger") as mock_logger:
@@ -113,7 +119,7 @@ async def test_kb_qa_handler_unauthorized_user(
     test_message.sender_jid = "stranger@s.whatsapp.net"
 
     handler = KBQAHandler(
-        mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
     )
 
     with patch("handler.kb_qa.logger") as mock_logger:
@@ -136,10 +142,12 @@ async def test_kb_qa_handler_group_not_found(
     mock_result.all.return_value = []
     mock_session.exec.side_effect = None  # Clear the side_effect from AsyncSessionMock
     mock_session.exec.return_value = mock_result
+    # The reply's chat group belongs to this handler's session.
+    mock_session.scalar = AsyncMock(return_value="s1")
 
     with patch("handler.kb_qa.KnowledgeBaseAnswers"):
         handler = KBQAHandler(
-            mock_session, mock_whatsapp, mock_embedding_client, mock_settings
+            mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
         )
         await handler(test_message)
 

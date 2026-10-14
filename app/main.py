@@ -15,19 +15,79 @@ from api import load_new_kbtopics_api, status, summarize_and_send_to_group_api, 
 import models  # noqa
 from config import get_settings
 from scheduling.runner import start_scheduler
+from openwa_settings.crypto import SecretBox
+from openwa_settings.registry import GatewayRegistry
+from openwa_settings.store import load_connection, seed_from_env, webhook_url_for
 from whatsapp import OpenWAGateway
 from whatsapp.init_groups import gather_groups
-from whatsapp.webhook_registration import register_webhook_with_retry
+from whatsapp.webhook_registration import WEBHOOK_EVENTS, register_webhook_with_retry
 from voyageai.client_async import AsyncClient
 
-WEBHOOK_EVENTS = [
-    "message.received",
-    "message.reaction",
-    "group.join",
-    "group.leave",
-    "group.update",
-    "group.join_request",
-]
+logger = logging.getLogger(__name__)
+
+
+def _active_gateway(app: FastAPI, pk: str) -> OpenWAGateway | None:
+    """The session's gateway, or None when a reload removed it meanwhile."""
+    try:
+        return app.state.registry.get(pk)
+    except KeyError:
+        logger.info("OpenWA session %s is no longer active; skipping its task", pk)
+        return None
+
+
+async def _sync_groups(app: FastAPI, pk: str) -> None:
+    if (gateway := _active_gateway(app, pk)) is None:
+        return
+    async with app.state.async_session() as db:
+        try:
+            await gather_groups(db, gateway, pk)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+
+
+async def _register_webhook(app: FastAPI, pk: str) -> None:
+    registry = app.state.registry
+    async with app.state.async_session() as db:
+        conn = await load_connection(db)
+    url = webhook_url_for(conn, pk) if conn is not None else ""
+    if not url:
+        logger.info("No webhook URL configured; not registering session %s", pk)
+        return
+    if not registry.webhook_secret:
+        logger.info("No webhook secret available; not registering session %s", pk)
+        return
+    if (gateway := _active_gateway(app, pk)) is None:
+        return
+    await register_webhook_with_retry(
+        gateway, url, registry.webhook_secret, WEBHOOK_EVENTS
+    )
+
+
+def _task_done(app: FastAPI, task: asyncio.Task) -> None:
+    """Forget a finished session task and log its failure."""
+    try:
+        app.state.bg_tasks.remove(task)
+    except ValueError:
+        pass
+    if task.cancelled() or (exc := task.exception()) is None:
+        return
+    # Only the type: the message can carry OpenWA's response or request data.
+    logger.error("Background task %s failed: %s", task.get_name(), type(exc).__name__)
+
+
+def start_session_tasks(app: FastAPI, pk: str) -> None:
+    """Sync groups and register the per-session webhook for one active session."""
+    # Keep references so tasks are not garbage-collected mid-flight; each one
+    # removes itself when done, so repeated settings saves do not pile up.
+    for name, coro in (
+        ("sync-groups", _sync_groups(app, pk)),
+        ("register-webhook", _register_webhook(app, pk)),
+    ):
+        task = asyncio.create_task(coro, name=f"{name}:{pk}")
+        task.add_done_callback(lambda t: _task_done(app, t))
+        app.state.bg_tasks.append(task)
 
 
 @asynccontextmanager
@@ -43,13 +103,7 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
 
     if (admin_warning := admin_config_warning(settings)) is not None:
-        logging.getLogger(__name__).warning(admin_warning)
-
-    app.state.whatsapp = OpenWAGateway(
-        settings.whatsapp_host,
-        settings.openwa_api_key,
-        settings.openwa_session_id,
-    )
+        logger.warning(admin_warning)
 
     if settings.db_uri.startswith("postgresql://"):
         warn("use 'postgresql+asyncpg://' instead of 'postgresql://' in db_uri")
@@ -67,30 +121,22 @@ async def lifespan(app: FastAPI):
         engine, expire_on_commit=False, class_=AsyncSession
     )
 
-    async def sync_groups_on_startup() -> None:
-        async with async_session() as session:
-            try:
-                await gather_groups(session, app.state.whatsapp)
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-
-    # Keep references so startup tasks are not garbage-collected mid-flight.
-    app.state.bg_tasks = [
-        asyncio.create_task(sync_groups_on_startup()),
-        asyncio.create_task(
-            register_webhook_with_retry(
-                app.state.whatsapp,
-                settings.openwa_webhook_url,
-                settings.openwa_webhook_secret,
-                WEBHOOK_EVENTS,
-            )
-        ),
-    ]
-
     app.state.db_engine = engine
     app.state.async_session = async_session
+    app.state.bg_tasks = []
+
+    box = SecretBox(settings.settings_encryption_key.get_secret_value())
+    app.state.secret_box = box
+    app.state.registry = GatewayRegistry(box)
+    app.state.start_session_tasks = start_session_tasks  # used by admin settings
+    async with async_session() as db:
+        await seed_from_env(db, settings, box)
+        await app.state.registry.reload(db)
+        await db.commit()
+    for pk in app.state.registry.ids():
+        start_session_tasks(app, pk)
+    logger.info("OpenWA sessions active: %d", len(app.state.registry.ids()))
+
     app.state.embedding_client = AsyncClient(
         api_key=settings.voyage_api_key, max_retries=settings.voyage_max_retries
     )
@@ -103,7 +149,7 @@ async def lifespan(app: FastAPI):
         for task in app.state.bg_tasks:
             task.cancel()
         await asyncio.gather(*app.state.bg_tasks, return_exceptions=True)
-        await app.state.whatsapp.aclose()
+        await app.state.registry.aclose()
         await engine.dispose()
 
 

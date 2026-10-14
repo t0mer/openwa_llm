@@ -30,14 +30,17 @@ class MessageHandler(BaseHandler):
         whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
+        session_id: str,
     ):
-        self.router = Router(session, whatsapp, embedding_client, settings)
+        self.router = Router(session, whatsapp, embedding_client, settings, session_id)
         self.whatsapp_group_link_spam = WhatsappGroupLinkSpamHandler(
-            session, whatsapp, embedding_client, settings
+            session, whatsapp, embedding_client, settings, session_id
         )
-        self.kb_qa_handler = KBQAHandler(session, whatsapp, embedding_client, settings)
+        self.kb_qa_handler = KBQAHandler(
+            session, whatsapp, embedding_client, settings, session_id
+        )
         self.settings = settings
-        super().__init__(session, whatsapp, embedding_client)
+        super().__init__(session, whatsapp, embedding_client, session_id)
 
     async def __call__(self, event: InboundMessage | InboundReaction):
         if isinstance(event, InboundReaction):

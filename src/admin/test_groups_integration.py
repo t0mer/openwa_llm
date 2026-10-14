@@ -1,20 +1,40 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from models import Group, Message, Sender
+from test_utils.openwa_session import TEST_SESSION_ID
+
+pytestmark = pytest.mark.usefixtures("session_row", "active_sessions")
 
 
 async def seed(db_sessionmaker):
     async with db_sessionmaker() as session:
         session.add(Sender(jid="972501@s.whatsapp.net", push_name="Dana"))
-        session.add(Group(group_jid="1@g.us", group_name="Alpha team", managed=True))
         session.add(
-            Group(group_jid="2@g.us", group_name="Beta_100%", display_name="Zulu")
+            Group(
+                session_id=TEST_SESSION_ID,
+                group_jid="1@g.us",
+                group_name="Alpha team",
+                managed=True,
+            )
         )
-        session.add(Group(group_jid="3@g.us", group_name=None))
+        session.add(
+            Group(
+                session_id=TEST_SESSION_ID,
+                group_jid="2@g.us",
+                group_name="Beta_100%",
+                display_name="Zulu",
+            )
+        )
+        session.add(
+            Group(session_id=TEST_SESSION_ID, group_jid="3@g.us", group_name=None)
+        )
         await session.flush()
         for i in range(3):
             session.add(
                 Message(
+                    session_id=TEST_SESSION_ID,
                     message_id=f"m{i}",
                     chat_jid="1@g.us",
                     sender_jid="972501@s.whatsapp.net",

@@ -33,6 +33,7 @@ class BaseMessage(SQLModel):
         default=None,
     )
     reply_to_id: Optional[str] = Field(default=None, nullable=True)
+    session_id: str = Field(foreign_key="openwa_session.id", index=True, max_length=64)
 
     @model_validator(mode="before")
     @classmethod
@@ -86,7 +87,7 @@ class Message(BaseMessage, table=True):
     )
 
     @classmethod
-    def from_inbound(cls, m: InboundMessage) -> "Message":
+    def from_inbound(cls, m: InboundMessage, session_id: str) -> "Message":
         """Create a Message from a gateway-neutral inbound message."""
         return cls(
             **BaseMessage(
@@ -97,6 +98,7 @@ class Message(BaseMessage, table=True):
                 timestamp=m.timestamp,
                 reply_to_id=m.reply_to_id,
                 media_url=m.media_url,
+                session_id=session_id,
             ).model_dump()
         )
 

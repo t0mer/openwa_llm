@@ -6,6 +6,7 @@ from .reaction import Reaction, BaseReaction
 from .upsert import upsert, bulk_upsert
 from .opt_out import OptOut
 from .group_summary_schedule import GroupSummarySchedule
+from .openwa import OpenWAConnection, OpenWASession
 
 __all__ = [
     "Group",
@@ -22,4 +23,6 @@ __all__ = [
     "KBTopicCreate",
     "OptOut",
     "GroupSummarySchedule",
+    "OpenWAConnection",
+    "OpenWASession",
 ]

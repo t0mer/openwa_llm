@@ -28,6 +28,9 @@ services:
       - wa_llm_openwa:/app/data
     environment:
       - ENGINE_TYPE=whatsapp-web.js
+      # The OpenWA server's own master key. The app does not read OPENWA_API_KEY at runtime:
+      # it imports it once on first start (when no connection is stored yet); after that,
+      # enter the same key in Admin > Settings > Connection.
       - API_MASTER_KEY=${OPENWA_API_KEY:?set OPENWA_API_KEY in .env}
       - SSRF_ALLOWED_HOSTS=web-server
       - RESOLVE_LID_TO_PHONE=true

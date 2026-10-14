@@ -25,9 +25,10 @@ class WhatsappGroupLinkSpamHandler(BaseHandler):
         whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
+        session_id: str,
     ):
         self.settings = settings
-        super().__init__(session, whatsapp, embedding_client)
+        super().__init__(session, whatsapp, embedding_client, session_id)
 
     class SpamCheckResult(BaseModel):
         score: int = Field(

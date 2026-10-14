@@ -9,6 +9,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 T = TypeVar("T", bound=SQLModel)
 
+# Columns fixed at insert: a conflicting row never moves to another session.
+INSERT_ONLY_COLUMNS = frozenset({"session_id"})
+
 
 async def upsert(session: AsyncSession, entity: T) -> T:
     # Split fields into primary keys and values
@@ -26,6 +29,7 @@ async def upsert(session: AsyncSession, entity: T) -> T:
         set_={
             k: stmt.excluded[k]  # Use excluded to reference values from INSERT
             for k in vals.keys()  # Only update non-primary key columns
+            if k not in INSERT_ONLY_COLUMNS
         },
     )
 
@@ -74,7 +78,7 @@ async def bulk_upsert(session: AsyncSession, entities: List[SQLModel]):
         set_={
             col.name: stmt.excluded[col.name]
             for col in mapper.columns
-            if not col.primary_key
+            if not col.primary_key and col.name not in INSERT_ONLY_COLUMNS
         },
     )
 

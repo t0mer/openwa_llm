@@ -19,12 +19,13 @@ class KBQAHandler(BaseHandler):
         whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
         settings: Settings,
+        session_id: str,
     ):
         self.settings = settings
         self.ask_knowledge_base = KnowledgeBaseAnswers(
-            session, whatsapp, embedding_client, settings
+            session, whatsapp, embedding_client, settings, session_id
         )
-        super().__init__(session, whatsapp, embedding_client)
+        super().__init__(session, whatsapp, embedding_client, session_id)
 
     async def __call__(self, message: Message):
         """Handle the /kb_qa <group_name> <query> command for cross-group KB search."""
@@ -109,11 +110,12 @@ class KBQAHandler(BaseHandler):
             )
             return
 
-        # Find the group by name (only managed groups)
+        # Find the group by name (only this session's managed groups)
         # Try exact match first (case-insensitive)
         stmt = select(Group).where(
             col(Group.group_name).ilike(group_name),
-            Group.managed == True,  # noqa: E712  https://stackoverflow.com/a/18998106
+            col(Group.managed).is_(True),
+            col(Group.session_id) == self.session_id,
         )
         result = await self.session.exec(stmt)
         groups = list(result.all())
@@ -122,7 +124,8 @@ class KBQAHandler(BaseHandler):
             # Fallback to partial match if no exact match found
             stmt = select(Group).where(
                 col(Group.group_name).ilike(f"%{group_name}%"),
-                Group.managed == True,  # noqa: E712  https://stackoverflow.com/a/18998106
+                col(Group.managed).is_(True),
+                col(Group.session_id) == self.session_id,
             )
             result = await self.session.exec(stmt)
             groups = list(result.all())
@@ -153,6 +156,7 @@ class KBQAHandler(BaseHandler):
             chat_jid=message.chat_jid,  # Reply to original chat
             sender_jid=message.sender_jid,
             group_jid=target_group.group_jid,  # But search in target group
+            session_id=message.session_id,
         )
 
         # Run the knowledge base search

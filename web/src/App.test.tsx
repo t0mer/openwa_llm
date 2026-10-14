@@ -18,11 +18,13 @@ function stubSession(status: number, body: unknown = {}) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) =>
-      String(url).includes("/groups")
-        ? new Response(JSON.stringify(status === 200 ? { items: [], total: 0 } : body), { status })
-        : String(url).includes("/stats") && status === 200
-          ? new Response(JSON.stringify(EMPTY_STATS), { status })
-          : new Response(JSON.stringify(body), { status }),
+      String(url).includes("/settings/sessions")
+        ? new Response(JSON.stringify([]), { status: 200 })
+        : String(url).includes("/groups")
+          ? new Response(JSON.stringify(status === 200 ? { items: [], total: 0 } : body), { status })
+          : String(url).includes("/stats") && status === 200
+            ? new Response(JSON.stringify(EMPTY_STATS), { status })
+            : new Response(JSON.stringify(body), { status }),
     ),
   );
 }
@@ -59,6 +61,19 @@ describe("App auth routing", () => {
     stubSession(200, { authenticated: true });
     render(<MemoryRouter initialEntries={["/nope"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+  });
+
+  it("shows the Settings page at /settings", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).endsWith("/settings/connection")
+        ? new Response(JSON.stringify({ base_url: "", webhook_url: "", api_key_set: false, webhook_secret_set: false }), { status: 200 })
+        : String(url).includes("/settings/sessions")
+          ? new Response(JSON.stringify([]), { status: 200 })
+          : new Response(JSON.stringify({ authenticated: true }), { status: 200 }),
+    ));
+    render(<MemoryRouter initialEntries={["/settings"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Settings", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "No sessions configured" })).toBeInTheDocument();
   });
 
   it("shows the shell on phones too and logs out from the More sheet", async () => {

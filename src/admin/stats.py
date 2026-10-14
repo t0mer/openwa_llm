@@ -6,13 +6,17 @@ from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Integer, and_, cast, func, literal
+from sqlalchemy import Integer, and_, cast, false, func, literal
 from sqlalchemy import select as sa_select
 from sqlalchemy.dialects.postgresql import INTERVAL
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from api.deps import get_db_async_session, get_whatsapp
+from api.deps import (
+    get_db_async_session,
+    get_optional_session_id,
+    get_optional_whatsapp,
+)
 from config import Settings, get_settings
 from models import Group, KBTopic, Message, Reaction, Sender
 from whatsapp import WhatsAppGateway
@@ -57,7 +61,9 @@ def localize(value: datetime, zone: ZoneInfo) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=zone)
 
 
-async def _bot_ids(whatsapp: WhatsAppGateway) -> frozenset[str] | None:
+async def _bot_ids(whatsapp: WhatsAppGateway | None) -> frozenset[str] | None:
+    if whatsapp is None:
+        return None
     try:
         return (await get_bot_identity(whatsapp)).normalized()
     except Exception as e:  # stats must still load without a WhatsApp session
@@ -77,10 +83,16 @@ async def _counts_by(session: AsyncSession, key: Any, where: list) -> dict[Any, 
 async def get_stats(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
     settings: Annotated[Settings, Depends(get_settings)],
-    whatsapp: Annotated[WhatsAppGateway, Depends(get_whatsapp)],
+    session_id: Annotated[str | None, Depends(get_optional_session_id)],
+    whatsapp: Annotated[WhatsAppGateway | None, Depends(get_optional_whatsapp)],
     from_: Annotated[datetime | None, Query(alias="from")] = None,
     to: datetime | None = None,
 ) -> StatsOut:
+    """Dashboard numbers for one session's groups and DMs.
+
+    With no active session at all (fresh install) every count is zero: the
+    same well-formed response, never a 400.
+    """
     tz = settings.timezone
     zone = ZoneInfo(tz)
     from_ = localize(from_, zone) if from_ else None
@@ -90,8 +102,14 @@ async def get_stats(
     end = to or datetime.now(timezone.utc)
 
     bot_ids = await _bot_ids(whatsapp)
-    msg_where: list = [col(Message.timestamp) <= end]
-    reaction_where: list = [col(Reaction.timestamp) <= end]
+    in_session = (
+        col(Message.session_id) == session_id if session_id is not None else false()
+    )
+    group_in_session = (
+        col(Group.session_id) == session_id if session_id is not None else false()
+    )
+    msg_where: list = [in_session, col(Message.timestamp) <= end]
+    reaction_where: list = [in_session, col(Reaction.timestamp) <= end]
     if bot_ids:
         msg_where.append(col(Message.sender_jid).not_in(bot_ids))
         reaction_where.append(col(Reaction.sender_jid).not_in(bot_ids))
@@ -192,16 +210,26 @@ async def get_stats(
     )
 
     reactions = await session.scalar(
-        select(func.count()).select_from(Reaction).where(*reaction_where)
+        select(func.count())
+        .select_from(Reaction)
+        .join(Message, col(Message.message_id) == col(Reaction.message_id))
+        .where(*reaction_where)
     )
     kb_topics = await session.scalar(
         select(func.count())
         .select_from(KBTopic)
-        .where(col(KBTopic.start_time) >= start, col(KBTopic.start_time) <= end)
+        .join(Group, col(Group.group_jid) == col(KBTopic.group_jid))
+        .where(
+            group_in_session,
+            col(KBTopic.start_time) >= start,
+            col(KBTopic.start_time) <= end,
+        )
     )
     groups_total, groups_managed = (
         await session.execute(
-            select(func.count(), func.count().filter(col(Group.managed)))
+            select(func.count(), func.count().filter(col(Group.managed))).where(
+                group_in_session
+            )
         )
     ).one()
 

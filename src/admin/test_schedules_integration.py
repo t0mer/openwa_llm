@@ -7,14 +7,26 @@ import pytest
 from admin.auth import CSRF_HEADER, CSRF_VALUE, SESSION_COOKIE, create_session_token
 from admin.conftest import SECRET
 from models import Group, GroupSummarySchedule, Message, Sender
+from test_utils.openwa_session import TEST_SESSION_ID
+
+pytestmark = pytest.mark.usefixtures("session_row", "active_sessions")
 
 BASE = "/api/v1/admin/groups/1@g.us/schedules"
 
 
 async def seed(db_sessionmaker):
     async with db_sessionmaker() as session:
-        session.add(Group(group_jid="1@g.us", group_name="Alpha", managed=True))
-        session.add(Group(group_jid="2@g.us", group_name="Beta"))
+        session.add(
+            Group(
+                session_id=TEST_SESSION_ID,
+                group_jid="1@g.us",
+                group_name="Alpha",
+                managed=True,
+            )
+        )
+        session.add(
+            Group(session_id=TEST_SESSION_ID, group_jid="2@g.us", group_name="Beta")
+        )
         await session.commit()
 
 
@@ -336,6 +348,7 @@ async def test_schedule_lock_does_not_block_message_inserts(admin_app, db_sessio
             await other.flush()
             other.add(
                 Message(
+                    session_id=TEST_SESSION_ID,
                     message_id="m1",
                     chat_jid="1@g.us",
                     sender_jid="972501@s.whatsapp.net",

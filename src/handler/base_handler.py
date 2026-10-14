@@ -1,6 +1,9 @@
 import logging
 from collections.abc import Sequence
 
+from sqlalchemy import inspect
+from sqlalchemy.dialects.postgresql import insert
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
 
@@ -26,10 +29,12 @@ class BaseHandler:
         session: AsyncSession,
         whatsapp: WhatsAppGateway,
         embedding_client: AsyncClient,
+        session_id: str,
     ):
         self.session = session
         self.whatsapp = whatsapp
         self.embedding_client = embedding_client
+        self.session_id = session_id
 
     async def store_message(
         self,
@@ -44,13 +49,16 @@ class BaseHandler:
         """
         if isinstance(message, InboundMessage):
             sender_pushname = message.sender_name
-            message = Message.from_inbound(message)
+            message = Message.from_inbound(message, self.session_id)
 
         if isinstance(message, BaseMessage):
             message = Message(**message.model_dump())
 
         if not message.text:
             return message  # Don't store messages without text
+
+        if await self._foreign_group(message.group_jid):
+            return None  # Another session owns this group: not ours to store
 
         async with self.session.begin_nested():
             # Ensure sender exists and is committed
@@ -67,12 +75,8 @@ class BaseHandler:
                     self.session.flush()
                 )  # Ensure sender is visible in this transaction
 
-            if message.group_jid:
-                group = await self.session.get(Group, message.group_jid)
-                if group is None:
-                    group = Group(**BaseGroup(group_jid=message.group_jid).model_dump())
-                    await self.upsert(group)
-                    await self.session.flush()
+            if message.group_jid and not await self._claim_group(message.group_jid):
+                return None  # Another session created the group meanwhile
 
             # Finally add the message
             stored_message = await self.upsert(message)
@@ -89,6 +93,11 @@ class BaseHandler:
 
         try:
             reaction = Reaction.from_inbound(event)
+            message = await self.session.get(Message, reaction.message_id)
+            if message is None:
+                logger.warning(f"Message {reaction.message_id} not found for reaction")
+            elif await self._foreign_group(message.group_jid):
+                return None  # Reaction in a group another session owns
 
             async with self.session.begin_nested():
                 # Ensure sender exists
@@ -102,13 +111,6 @@ class BaseHandler:
                     )
                     await self.upsert(sender)
                     await self.session.flush()
-
-                # Ensure the message being reacted to exists
-                message = await self.session.get(Message, reaction.message_id)
-                if message is None:
-                    logger.warning(
-                        f"Message {reaction.message_id} not found for reaction"
-                    )
 
                 stored_reaction = await Reaction.upsert_reaction(self.session, reaction)
                 logger.info(
@@ -155,10 +157,37 @@ class BaseHandler:
             sender_jid=str(my_number),
             chat_jid=to_jid,
             reply_to_id=in_reply_to,
+            session_id=self.session_id,
         )
         stored_message = await self.store_message(Message(**new_message.model_dump()))
         assert stored_message, "Failed to store message"
         return stored_message
+
+    async def _foreign_group(self, group_jid: str | None) -> bool:
+        """True when the group exists and belongs to another session."""
+        if not group_jid:
+            return False
+        group = await self.session.get(Group, group_jid)
+        return group is not None and group.session_id != self.session_id
+
+    async def _claim_group(self, group_jid: str) -> bool:
+        """Create the group for this session unless it exists; True if it is ours.
+
+        ON CONFLICT DO NOTHING never overwrites a row another session created
+        concurrently; the re-read decides who owns it.
+        """
+        group = Group(
+            **BaseGroup(group_jid=group_jid, session_id=self.session_id).model_dump()
+        )
+        await self.session.execute(
+            insert(Group)
+            .values(**{c.name: getattr(group, c.name) for c in inspect(Group).columns})
+            .on_conflict_do_nothing(index_elements=["group_jid"])
+        )
+        owner = await self.session.scalar(
+            select(Group.session_id).where(col(Group.group_jid) == group_jid)
+        )
+        return owner == self.session_id
 
     async def upsert(self, model):
         return await upsert(self.session, model)

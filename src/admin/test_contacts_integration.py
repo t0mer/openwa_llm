@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from models import OptOut, Sender
 
 
@@ -55,6 +57,7 @@ async def test_opt_out_roundtrip(admin_client, db_sessionmaker):
     ).status_code == 422
 
 
+@pytest.mark.usefixtures("active_sessions")
 async def test_huge_offset_is_422_not_500(admin_client):
     huge = "99999999999999999999999"
     for path in ("groups", "contacts"):

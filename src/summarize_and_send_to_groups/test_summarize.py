@@ -96,7 +96,7 @@ async def test_groups_returns_results_and_isolates_failures(monkeypatch):
         return GroupSummaryResult(status="sent", message_count=20, required=15)
 
     monkeypatch.setattr(mod, "summarize_and_send_to_group", fake)
-    results = await summarize_and_send_to_groups(object(), session, object())
+    results = await summarize_and_send_to_groups(object(), session, object(), "s1")
     assert [(r.group_jid, r.group_name, r.status) for r in results] == [
         ("a@g.us", "Shown", "sent"),
         ("b@g.us", "B", "failed"),
@@ -109,7 +109,7 @@ async def test_groups_none_managed():
     resp = MagicMock()
     resp.all.return_value = []
     session.exec = AsyncMock(return_value=resp)
-    assert await summarize_and_send_to_groups(object(), session, object()) == []
+    assert await summarize_and_send_to_groups(object(), session, object(), "s1") == []
 
 
 @pytest.mark.parametrize("language", [None, "he", "en", "ru"])
@@ -166,7 +166,7 @@ async def test_groups_take_the_shared_group_lock_and_refresh_when_contended(
     monkeypatch.setattr(mod, "summarize_and_send_to_group", fake)
 
     # uncontended: lock held during the run, no refresh
-    await summarize_and_send_to_groups(object(), session, object())
+    await summarize_and_send_to_groups(object(), session, object(), "s1")
     assert seen == [True]
     session.refresh.assert_not_awaited()
 
@@ -174,7 +174,7 @@ async def test_groups_take_the_shared_group_lock_and_refresh_when_contended(
     lock = group_lock("lock@g.us")
     await lock.acquire()
     task = asyncio.create_task(
-        summarize_and_send_to_groups(object(), session, object())
+        summarize_and_send_to_groups(object(), session, object(), "s1")
     )
     await asyncio.sleep(0.05)
     assert not task.done()

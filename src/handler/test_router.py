@@ -37,6 +37,7 @@ def mock_embedding_client():
 @pytest.fixture
 def test_message():
     return Message(
+        session_id="s1",
         message_id="test_id",
         text="Hello bot!",
         chat_jid="user@s.whatsapp.net",
@@ -120,7 +121,9 @@ async def test_router_ask_question_route(
     mock_session.begin_nested = Mock(return_value=mock_nested)
 
     # Create router instance
-    router = Router(mock_session, mock_whatsapp, mock_embedding_client, mock_settings)
+    router = Router(
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
+    )
 
     # Test the route
     await router(test_message)
@@ -171,7 +174,9 @@ async def test_router_summarize_route(
     mock_session.exec.return_value = mock_exec
 
     # Create router instance
-    router = Router(mock_session, mock_whatsapp, mock_embedding_client, mock_settings)
+    router = Router(
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
+    )
 
     # Test the route
     await router(test_message)
@@ -199,7 +204,9 @@ async def test_router_other_route(
     monkeypatch.setattr(Agent, "run", mock_agent.run)
 
     # Create router instance
-    router = Router(mock_session, mock_whatsapp, mock_embedding_client, mock_settings)
+    router = Router(
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
+    )
 
     # Test the route
     await router(test_message)
@@ -219,7 +226,9 @@ async def test_send_message(
     mock_session.get.return_value = None  # Simulate sender doesn't exist
 
     # Create router instance
-    router = Router(mock_session, mock_whatsapp, mock_embedding_client, mock_settings)
+    router = Router(
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
+    )
 
     # Test sending a message
     await router.send_message("user@s.whatsapp.net", "Test message")
@@ -267,7 +276,9 @@ async def test_router_summarize_with_opt_out(
     mock_session.exec.return_value = mock_exec
 
     # Create router instance
-    router = Router(mock_session, mock_whatsapp, mock_embedding_client, mock_settings)
+    router = Router(
+        mock_session, mock_whatsapp, mock_embedding_client, mock_settings, "s1"
+    )
 
     # Mock get_opt_out_map
     with patch(
@@ -298,7 +309,7 @@ async def test_router_summarize_with_opt_out(
 
 
 async def _default_text(question):
-    router = Router(AsyncMock(), AsyncMock(), AsyncMock(), Mock())
+    router = Router(AsyncMock(), AsyncMock(), AsyncMock(), Mock(), "s1")
     router.send_message = AsyncMock()
     await router.default_response(SimpleNamespace(chat_jid="chat@g.us", text=question))
     assert router.send_message.await_args is not None

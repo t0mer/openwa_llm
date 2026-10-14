@@ -9,6 +9,8 @@ import Groups from "./pages/Groups";
 import Login from "./pages/Login";
 import Messages from "./pages/Messages";
 import OptOuts from "./pages/OptOuts";
+import Settings from "./pages/Settings";
+import { SessionScoped } from "./session";
 
 function Protected() {
   const { status } = useAuth();
@@ -24,12 +26,14 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route element={<Protected />}>
-          <Route index element={<Dashboard />} />
-          <Route path="/groups" element={<Groups />} />
+          {/* Session-scoped pages remount (and reload) when the selected session changes. */}
+          <Route index element={<SessionScoped><Dashboard /></SessionScoped>} />
+          <Route path="/groups" element={<SessionScoped><Groups /></SessionScoped>} />
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/opt-outs" element={<OptOuts />} />
-          <Route path="/messages" element={<Messages />} />
+          <Route path="/messages" element={<SessionScoped><Messages /></SessionScoped>} />
           <Route path="/actions" element={<Actions />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -3,6 +3,7 @@ import { MD_QUERY, useMediaQuery } from "../../hooks/useMediaQuery";
 import { MAIN_ID, SkipLink } from "./SkipLink";
 import { Sidebar } from "./Sidebar";
 import { PhoneHeader } from "./PhoneHeader";
+import { SessionSwitcher } from "./SessionSwitcher";
 import { TabBar } from "./TabBar";
 
 /** Signed-in frame: sidebar from md, sticky header + bottom tab bar below. Pages render in <Outlet/>. */
@@ -17,6 +18,9 @@ export default function AppShell() {
         tabIndex={-1}
         className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 pb-24 pt-5 focus:outline-none md:px-8 md:pb-10 md:pt-8"
       >
+        <div className="mb-4 flex justify-end md:mb-6">
+          <SessionSwitcher />
+        </div>
         <Outlet />
       </main>
       {!desktop && <TabBar />}

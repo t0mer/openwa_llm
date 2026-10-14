@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 
 def test_group_normalization():
-    group = Group(group_jid="123456789-123456@g.us")
+    group = Group(session_id="s1", group_jid="123456789-123456@g.us")
     assert group.group_jid == "123456789-123456@g.us"
 
     # Test normalization via field validator (if applicable during init)
@@ -15,6 +15,7 @@ def test_group_normalization():
         {
             "group_jid": "123456789-123456@g.us",
             "owner_jid": "1234567890.1:1@s.whatsapp.net",
+            "session_id": "s1",
         }
     )
     assert group_validated.owner_jid == "1234567890@s.whatsapp.net"
@@ -22,12 +23,12 @@ def test_group_normalization():
 
 @pytest.mark.asyncio
 async def test_get_related_community_groups():
-    group = Group(group_jid="g1@g.us", community_keys=["key1"])
+    group = Group(session_id="s1", group_jid="g1@g.us", community_keys=["key1"])
     mock_session = AsyncMock()
 
     # Mock result
     mock_result = MagicMock()
-    mock_result.all.return_value = [Group(group_jid="g2@g.us")]
+    mock_result.all.return_value = [Group(session_id="s1", group_jid="g2@g.us")]
     mock_session.exec.return_value = mock_result
 
     related = await group.get_related_community_groups(mock_session)
@@ -38,7 +39,7 @@ async def test_get_related_community_groups():
 
 @pytest.mark.asyncio
 async def test_get_related_community_groups_no_keys():
-    group = Group(group_jid="g1@g.us", community_keys=[])
+    group = Group(session_id="s1", group_jid="g1@g.us", community_keys=[])
     mock_session = AsyncMock()
 
     related = await group.get_related_community_groups(mock_session)
@@ -50,4 +51,4 @@ def test_summary_language_column_is_nullable_two_char_string():
     column = Group.__table__.c.summary_language  # pyright: ignore[reportAttributeAccessIssue]
     assert column.nullable is True
     assert column.type.length == 2
-    assert Group(group_jid="1@g.us").summary_language is None
+    assert Group(session_id="s1", group_jid="1@g.us").summary_language is None
