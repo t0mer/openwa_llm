@@ -1,9 +1,11 @@
 name: Create and publish a Docker image
 
 on:
-  push:
-    branches: ['main']
-    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (blank = auto-increment YYYY.M.PATCH from latest tag)"
+        required: false
 
 permissions:
   contents: read
@@ -26,11 +28,27 @@ jobs:
     needs: [quality, test]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write          # push the version tag that drives auto-increment
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0       # all tags needed to compute the version
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(./scripts/next-version.sh)"
+          fi
+          [ -n "$VERSION" ] || { echo "::error::could not resolve a version"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -45,27 +63,29 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: techblog/openwa_llm
-          # main pushes publish :latest; v* tags publish :latest and :<version> (no "v").
-          tags: |
-            type=raw,value=latest
-            type=semver,pattern={{version}}
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            techblog/openwa_llm:latest
+            techblog/openwa_llm:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # Note: If your Dockerfile requires secrets (like .netrc), you need to pass them here.
           # For example:
           # secrets: |
           #   "netrc=${{ secrets.NETRC }}"
+
+      # Tag AFTER a successful push so a failed build never burns a version.
+      - name: Tag published version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push origin "$VERSION"
