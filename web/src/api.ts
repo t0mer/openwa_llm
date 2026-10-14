@@ -110,6 +110,8 @@ export const api = {
   deleteSession: (id: string) => request<void>("DELETE", `/settings/sessions/${encodeURIComponent(id)}`),
   registerWebhook: (id: string) =>
     request<{ registered: boolean }>("POST", `/settings/sessions/${encodeURIComponent(id)}/webhook`),
+  syncSession: (id: string) =>
+    request<{ groups: number }>("POST", `/settings/sessions/${encodeURIComponent(id)}/sync`),
 
   getActions: () => request<Actions>("GET", "/actions"),
   runAction: (name: ActionName) =>

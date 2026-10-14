@@ -19,6 +19,7 @@ vi.mock("../api", async (orig) => {
       patchSession: vi.fn(),
       deleteSession: vi.fn(),
       registerWebhook: vi.fn(),
+      syncSession: vi.fn(),
     },
   };
 });
@@ -49,6 +50,7 @@ beforeEach(() => {
   vi.mocked(api.patchSession).mockResolvedValue(SESSIONS[0]);
   vi.mocked(api.deleteSession).mockResolvedValue(undefined);
   vi.mocked(api.registerWebhook).mockResolvedValue({ registered: true });
+  vi.mocked(api.syncSession).mockResolvedValue({ groups: 3 });
   vi.mocked(confirm).mockResolvedValue(true);
 });
 
@@ -243,6 +245,20 @@ describe("Settings page: sessions", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Re-register webhook for Main" }));
     await waitFor(() => expect(api.registerWebhook).toHaveBeenCalledWith("s1"));
     expect(toast.success).toHaveBeenCalled();
+  });
+
+  it("syncs a session now and reports the group count", async () => {
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "Sync Main now" }));
+    await waitFor(() => expect(api.syncSession).toHaveBeenCalledWith("s1"));
+    expect(toast.success).toHaveBeenCalledWith("Synced 3 groups");
+  });
+
+  it("shows a sync failure as a toast", async () => {
+    vi.mocked(api.syncSession).mockRejectedValueOnce(new ApiError(502, "group sync failed: cannot reach OpenWA"));
+    render(<Settings />);
+    await userEvent.click(await screen.findByRole("button", { name: "Sync Main now" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
   });
 
   it("deletes after a confirmation and surfaces a 409 as a toast", async () => {
