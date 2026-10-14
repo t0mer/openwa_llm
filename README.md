@@ -314,7 +314,8 @@ Fields: `weekdays` (non-empty list of integers, 0 = Sunday to 6 = Saturday), the
 
 - Add a session with a **label** (your own name for it) and the **OpenWA session id** (the `id` OpenWA returned when the session was created; each one can be added only once). Creating sessions and pairing them by QR code stay in OpenWA (see [Connect your device](#4-connect-your-device)).
 - Each session shows its OpenWA status (for example `ready`), the number of groups it owns, and an error if it could not be started. **Enabled** turns a session on or off without deleting it; a disabled session receives nothing and is not summarized.
-- **Re-register webhook** registers (or updates) that session's webhook in OpenWA again, for example after OpenWA lost it.
+- **Sync now** imports that session's groups from OpenWA right away and reports how many it owns. Groups are otherwise synced when a session starts and after its webhook is registered; chats and messages are not imported, they are stored as OpenWA delivers them to the webhook.
+- **Re-register webhook** registers (or updates) that session's webhook in OpenWA again, for example after OpenWA lost it. A successful registration also syncs the session's groups.
 - **Delete** is refused while the session still owns groups or messages; disable it instead.
 
 **How data is split between sessions:**
@@ -346,6 +347,7 @@ The settings API (login-protected, under `/api/v1/admin/settings`; like every ad
 | `POST`   | `/api/v1/admin/settings/sessions`               | Add a session: `{label, openwa_session_id}` (`409` if that OpenWA session id is already used) |
 | `PATCH`  | `/api/v1/admin/settings/sessions/{session_id}`  | Change `label`, `openwa_session_id` or `enabled` |
 | `DELETE` | `/api/v1/admin/settings/sessions/{session_id}`  | Delete a session (`409` while it still owns groups or messages) |
+| `POST`   | `/api/v1/admin/settings/sessions/{session_id}/sync` | Import the session's groups now; returns `{"groups": <count owned>}` (`409` if the session is not active, `502` with the HTTP status or error type if OpenWA failed) |
 | `POST`   | `/api/v1/admin/settings/sessions/{session_id}/webhook` | Re-register the session's webhook (`409` if the session is not active or no webhook URL is set, `502` with the HTTP status or error type if OpenWA refused) |
 
 `{session_id}` is the app's own session id (the `id` field), not the OpenWA session id. The same id is used by the `session_id` query parameter of the other admin endpoints and the cron endpoints, and in the webhook URL.
@@ -572,7 +574,7 @@ The project consists of several key components:
 OpenWA delivers incoming messages, reactions and group events to `POST /webhook/{session id}`, one URL per session (the session id is the app's own id shown by `GET /api/v1/admin/settings/sessions`):
 
 - **Signed requests.** Every request must carry `X-OpenWA-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body using the webhook secret from **Admin > Settings > Connection**. The signature is verified before the body is parsed or the session is looked up; a missing or invalid signature (or no stored secret) returns `401`, malformed JSON returns `400`, and bodies larger than 2 MiB return `413`. A signed delivery for an unknown or disabled session is acknowledged and ignored.
-- **Registration.** If the connection has a webhook URL, the web server registers (or updates) `<webhook url>/<session id>` with OpenWA for every active session, for `message.received`, `message.reaction` and the `group.*` events: at startup (retrying for a few minutes while OpenWA starts), when a session is added or enabled, when the connection is saved, and on **Re-register webhook**. OpenWA's SSRF guard must allow that host; the compose files set `SSRF_ALLOWED_HOSTS` for you.
+- **Registration.** If the connection has a webhook URL, the web server registers (or updates) `<webhook url>/<session id>` with OpenWA for every active session, for `message.received`, `message.reaction` and the `group.*` events: at startup (retrying for a few minutes while OpenWA starts), when a session is added or enabled, when the connection is saved, and on **Re-register webhook**. After a successful registration the session's groups are synced again. OpenWA's SSRF guard must allow that host; the compose files set `SSRF_ALLOWED_HOSTS` for you.
 - **Legacy URL.** The bare `POST /webhook` used by earlier versions still works while exactly one session is enabled. It needs the same signature (checked first, so an unsigned request gets `401` whatever the number of sessions); a signed request returns `404` when zero or several sessions are enabled. See [Upgrading from env-only OpenWA settings](#upgrading-from-env-only-openwa-settings).
 - **Redelivery.** OpenWA delivers at least once. Deliveries are deduplicated per session on `X-OpenWA-Idempotency-Key`; a delivery whose processing failed is not marked as seen, so OpenWA's retry is processed again.
 - **Identities.** Users are stored as `<number>@s.whatsapp.net`; the adapter converts OpenWA's `@c.us` ids in both directions. Senders that OpenWA reports as `@lid` are mapped to their phone number when `RESOLVE_LID_TO_PHONE=true` (set in the compose files) provides `senderPhone`.
